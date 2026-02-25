@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# crypto.sh — Cryptographic operations for the Apollo Agent crypto-toolkit skill.
+# crypto.sh — Cryptographic operations for the Sage Agent crypto-toolkit skill.
 # Usage: bash crypto.sh <command> [args...]
 
 set -euo pipefail

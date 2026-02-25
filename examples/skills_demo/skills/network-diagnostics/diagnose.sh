@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# diagnose.sh — Network diagnostic tool for the Apollo Agent network-diagnostics skill.
+# diagnose.sh — Network diagnostic tool for the Sage Agent network-diagnostics skill.
 # Usage: bash diagnose.sh <command> [args...]
 
 set -euo pipefail

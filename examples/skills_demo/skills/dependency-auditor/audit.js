@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * audit.js — Dependency auditor for the Apollo Agent dependency-auditor skill.
+ * audit.js — Dependency auditor for the Sage Agent dependency-auditor skill.
  *
  * Analyzes package.json or requirements.txt files and produces a structured
  * report about dependency health, version patterns, and potential risks.
