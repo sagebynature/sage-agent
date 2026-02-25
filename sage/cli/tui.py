@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from sage.central_config import CentralConfig
+    from sage.main_config import MainConfig
 
 from textual import on
 from textual.app import App, ComposeResult
@@ -431,7 +431,7 @@ class SageTUIApp(App[None]):
 
     TITLE = "Sage TUI"
 
-    def __init__(self, config_path: Path, central: CentralConfig | None = None) -> None:
+    def __init__(self, config_path: Path, central: MainConfig | None = None) -> None:
         super().__init__()
         self.config_path = config_path
         self._central = central

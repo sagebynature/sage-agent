@@ -16,7 +16,7 @@ from sage.config import load_config
 from sage.exceptions import SageError, ConfigError
 
 if TYPE_CHECKING:
-    from sage.central_config import CentralConfig
+    from sage.main_config import MainConfig
 
 # Default search locations for logging.conf (checked in order):
 #   1. Explicit --log-config CLI option
@@ -52,19 +52,19 @@ def _setup_logging(config_path: str | None = None, verbose: bool = False) -> Non
         logging.getLogger("sage").setLevel(logging.DEBUG)
 
 
-def _get_central(ctx: click.Context) -> CentralConfig | None:
-    """Extract central config from click context."""
+def _get_main_config(ctx: click.Context) -> MainConfig | None:
+    """Extract main config from click context."""
     obj = ctx.ensure_object(dict)
-    return obj.get("central_config")
+    return obj.get("main_config")
 
 
 @click.group()
 @click.version_option(version="0.1.0", prog_name="sage")
 @click.option(
     "--config",
-    "central_config_path",
+    "main_config_path",
     default=None,
-    help="Path to central config.toml (also reads SAGE_CONFIG_PATH env var)",
+    help="Path to main config.toml (also reads SAGE_CONFIG_PATH env var)",
 )
 @click.option(
     "--log-config",
@@ -73,21 +73,24 @@ def _get_central(ctx: click.Context) -> CentralConfig | None:
     help="Path to logging.conf (default: auto-detected from cwd or project root)",
 )
 @click.option(
-    "--verbose", "-v",
+    "--verbose",
+    "-v",
     is_flag=True,
     default=False,
     help="Enable debug logging for sage internals",
 )
 @click.pass_context
-def cli(ctx: click.Context, central_config_path: str | None, log_config_path: str | None, verbose: bool) -> None:
+def cli(
+    ctx: click.Context, main_config_path: str | None, log_config_path: str | None, verbose: bool
+) -> None:
     """Sage - AI agent definition and deployment."""
     load_dotenv()
     _setup_logging(log_config_path, verbose)
     ctx.ensure_object(dict)
-    from sage.central_config import resolve_central_config_path, load_central_config
+    from sage.main_config import resolve_main_config_path, load_main_config
 
-    resolved = resolve_central_config_path(central_config_path)
-    ctx.obj["central_config"] = load_central_config(resolved)
+    resolved = resolve_main_config_path(main_config_path)
+    ctx.obj["main_config"] = load_main_config(resolved)
 
 
 @cli.group()
@@ -103,8 +106,8 @@ def agent() -> None:
 def agent_run(ctx: click.Context, config_path: str, user_input: str, use_stream: bool) -> None:
     """Run an agent from a config file."""
     try:
-        central = _get_central(ctx)
-        asyncio.run(_agent_run(config_path, user_input, use_stream, central))
+        main_config = _get_main_config(ctx)
+        asyncio.run(_agent_run(config_path, user_input, use_stream, main_config))
     except SageError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
@@ -114,11 +117,11 @@ async def _agent_run(
     config_path: str,
     user_input: str,
     use_stream: bool,
-    central: CentralConfig | None = None,
+    main_config: MainConfig | None = None,
 ) -> None:
     from sage.agent import Agent
 
-    agent = Agent.from_config(config_path, central=central)
+    agent = Agent.from_config(config_path, central=main_config)
 
     if use_stream:
         async for chunk in agent.stream(user_input):
@@ -136,20 +139,20 @@ async def _agent_run(
 def agent_orchestrate(ctx: click.Context, config_path: str, user_input: str) -> None:
     """Run all subagents of an orchestrator config in parallel."""
     try:
-        central = _get_central(ctx)
-        asyncio.run(_agent_orchestrate(config_path, user_input, central))
+        main_config = _get_main_config(ctx)
+        asyncio.run(_agent_orchestrate(config_path, user_input, main_config))
     except SageError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
 
 async def _agent_orchestrate(
-    config_path: str, user_input: str, central: CentralConfig | None = None
+    config_path: str, user_input: str, main_config: MainConfig | None = None
 ) -> None:
     from sage.agent import Agent
     from sage.orchestrator.parallel import Orchestrator
 
-    parent = Agent.from_config(config_path, central=central)
+    parent = Agent.from_config(config_path, central=main_config)
     if not parent.subagents:
         click.echo("No subagents defined in config.", err=True)
         sys.exit(1)
@@ -176,8 +179,8 @@ async def _agent_orchestrate(
 def agent_validate(ctx: click.Context, config_path: str) -> None:
     """Validate an agent config file without running."""
     try:
-        central = _get_central(ctx)
-        config = load_config(config_path, central=central)
+        main_config = _get_main_config(ctx)
+        config = load_config(config_path, central=main_config)
         click.echo(f"Config valid: {config.name} (model: {config.model})")
         if config.tools:
             click.echo(f"  Tools: {', '.join(config.tools)}")
@@ -195,7 +198,7 @@ def agent_validate(ctx: click.Context, config_path: str) -> None:
 @click.pass_context
 def agent_list(ctx: click.Context, directory: str) -> None:
     """List agent config files in a directory."""
-    central = _get_central(ctx)
+    main_config = _get_main_config(ctx)
     dir_path = Path(directory)
     configs = sorted(dir_path.glob("**/*.md"))
 
@@ -205,7 +208,7 @@ def agent_list(ctx: click.Context, directory: str) -> None:
 
     for path in configs:
         try:
-            config = load_config(str(path), central=central)
+            config = load_config(str(path), central=main_config)
             click.echo(f"  {path}: {config.name} ({config.model})")
         except ConfigError:
             click.echo(f"  {path}: [invalid config]")
@@ -222,8 +225,8 @@ def tool() -> None:
 def tool_list(ctx: click.Context, config_path: str) -> None:
     """List available tools for an agent config."""
     try:
-        central = _get_central(ctx)
-        config = load_config(config_path, central=central)
+        main_config = _get_main_config(ctx)
+        config = load_config(config_path, central=main_config)
         if not config.tools:
             click.echo("No tools configured.")
             return
@@ -282,9 +285,9 @@ def tui(ctx: click.Context, config_path: str) -> None:
     """Launch the interactive TUI for an agent config."""
     from sage.cli.tui import SageTUIApp
 
-    central = _get_central(ctx)
+    main_config = _get_main_config(ctx)
     path = Path(config_path)
     if path.is_dir():
         path = path / "AGENTS.md"
-    app = SageTUIApp(config_path=path, central=central)
+    app = SageTUIApp(config_path=path, central=main_config)
     app.run()

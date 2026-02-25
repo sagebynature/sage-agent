@@ -1,6 +1,6 @@
-"""Central configuration loading, resolution, and merge for Sage.
+"""Main configuration loading, resolution, and merge for Sage.
 
-Provides a TOML-based central config with a three-tier override system::
+Provides a TOML-based main config with a three-tier override system::
 
     agent .md frontmatter     (highest priority)
     [agents.<name>] in TOML   (agent-specific overrides)
@@ -55,8 +55,8 @@ class AgentOverrides(ConfigOverrides):
     skills_dir: str | None = None
 
 
-class CentralConfig(BaseModel):
-    """Top-level central configuration loaded from config.toml."""
+class MainConfig(BaseModel):
+    """Top-level main configuration loaded from config.toml."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -64,8 +64,8 @@ class CentralConfig(BaseModel):
     agents: dict[str, AgentOverrides] = Field(default_factory=dict)
 
 
-def resolve_central_config_path(cli_path: str | None = None) -> Path | None:
-    """Resolve the central config file path.
+def resolve_main_config_path(cli_path: str | None = None) -> Path | None:
+    """Resolve the main config file path.
 
     Priority: CLI ``--config`` arg -> ``SAGE_CONFIG_PATH`` env var -> default path.
 
@@ -76,7 +76,7 @@ def resolve_central_config_path(cli_path: str | None = None) -> Path | None:
     if cli_path is not None:
         p = Path(cli_path)
         if not p.exists():
-            raise ConfigError(f"Central config not found: {p}")
+            raise ConfigError(f"Main config not found: {p}")
         return p
 
     # 2. Environment variable
@@ -84,7 +84,7 @@ def resolve_central_config_path(cli_path: str | None = None) -> Path | None:
     if env_path is not None:
         p = Path(env_path)
         if not p.exists():
-            raise ConfigError(f"Central config not found: {p}")
+            raise ConfigError(f"Main config not found: {p}")
         return p
 
     # 3. Default path
@@ -92,8 +92,8 @@ def resolve_central_config_path(cli_path: str | None = None) -> Path | None:
     return default if default.exists() else None
 
 
-def load_central_config(path: Path | None) -> CentralConfig | None:
-    """Load and parse central config from a TOML file.
+def load_main_config(path: Path | None) -> MainConfig | None:
+    """Load and parse main config from a TOML file.
 
     Returns ``None`` if *path* is ``None``.
     """
@@ -103,25 +103,25 @@ def load_central_config(path: Path | None) -> CentralConfig | None:
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
-        raise ConfigError(f"Failed to read central config {path}: {exc}") from exc
+        raise ConfigError(f"Failed to read main config {path}: {exc}") from exc
 
     try:
         data = tomllib.loads(text)
     except Exception as exc:
-        raise ConfigError(f"Failed to parse central config {path}: {exc}") from exc
+        raise ConfigError(f"Failed to parse main config {path}: {exc}") from exc
 
     try:
-        return CentralConfig(**data)
+        return MainConfig(**data)
     except Exception as exc:
-        raise ConfigError(f"Invalid central config: {exc}") from exc
+        raise ConfigError(f"Invalid main config: {exc}") from exc
 
 
 def merge_agent_config(
     metadata: dict[str, Any],
-    central: CentralConfig | None,
+    central: MainConfig | None,
     agent_name: str | None = None,
 ) -> dict[str, Any]:
-    """Merge central config defaults and agent overrides into frontmatter metadata.
+    """Merge main config defaults and agent overrides into frontmatter metadata.
 
     Layering (lowest to highest priority):
       1. ``central.defaults``

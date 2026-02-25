@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator,
 from sage.exceptions import ConfigError
 
 if TYPE_CHECKING:
-    from sage.central_config import CentralConfig
+    from sage.main_config import MainConfig
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +146,7 @@ class AgentConfig(BaseModel):
         """Require name unless this is a config-file reference.
 
         ``model`` is no longer validated here — it is checked post-merge in
-        :func:`load_config` so that central config defaults can supply it.
+        :func:`load_config` so that main config defaults can supply it.
         """
 
         if self.config is None:
@@ -157,18 +157,18 @@ class AgentConfig(BaseModel):
         return self
 
 
-def load_config(path: str | Path, central: CentralConfig | None = None) -> AgentConfig:
+def load_config(path: str | Path, central: MainConfig | None = None) -> AgentConfig:
     """Load and validate an agent configuration from a Markdown file.
 
     The markdown file must contain YAML frontmatter with agent config fields
     and may include a markdown body that becomes ``AgentConfig._body``.
 
-    When *central* is provided, the frontmatter is merged with central config
+    When *central* is provided, the frontmatter is merged with main config
     defaults and per-agent overrides before constructing the ``AgentConfig``.
 
     Args:
         path: Path to the markdown configuration file with YAML frontmatter.
-        central: Optional central config for default/override resolution.
+        central: Optional main config for default/override resolution.
 
     Returns:
         A validated :class:`AgentConfig` instance.
@@ -200,8 +200,8 @@ def load_config(path: str | Path, central: CentralConfig | None = None) -> Agent
             f"Config file must contain valid YAML frontmatter, got {type(metadata).__name__}"
         )
 
-    # Merge with central config (defaults → agent overrides → frontmatter)
-    from sage.central_config import merge_agent_config
+    # Merge with main config (defaults → agent overrides → frontmatter)
+    from sage.main_config import merge_agent_config
 
     agent_name = metadata.get("name")
     merged = merge_agent_config(metadata, central, agent_name)
@@ -215,8 +215,8 @@ def load_config(path: str | Path, central: CentralConfig | None = None) -> Agent
     if not config.model:
         raise ConfigError(
             f"'model' is required for agent '{config.name}' "
-            "(set it in the agent .md file, central config [agents.<name>], "
-            "or central config [defaults])"
+            "(set it in the agent .md file, main config [agents.<name>], "
+            "or main config [defaults])"
         )
 
     # Store the markdown body as _body (system prompt)
@@ -231,13 +231,13 @@ def load_config(path: str | Path, central: CentralConfig | None = None) -> Agent
 
 
 def _resolve_subagent_refs(
-    config: AgentConfig, base_dir: Path, central: CentralConfig | None = None
+    config: AgentConfig, base_dir: Path, central: MainConfig | None = None
 ) -> AgentConfig:
     """Replace any subagent ``config: path.md`` references with loaded configs.
 
     Subagents that use the ``config`` field are loaded from their referenced
     file (relative to ``base_dir``) and merged with *central* config.
-    Inline subagents are **not** merged with central config (they must be
+    Inline subagents are **not** merged with main config (they must be
     fully specified) but are recursed into so their own nested refs are resolved.
     """
     resolved: list[AgentConfig] = []
@@ -250,7 +250,7 @@ def _resolve_subagent_refs(
             if not sub.model:
                 raise ConfigError(
                     f"Inline subagent '{sub.name}' must specify 'model' "
-                    "(inline subagents are not merged with central config)"
+                    "(inline subagents are not merged with main config)"
                 )
             resolved.append(_resolve_subagent_refs(sub, base_dir, central))
     return config.model_copy(update={"subagents": resolved})

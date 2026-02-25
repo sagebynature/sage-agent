@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 from sage.config import AgentConfig, load_config
 
 if TYPE_CHECKING:
-    from sage.central_config import CentralConfig
+    from sage.main_config import MainConfig
 from sage.exceptions import ToolError
 from sage.models import CompletionResult, Message, ToolCall, ToolSchema
 from sage.providers.litellm_provider import LiteLLMProvider
@@ -110,7 +110,7 @@ class Agent:
     # ── Factory methods ───────────────────────────────────────────────
 
     @classmethod
-    def from_config(cls, path: str | Path, central: CentralConfig | None = None) -> Agent:
+    def from_config(cls, path: str | Path, central: MainConfig | None = None) -> Agent:
         """Create an Agent from a Markdown config file or directory containing AGENTS.md."""
         resolved = Path(path)
         if resolved.is_dir():
