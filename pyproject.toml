@@ -3,8 +3,8 @@ requires = ["uv_build>=0.10.0,<0.11.0"]
 build-backend = "uv_build"
 
 [project]
-name = "sage"
-version = "1.0.0-rc.1"
+name = "sage-agent"
+version = "0.1.0"
 description = "Sage - Simplified AI agent definition and deployment via configuration"
 authors = [
     {name = "Sage Choi", email = "iamsagebynature@gmail.com"}
@@ -85,7 +85,7 @@ strict = true
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
-major_on_zero = false
+major_on_zero = true
 upload_to_pypi = false
 upload_to_release = true
 
