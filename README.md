@@ -41,10 +41,8 @@ Built-in tools included — or load them all at once with `sage.tools.builtins`:
 
 | Category | Tools |
 |----------|-------|
-| Core | `shell`, `file_read`, `file_write`, `http_request` |
+| Core | `shell`, `file_read`, `file_write`, `file_edit`, `http_request` |
 | Memory | `memory_store`, `memory_recall` |
-| File ops | `file_edit`, `glob_find`, `grep_search` |
-| Git | `git_status`, `git_diff`, `git_commit`, `git_log`, `git_checkout`, `git_pr_create` |
 | Web | `web_fetch`, `web_search` |
 
 ### Skills
@@ -81,7 +79,7 @@ SQLite-backed with litellm embeddings. Zero-config persistent recall across sess
 
 ### Permissions
 
-Control what tools can do. Set a default policy (`allow`, `deny`, or `ask`), then add per-tool rules with pattern matching for dangerous operations. Interactive prompts in the TUI when the policy is `ask`.
+Control what tools can do via a single `permission:` block in YAML frontmatter. Each permission category (`read`, `edit`, `shell`, `web`, `memory`) maps to a set of built-in tools. Set a category to `allow`, `deny`, or `ask`, or use pattern matching for fine-grained shell control. When set to `deny`, tools are invisible to the LLM. Interactive prompts in the TUI when policy is `ask`.
 
 ### Context Management
 
@@ -196,26 +194,21 @@ model: gpt-4o
 description: "A helpful assistant"   # Display only, NOT sent to model
 max_turns: 10
 
-tools:
-  - shell
-  - file_read
-  - file_write
-  - file_edit
-  - glob_find
-  - grep_search
-  - http_request
-  - memory_store
-  - memory_recall
-  - git_status
-  - git_diff
-  - git_commit
-  - git_log
-  - git_checkout
-  - git_pr_create
-  - web_fetch
-  - web_search
-  - sage.tools.builtins              # All built-in tools at once
-  - myapp.tools:search               # Your own tools (module:name)
+# Tool access: permission categories drive tool registration
+# Categories: read, edit, shell, web, memory, task
+# Values: "allow" | "deny" | "ask" | {pattern: action, ...}
+permission:
+  read: allow
+  edit: allow
+  shell:
+    "*": ask
+    "git log*": allow
+    "git diff*": allow
+  web: allow
+
+# Custom tool modules (in addition to permission-derived built-ins)
+extensions:
+  - myapp.tools                       # Your own tools (module path)
 
 memory:
   backend: sqlite
@@ -236,14 +229,6 @@ mcp_servers:
   - transport: sse
     url: http://localhost:8080/sse
 
-permissions:
-  default: ask                       # ask | allow | deny
-  rules:
-    - tool: shell
-      action: ask
-      patterns:
-        dangerous: '\brm\s+'
-      destructive: true
 
 context:
   compaction_threshold: 0.75         # Compact at 75% of context window
@@ -286,7 +271,7 @@ sage/
   frontmatter.py    # YAML frontmatter parser
   main_config.py    # TOML main config support
   providers/        # ProviderProtocol + LiteLLMProvider
-  tools/            # @tool decorator, ToolRegistry, builtins, file/git/web tools
+  tools/            # @tool decorator, ToolRegistry, builtins, file/web tools
   skills/           # Skill loader (markdown-based reusable capabilities)
   orchestrator/     # Orchestrator (parallel, race) + Pipeline (>>)
   memory/           # MemoryProtocol, SQLiteMemory, embeddings, compaction
