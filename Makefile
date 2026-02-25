@@ -1,6 +1,6 @@
 #!/usr/bin/make -f
 
-.PHONY: check-env check-deps sync install update lint format type-check test run clean validate-examples run-examples build publish
+.PHONY: check-env check-deps sync install update lint format type-check test run clean validate-examples run-examples
 
 PACKAGE_NAME = sage
 SRC_DIR = $(PACKAGE_NAME)
@@ -73,35 +73,3 @@ run-examples:
 	uv run sage agent run examples/skills_agent -i "Review this code for issues: def add(a, b): return a + b"
 	@echo "--- memory_agent ---"
 	uv run python examples/memory_agent/run.py
-
-# Library build and publish commands
-build: install
-	@echo "Building $(PACKAGE_NAME)..."
-	@if [ -n "$(TAG)" ]; then \
-		echo "Setting version to $(TAG)..."; \
-		cp pyproject.toml pyproject.toml.bak; \
-		sed -i 's/^version = ".*"/version = "$(TAG)"/' pyproject.toml; \
-	fi
-	@echo "Cleaning previous builds..."
-	rm -rf dist/
-	@echo "Building package..."
-	uv build || { if [ -f pyproject.toml.bak ]; then mv pyproject.toml.bak pyproject.toml; fi; exit 1; }
-	@if [ -f pyproject.toml.bak ]; then \
-		echo "Restoring original pyproject.toml..."; \
-		mv pyproject.toml.bak pyproject.toml; \
-	fi
-	@echo "Build completed."
-	ls -la dist/
-
-publish: build
-	@echo "Publishing $(PACKAGE_NAME) to Azure Artifacts..."
-	@if [ -z "$$AZURE_ARTIFACTS_ENV_ACCESS_TOKEN" ]; then \
-		echo "Error: AZURE_ARTIFACTS_ENV_ACCESS_TOKEN environment variable is required"; \
-		exit 1; \
-	fi
-	uv publish \
-		--publish-url "https://pkgs.dev.azure.com/ApolloAzureDevOps/_packaging/ApolloAzureDevOps/pypi/upload/" \
-		--username user \
-		--password "$$AZURE_ARTIFACTS_ENV_ACCESS_TOKEN" \
-		dist/*
-	@echo "Successfully published to Azure Artifacts."
