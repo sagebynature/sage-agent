@@ -1,4 +1,4 @@
-# Sage
+# Sage Agent
 
 Yes, I shamelessly named it after me ;)
 
