@@ -1,6 +1,6 @@
 #!/usr/bin/make -f
 
-.PHONY: check-env check-deps sync install update lint format type-check test run clean validate-examples run-examples
+.PHONY: check-env check-deps sync install update lint format type-check test test-only run clean validate-examples run-examples
 
 PACKAGE_NAME = sage
 SRC_DIR = $(PACKAGE_NAME)
@@ -17,8 +17,10 @@ check-deps:
 	@which gh >/dev/null 2>&1 || (echo "WARNING: gh (GitHub CLI) not found. git_pr_create will not work.")
 	@echo "All required dependencies found."
 
-install: check-env
+sync: check-env
 	uv sync --frozen --group dev
+
+install: sync
 	uv run pre-commit install
 	uv run pre-commit install --hook-type commit-msg
 
@@ -34,7 +36,7 @@ format:
 type-check:
 	uv run mypy $(SRC_DIR)
 
-test: install lint format type-check
+test: sync lint format type-check
 	uv run pytest -v tests
 
 test-only:
