@@ -1,0 +1,42 @@
+{
+  "name": "acme-web-service",
+  "version": "2.1.0",
+  "description": "Sample web service for dependency audit demo",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "jest --coverage",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "lodash": "4.17.23",
+    "axios": "~1.13.5",
+    "jsonwebtoken": "^9.0.0",
+    "bcrypt": "^5.1.1",
+    "mongoose": "^7.6.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "helmet": "^7.1.0",
+    "winston": "^3.11.0",
+    "moment": "^2.29.4",
+    "uuid": "^9.0.0",
+    "validator": "^13.11.0",
+    "multer": "^2.0.2",
+    "nodemailer": "^7.0.11",
+    "redis": "^4.6.10",
+    "socket.io": "^4.7.2",
+    "passport": "^0.7.0",
+    "passport-jwt": "^4.0.1",
+    "rate-limiter-flexible": "^3.0.4"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "eslint": "^8.53.0",
+    "prettier": "^3.1.0",
+    "nodemon": "^3.0.1",
+    "supertest": "^6.3.3",
+    "@types/express": "^4.17.21",
+    "typescript": "*"
+  }
+}

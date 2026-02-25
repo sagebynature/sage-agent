@@ -1,0 +1,51 @@
+2025-01-15 10:00:01 INFO  [web-server] Server started on port 8080
+2025-01-15 10:00:01 INFO  [web-server] Loaded 12 route handlers
+2025-01-15 10:00:02 INFO  [db-pool] Connection pool initialized (min=5, max=20)
+2025-01-15 10:00:03 DEBUG [auth] Token validation: user=alice, valid=true, ttl=3600s
+2025-01-15 10:00:04 INFO  [api] GET /api/users 200 45ms
+2025-01-15 10:00:05 INFO  [api] GET /api/users 200 52ms
+2025-01-15 10:00:06 WARN  [db-pool] Connection pool at 80% capacity (16/20)
+2025-01-15 10:00:07 INFO  [api] GET /api/products 200 38ms
+2025-01-15 10:00:08 ERROR [api] POST /api/checkout 500 1250ms - NullPointerException: order.shippingAddress is null
+2025-01-15 10:00:08 ERROR [api] Stack trace:
+  at CheckoutService.validateOrder(CheckoutService.java:142)
+  at CheckoutController.processCheckout(CheckoutController.java:58)
+  at Router.dispatch(Router.java:201)
+2025-01-15 10:00:09 INFO  [api] GET /api/users 200 41ms
+2025-01-15 10:00:10 INFO  [api] GET /api/products 200 67ms
+2025-01-15 10:00:11 DEBUG [cache] Cache hit: products:featured (ttl=120s remaining)
+2025-01-15 10:00:12 INFO  [api] GET /api/users 200 39ms
+2025-01-15 10:00:13 WARN  [api] GET /api/legacy 404 12ms - Endpoint deprecated since v2.1
+2025-01-15 10:00:14 INFO  [api] GET /api/search?q=laptop 200 55ms
+2025-01-15 10:00:15 INFO  [api] POST /api/users 200 48ms
+2025-01-15 10:00:16 INFO  [api] GET /api/products 200 43ms
+2025-01-15 10:00:17 ERROR [api] POST /api/checkout 503 3500ms - Connection timeout: payment-gateway.internal:443
+2025-01-15 10:00:17 ERROR [circuit-breaker] Payment gateway circuit OPEN — 3 failures in 60s window
+2025-01-15 10:00:18 INFO  [api] GET /api/users 200 51ms
+2025-01-15 10:00:19 INFO  [api] GET /api/search?q=phone 200 44ms
+2025-01-15 10:00:20 INFO  [api] GET /api/products 200 62ms
+2025-01-15 10:00:21 INFO  [api] GET /api/users 200 37ms
+2025-01-15 10:00:22 INFO  [api] GET /api/users 200 46ms
+2025-01-15 10:00:23 WARN  [rate-limiter] Rate limit approaching for IP 192.168.1.42 (45/50 req/min)
+2025-01-15 10:00:24 ERROR [api] GET /api/search 429 8ms - Rate limit exceeded
+2025-01-15 10:00:25 INFO  [api] GET /api/products 200 53ms
+2025-01-15 10:00:26 INFO  [api] GET /api/users 200 41ms
+2025-01-15 10:00:27 INFO  [api] POST /api/checkout 200 49ms
+2025-01-15 10:00:28 INFO  [api] GET /api/products 200 58ms
+2025-01-15 10:00:29 ERROR [api] POST /api/checkout 500 2100ms - NullPointerException: order.shippingAddress is null
+2025-01-15 10:00:29 ERROR [api] Stack trace:
+  at CheckoutService.validateOrder(CheckoutService.java:142)
+  at CheckoutController.processCheckout(CheckoutController.java:58)
+  at Router.dispatch(Router.java:201)
+2025-01-15 10:00:30 INFO  [api] GET /api/users 200 40ms
+2025-01-15 10:00:31 INFO  [api] GET /api/search?q=tablet 200 47ms
+2025-01-15 10:00:32 INFO  [api] GET /api/users 200 36ms
+2025-01-15 10:00:33 INFO  [api] GET /api/products 200 65ms
+2025-01-15 10:00:34 INFO  [api] GET /api/users 200 42ms
+2025-01-15 10:00:35 INFO  [api] GET /api/search?q=monitor 200 50ms
+2025-01-15 10:00:36 INFO  [api] GET /api/products 200 44ms
+2025-01-15 10:00:37 ERROR [api] POST /api/checkout 502 4200ms - Bad Gateway: upstream payment-gateway.internal returned invalid response
+2025-01-15 10:00:37 ERROR [circuit-breaker] Payment gateway circuit OPEN — 5 failures in 120s window. Manual reset required.
+2025-01-15 10:00:38 WARN  [db-pool] Slow query detected: SELECT * FROM orders WHERE user_id=? (850ms, threshold=500ms)
+2025-01-15 10:00:39 INFO  [api] GET /api/users 200 37ms
+2025-01-15 10:00:40 INFO  [api] GET /api/products 200 61ms

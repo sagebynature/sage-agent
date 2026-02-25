@@ -1,0 +1,44 @@
+"""Sequential pipeline execution of agents."""
+
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sage.agent import Agent
+
+logger = logging.getLogger(__name__)
+
+
+class Pipeline:
+    """Sequential pipeline — output of one agent becomes input to the next.
+
+    Usage::
+
+        pipeline = Pipeline([agent1, agent2, agent3])
+        result = await pipeline.run("initial input")
+
+    Or using the ``>>`` operator::
+
+        pipeline = agent1 >> agent2 >> agent3
+        result = await pipeline.run("initial input")
+    """
+
+    def __init__(self, agents: list[Agent]) -> None:
+        self.agents = list(agents)
+
+    async def run(self, input: str) -> str:
+        """Run the pipeline sequentially, passing output to next agent."""
+        logger.debug("Pipeline run: %d steps", len(self.agents))
+        current = input
+        for i, agent in enumerate(self.agents):
+            logger.debug("Pipeline step %d/%d: agent='%s'", i + 1, len(self.agents), agent.name)
+            current = await agent.run(current)
+        return current
+
+    def __rshift__(self, other: Agent | Pipeline) -> Pipeline:
+        """Support ``pipeline >> agent`` and ``pipeline >> pipeline`` syntax."""
+        if isinstance(other, Pipeline):
+            return Pipeline(self.agents + other.agents)
+        return Pipeline(self.agents + [other])
