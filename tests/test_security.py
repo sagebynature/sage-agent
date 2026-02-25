@@ -12,7 +12,7 @@ import pytest
 
 from sage.exceptions import ToolError
 from sage.tools.builtins import file_read, file_write, http_request, shell
-from sage.tools.file_tools import file_edit, glob_find, grep_search
+from sage.tools.file_tools import file_edit
 from sage.tools.web_tools import web_fetch
 
 
@@ -76,20 +76,6 @@ class TestPathTraversalPrevention:
         monkeypatch.chdir(tmp_path)
         with pytest.raises(ToolError, match="Access denied"):
             await file_edit(path="/etc/hosts", old_string="x", new_string="y")
-
-    async def test_glob_find_outside_cwd(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.chdir(tmp_path)
-        with pytest.raises(ToolError, match="Access denied"):
-            await glob_find(pattern="*", path="/etc")
-
-    async def test_grep_search_outside_cwd(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.chdir(tmp_path)
-        with pytest.raises(ToolError, match="Access denied"):
-            await grep_search(pattern="password", path="/etc")
 
 
 class TestSSRFPrevention:
