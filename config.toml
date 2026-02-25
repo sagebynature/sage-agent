@@ -1,0 +1,106 @@
+# Sage Main Configuration
+#
+# This file defines global defaults and per-agent overrides for Sage.
+# Override priority (lowest → highest):
+#   1. [defaults]            — global defaults
+#   2. [agents.<name>]       — per-agent overrides
+#   3. Agent .md frontmatter — highest priority
+#
+# Paths:
+#   CLI:  --config path/to/config.toml
+#   Env:  SAGE_CONFIG_PATH=path/to/config.toml
+#   Default: ~/.config/sage/config.toml
+
+
+# ─── Global Defaults ──────────────────────────────────────────────────────────
+[defaults]
+
+# LLM model identifier (provider/model format)
+model = "azure_ai/gpt-4o"
+
+# Maximum agentic turns before stopping
+max_turns = 10
+
+# Tools available to agents (list of tool name strings)
+tools = ["read_file", "write_file", "run_command"]
+
+# ── Model Parameters ──────────────────────────────────────────────────────────
+# Only set fields are forwarded to the provider; omitted fields use provider defaults.
+[defaults.model_params]
+temperature = 0.7
+max_tokens = 4096
+# top_p = 1.0
+# top_k = 40
+# frequency_penalty = 0.0
+# presence_penalty = 0.0
+# seed = 42
+# stop = ["END"]
+# timeout = 120.0
+# response_format = { type = "json_object" }
+
+# ── Permissions ───────────────────────────────────────────────────────────────
+# Controls what actions agents can take without asking.
+# default: "allow" | "deny" | "ask"
+[defaults.permissions]
+default = "ask"
+
+[[defaults.permissions.rules]]
+tool = "run_command"
+action = "ask"
+destructive = true
+# patterns = { command = "rm -rf.*" }
+
+# ── Context Management ────────────────────────────────────────────────────────
+# Token-aware context window management.
+[defaults.context]
+compaction_threshold = 0.75   # fraction of context window that triggers compaction
+reserve_tokens = 4096         # tokens reserved for model output
+prune_tool_outputs = true     # truncate large tool outputs
+tool_output_max_chars = 5000  # max chars per tool output before truncation
+
+# ── MCP Servers ───────────────────────────────────────────────────────────────
+# Model Context Protocol server connections.
+# Each server uses either stdio (command) or sse (url) transport.
+#
+# [[defaults.mcp_servers]]
+# transport = "stdio"
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-filesystem"]
+# env = { ROOT_DIR = "/workspace" }
+#
+# [[defaults.mcp_servers]]
+# transport = "sse"
+# url = "http://localhost:8080/sse"
+
+
+# ─── Per-Agent Overrides ──────────────────────────────────────────────────────
+# Each [agents.<name>] section overrides [defaults] for a specific agent.
+# The <name> must match the agent's "name" field in its .md frontmatter.
+
+[agents.researcher]
+model = "azure_ai/gpt-4o"
+max_turns = 20
+
+[agents.researcher.model_params]
+temperature = 0.3
+max_tokens = 8192
+
+# ── Agent-only fields (not available in [defaults]) ──────────────────────────
+# memory: persistent memory backend configuration
+# skills_dir: path to a directory of skill files
+
+# [agents.researcher.memory]
+# backend = "sqlite"
+# path = "memory.db"
+# embedding = "text-embedding-3-large"
+# compaction_threshold = 50
+
+# skills_dir = "skills/"
+
+[agents.summarizer]
+model = "azure_ai/gpt-4o-mini"
+max_turns = 5
+
+[agents.summarizer.model_params]
+temperature = 0.2
+max_tokens = 2048

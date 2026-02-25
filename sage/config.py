@@ -224,9 +224,31 @@ def load_config(path: str | Path, central: MainConfig | None = None) -> AgentCon
 
     base_dir = config_path.parent
     config = _resolve_subagent_refs(config, base_dir, central)
-    logger.debug(
-        "Loaded config: name=%s, model=%s, path=%s", config.name, config.model, config_path
+
+    # Log the effective (post-merge) agent configuration.
+    logger.info("Agent '%s' loaded from %s", config.name, config_path)
+    logger.info(
+        "  model=%s, max_turns=%d, tools=%s",
+        config.model,
+        config.max_turns,
+        config.tools or [],
     )
+    if config.model_params and config.model_params.to_kwargs():
+        logger.info("  model_params=%s", config.model_params.to_kwargs())
+    if config.permissions:
+        logger.info("  permissions.default=%s, rules=%d", config.permissions.default, len(config.permissions.rules))
+    if config.context:
+        logger.info(
+            "  context: compaction_threshold=%.2f, reserve_tokens=%d",
+            config.context.compaction_threshold,
+            config.context.reserve_tokens,
+        )
+    if config.memory:
+        logger.info("  memory: backend=%s, path=%s", config.memory.backend, config.memory.path)
+    if config.mcp_servers:
+        logger.info("  mcp_servers: %d configured", len(config.mcp_servers))
+    if config.subagents:
+        logger.info("  subagents: %s", [s.name for s in config.subagents])
     return config
 
 

@@ -65,29 +65,38 @@ class MainConfig(BaseModel):
 
 
 def resolve_main_config_path(cli_path: str | None = None) -> Path | None:
-    """Resolve the main config file path.
+    """Resolve the main config file path using waterfall lookup.
 
-    Priority: CLI ``--config`` arg -> ``SAGE_CONFIG_PATH`` env var -> default path.
+    Each step falls through to the next if the file is not found:
 
-    Explicit paths (CLI/env) that don't exist raise :class:`ConfigError`.
-    Default path that doesn't exist returns ``None`` (backward compatible).
+      1. CLI ``--config`` argument
+      2. ``SAGE_CONFIG_PATH`` environment variable
+      3. ``./config.toml`` in the current working directory
+      4. ``~/.config/sage/config.toml``
+
+    Returns ``None`` when no config file is found at any location.
     """
     # 1. CLI argument
     if cli_path is not None:
         p = Path(cli_path)
-        if not p.exists():
-            raise ConfigError(f"Main config not found: {p}")
-        return p
+        if p.exists():
+            return p
+        logger.warning("Config not found at CLI path: %s — falling back", p)
 
     # 2. Environment variable
     env_path = os.environ.get("SAGE_CONFIG_PATH")
     if env_path is not None:
         p = Path(env_path)
-        if not p.exists():
-            raise ConfigError(f"Main config not found: {p}")
-        return p
+        if p.exists():
+            return p
+        logger.warning("Config not found at SAGE_CONFIG_PATH: %s — falling back", p)
 
-    # 3. Default path
+    # 3. Current working directory
+    cwd_config = Path.cwd() / "config.toml"
+    if cwd_config.exists():
+        return cwd_config
+
+    # 4. User home default
     default = Path.home() / ".config" / "sage" / "config.toml"
     return default if default.exists() else None
 
@@ -95,9 +104,11 @@ def resolve_main_config_path(cli_path: str | None = None) -> Path | None:
 def load_main_config(path: Path | None) -> MainConfig | None:
     """Load and parse main config from a TOML file.
 
-    Returns ``None`` if *path* is ``None``.
+    Returns ``None`` if *path* is ``None``.  Logs the resolved path and a
+    summary of the loaded configuration at INFO level.
     """
     if path is None:
+        logger.info("No main config file found")
         return None
 
     try:
@@ -111,9 +122,12 @@ def load_main_config(path: Path | None) -> MainConfig | None:
         raise ConfigError(f"Failed to parse main config {path}: {exc}") from exc
 
     try:
-        return MainConfig(**data)
+        config = MainConfig(**data)
     except Exception as exc:
         raise ConfigError(f"Invalid main config: {exc}") from exc
+
+    logger.info("Loaded main config from %s", path.resolve())
+    return config
 
 
 def merge_agent_config(
