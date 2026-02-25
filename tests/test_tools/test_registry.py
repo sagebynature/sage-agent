@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from sage.config import Permission
 from sage.exceptions import ToolError
 from sage.models import ToolSchema
 from sage.tools.base import ToolBase
@@ -354,25 +355,11 @@ class TestToolRegistryPermissions:
 class TestNewToolBarenames:
     """Tests for new tool bareword resolution."""
 
-    @pytest.mark.parametrize(
-        "name",
-        ["file_edit", "glob_find", "grep_search"],
-    )
-    def test_file_tools_load(self, name: str) -> None:
+    def test_file_edit_loads(self) -> None:
         registry = ToolRegistry()
-        registry.load_from_module(name)
+        registry.load_from_module("file_edit")
         names = {s.name for s in registry.get_schemas()}
-        assert name in names
-
-    @pytest.mark.parametrize(
-        "name",
-        ["git_status", "git_diff", "git_commit", "git_log", "git_checkout", "git_pr_create"],
-    )
-    def test_git_tools_load(self, name: str) -> None:
-        registry = ToolRegistry()
-        registry.load_from_module(name)
-        names = {s.name for s in registry.get_schemas()}
-        assert name in names
+        assert "file_edit" in names
 
     @pytest.mark.parametrize(
         "name",
@@ -383,3 +370,73 @@ class TestNewToolBarenames:
         registry.load_from_module(name)
         names = {s.name for s in registry.get_schemas()}
         assert name in names
+
+
+class TestRegisterFromPermissions:
+    def test_register_from_permissions_allow(self) -> None:
+        registry = ToolRegistry()
+
+        registry.register_from_permissions(Permission(shell="allow"))
+
+        names = {s.name for s in registry.get_schemas()}
+        assert "shell" in names
+
+    def test_register_from_permissions_deny(self) -> None:
+        registry = ToolRegistry()
+
+        registry.register_from_permissions(Permission(shell="deny"))
+
+        names = {s.name for s in registry.get_schemas()}
+        assert "shell" not in names
+
+    def test_register_from_permissions_pattern_dict_registers(self) -> None:
+        registry = ToolRegistry()
+
+        registry.register_from_permissions(Permission(shell={"*": "ask"}))
+
+        names = {s.name for s in registry.get_schemas()}
+        assert "shell" in names
+
+    def test_register_from_permissions_default_ask_registers(self) -> None:
+        registry = ToolRegistry()
+
+        registry.register_from_permissions(Permission(), default="ask")
+
+        names = {s.name for s in registry.get_schemas()}
+        assert {
+            "file_read",
+            "file_write",
+            "file_edit",
+            "shell",
+            "http_request",
+            "web_fetch",
+            "web_search",
+            "memory_store",
+            "memory_recall",
+        }.issubset(names)
+
+    def test_register_from_permissions_extensions(self) -> None:
+        registry = ToolRegistry()
+
+        registry.register_from_permissions(
+            Permission(read="deny", edit="deny", shell="deny", web="deny", memory="deny"),
+            default="deny",
+            extensions=["sage.tools.file_tools"],
+        )
+
+        names = {s.name for s in registry.get_schemas()}
+        assert "file_edit" in names
+
+
+class TestToolModuleMap:
+    def test_tool_module_map_no_git_tools(self) -> None:
+        assert "git_status" not in ToolRegistry._TOOL_MODULE_MAP
+        assert "git_diff" not in ToolRegistry._TOOL_MODULE_MAP
+        assert "git_log" not in ToolRegistry._TOOL_MODULE_MAP
+        assert "git_checkout" not in ToolRegistry._TOOL_MODULE_MAP
+        assert "git_commit" not in ToolRegistry._TOOL_MODULE_MAP
+        assert "git_pr_create" not in ToolRegistry._TOOL_MODULE_MAP
+
+    def test_tool_module_map_no_glob_grep(self) -> None:
+        assert "glob_find" not in ToolRegistry._TOOL_MODULE_MAP
+        assert "grep_search" not in ToolRegistry._TOOL_MODULE_MAP

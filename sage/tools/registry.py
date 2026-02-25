@@ -13,6 +13,7 @@ from sage.models import ToolSchema
 from sage.tools.base import ToolBase
 
 if TYPE_CHECKING:
+    from sage.config import Permission
     from sage.mcp.client import MCPClient
 
 logger = logging.getLogger(__name__)
@@ -153,17 +154,31 @@ class ToolRegistry:
     # Tools in separate modules that can be loaded by bare name.
     _TOOL_MODULE_MAP: dict[str, str] = {
         "file_edit": "sage.tools.file_tools",
-        "glob_find": "sage.tools.file_tools",
-        "grep_search": "sage.tools.file_tools",
-        "git_status": "sage.tools.git_tools",
-        "git_diff": "sage.tools.git_tools",
-        "git_commit": "sage.tools.git_tools",
-        "git_log": "sage.tools.git_tools",
-        "git_checkout": "sage.tools.git_tools",
-        "git_pr_create": "sage.tools.git_tools",
         "web_search": "sage.tools.web_tools",
         "web_fetch": "sage.tools.web_tools",
     }
+
+    def register_from_permissions(
+        self,
+        permission: Permission,
+        default: str = "ask",
+        extensions: list[str] | None = None,
+    ) -> None:
+        from sage.config import Permission
+
+        if not isinstance(permission, Permission):
+            raise ToolError(f"Expected Permission, got {type(permission).__name__}")
+
+        for category, tool_names in CATEGORY_TOOLS.items():
+            value = getattr(permission, category, None)
+            effective = default if value is None else value
+            if effective == "deny":
+                continue
+            for tool_name in tool_names:
+                self.load_from_module(tool_name)
+
+        for module_path in extensions or []:
+            self.load_from_module(module_path)
 
     def load_from_module(self, module_path: str) -> None:
         """Import a module and register all ``@tool``-decorated callables.
