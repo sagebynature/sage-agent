@@ -21,8 +21,8 @@ model = "azure_ai/gpt-4o"
 # Maximum agentic turns before stopping
 max_turns = 10
 
-# Tools available to agents (list of tool name strings)
-tools = ["read_file", "write_file", "run_command"]
+# Tools available to agents (list of Python module paths)
+# tools = ["sage.tools.builtins"]
 
 # ── Model Parameters ──────────────────────────────────────────────────────────
 # Only set fields are forwarded to the provider; omitted fields use provider defaults.
@@ -78,27 +78,27 @@ tool_output_max_chars = 5000  # max chars per tool output before truncation
 # The <name> must match the agent's "name" field in its .md frontmatter.
 
 [agents.researcher]
-model = "azure_ai/gpt-4o"
+model = "azure_ai/Kimi-K2.5"
 max_turns = 20
 
 [agents.researcher.model_params]
-temperature = 0.3
+temperature = 0.0
 max_tokens = 8192
 
 # ── Agent-only fields (not available in [defaults]) ──────────────────────────
 # memory: persistent memory backend configuration
 # skills_dir: path to a directory of skill files
 
-# [agents.researcher.memory]
-# backend = "sqlite"
-# path = "memory.db"
-# embedding = "text-embedding-3-large"
-# compaction_threshold = 50
+[agents.researcher.memory]
+backend = "sqlite"
+path = "memory.db"
+embedding = "text-embedding-3-large"
+compaction_threshold = 50
 
 # skills_dir = "skills/"
 
 [agents.summarizer]
-model = "azure_ai/gpt-4o-mini"
+model = "azure_ai/gpt-4o"
 max_turns = 5
 
 [agents.summarizer.model_params]

@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import logging
+
 from sage.models import Message
 from sage.providers.base import ProviderProtocol
+
+logger = logging.getLogger(__name__)
 
 
 async def compact_messages(
@@ -20,16 +24,28 @@ async def compact_messages(
       3. Keep the most recent *keep_recent* non-system messages verbatim.
     """
     if len(messages) <= threshold:
+        logger.debug(
+            "Compaction skipped: message count %d <= threshold %d",
+            len(messages),
+            threshold,
+        )
         return messages
 
     system_msgs = [m for m in messages if m.role == "system"]
     non_system = [m for m in messages if m.role != "system"]
 
     if len(non_system) <= keep_recent:
+        logger.debug("Compaction skipped: non-system messages %d <= keep_recent %d", len(non_system), keep_recent)
         return messages
 
     to_summarize = non_system[:-keep_recent]
     to_keep = non_system[-keep_recent:]
+
+    logger.info(
+        "Compaction triggered: summarizing %d message(s), keeping %d recent",
+        len(to_summarize),
+        len(to_keep),
+    )
 
     summary_text = "\n".join(f"{m.role}: {m.content or '[tool call]'}" for m in to_summarize)
 
@@ -48,7 +64,13 @@ async def compact_messages(
         content=f"[Conversation summary]: {summary_result.message.content}",
     )
 
-    return system_msgs + [summary_msg] + to_keep
+    compacted = system_msgs + [summary_msg] + to_keep
+    logger.info(
+        "Compaction complete: before=%d, after=%d",
+        len(messages),
+        len(compacted),
+    )
+    return compacted
 
 
 def prune_tool_outputs(
@@ -67,6 +89,7 @@ def prune_tool_outputs(
 
     cutoff = max(0, len(messages) - keep_recent)
     result: list[Message] = []
+    truncated_count = 0
 
     for i, msg in enumerate(messages):
         if i < cutoff and msg.role == "tool" and msg.content and len(msg.content) > max_chars:
@@ -74,7 +97,10 @@ def prune_tool_outputs(
                 msg.content[:max_chars] + f"\n\n[Truncated — original was {len(msg.content)} chars]"
             )
             result.append(msg.model_copy(update={"content": truncated}))
+            truncated_count += 1
         else:
             result.append(msg)
 
+    if truncated_count:
+        logger.debug("Pruned %d oversized tool output(s)", truncated_count)
     return result

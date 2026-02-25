@@ -160,6 +160,13 @@ class Agent:
             from sage.memory.embedding import LiteLLMEmbedding
             from sage.memory.sqlite_backend import SQLiteMemory
 
+            logger.info(
+                "Building memory backend for '%s': backend=%s, embedding=%s, path=%s",
+                config.name,
+                config.memory.backend,
+                config.memory.embedding,
+                config.memory.path,
+            )
             embedding = LiteLLMEmbedding(config.memory.embedding)
             memory = SQLiteMemory(path=config.memory.path, embedding=embedding)
 
@@ -606,11 +613,23 @@ class Agent:
 
         from sage.memory.compaction import compact_messages
 
+        before_count = len(self._conversation_history)
+        logger.info(
+            "Compacting history for agent '%s': %d messages before compaction",
+            self.name,
+            before_count,
+        )
         self._conversation_history = await compact_messages(
             self._conversation_history,
             self.provider,
             threshold=self._compaction_threshold,
             keep_recent=10,
+        )
+        logger.info(
+            "History compacted for agent '%s': %d -> %d messages",
+            self.name,
+            before_count,
+            len(self._conversation_history),
         )
         self._update_token_usage([message.model_dump() for message in self._build_messages("")])
         self._turns_since_compaction = 0
@@ -664,9 +683,11 @@ class Agent:
         """
         if self._memory_initialized or self.memory is None:
             return
+        logger.info("Initializing memory for agent '%s'", self.name)
         if hasattr(self.memory, "initialize"):
             await self.memory.initialize()
         self._memory_initialized = True
+        logger.info("Memory initialized for agent '%s'", self.name)
 
     async def _ensure_mcp_initialized(self) -> None:
         """Connect all MCP servers and register their tools (idempotent)."""
@@ -697,13 +718,22 @@ class Agent:
         """Recall relevant memories for the given query, formatted as text."""
         if self.memory is None:
             return None
+        logger.debug("Recalling memory for agent '%s': query=%.80s", self.name, query)
         try:
             entries = await self.memory.recall(query)
         except Exception as exc:
             logger.warning("Memory recall failed: %s", exc)
             return None
         if not entries:
+            logger.debug("Memory recall for agent '%s': no results", self.name)
             return None
+        top_score = entries[0].score if entries[0].score is not None else "N/A"
+        logger.debug(
+            "Memory recall for agent '%s': %d result(s), top_score=%s",
+            self.name,
+            len(entries),
+            top_score,
+        )
         lines = [f"- {e.content}" for e in entries]
         return "\n".join(lines)
 
@@ -713,6 +743,12 @@ class Agent:
             return
         content = f"User: {input}\nAssistant: {output}"
         try:
-            await self.memory.store(content)
+            memory_id = await self.memory.store(content)
+            logger.debug(
+                "Memory stored for agent '%s': id=%s, content_len=%d",
+                self.name,
+                memory_id,
+                len(content),
+            )
         except Exception as exc:
             logger.warning("Memory store failed: %s", exc)

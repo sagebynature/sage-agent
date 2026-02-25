@@ -244,7 +244,13 @@ def load_config(path: str | Path, central: MainConfig | None = None) -> AgentCon
             config.context.reserve_tokens,
         )
     if config.memory:
-        logger.info("  memory: backend=%s, path=%s", config.memory.backend, config.memory.path)
+        logger.info(
+            "  memory: backend=%s, path=%s, embedding=%s, compaction_threshold=%d",
+            config.memory.backend,
+            config.memory.path,
+            config.memory.embedding,
+            config.memory.compaction_threshold,
+        )
     if config.mcp_servers:
         logger.info("  mcp_servers: %d configured", len(config.mcp_servers))
     if config.subagents:

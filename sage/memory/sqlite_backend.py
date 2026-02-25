@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -15,6 +16,8 @@ from sage.exceptions import SageMemoryError
 from sage.memory.base import MemoryEntry
 from sage.memory.embedding import EmbeddingProtocol
 from sage.models import Message
+
+logger = logging.getLogger(__name__)
 
 
 class SQLiteMemory:
@@ -40,6 +43,7 @@ class SQLiteMemory:
 
     async def initialize(self) -> None:
         """Open the database and ensure the schema exists."""
+        logger.info("Opening memory database at %s", self._path)
         self._db = await aiosqlite.connect(self._path)
         await self._db.execute(
             """
@@ -53,10 +57,12 @@ class SQLiteMemory:
             """
         )
         await self._db.commit()
+        logger.info("Memory database schema ensured")
 
     async def close(self) -> None:
         """Close the database connection."""
         if self._db is not None:
+            logger.debug("Closing memory database connection")
             await self._db.close()
             self._db = None
 
@@ -79,11 +85,13 @@ class SQLiteMemory:
             (memory_id, content, embedding_blob, meta_json, created_at),
         )
         await self._db.commit()  # type: ignore[union-attr]
+        logger.debug("Stored memory id=%s, content_preview=%.80s", memory_id, content)
         return memory_id
 
     async def recall(self, query: str, limit: int = 5) -> list[MemoryEntry]:
         """Return the top-*limit* memories ranked by cosine similarity."""
         self._ensure_open()
+        logger.debug("Recalling memories: query_preview=%.80s, limit=%d", query, limit)
 
         query_vectors = await self._embedding.embed([query])
         query_vec = np.array(query_vectors[0], dtype=np.float32)
@@ -107,7 +115,15 @@ class SQLiteMemory:
             scored.append((float(score), entry))
 
         scored.sort(key=lambda t: t[0], reverse=True)
-        return [entry for _, entry in scored[:limit]]
+        results = [entry for _, entry in scored[:limit]]
+        top_scores = [f"{s:.4f}" for s, _ in scored[:limit]]
+        logger.debug(
+            "Recall complete: candidates=%d, returned=%d, top_scores=%s",
+            len(rows),
+            len(results),
+            top_scores,
+        )
+        return results
 
     async def compact(self, messages: list[Message]) -> list[Message]:
         """Pass-through; compaction is handled by :func:`compact_messages`."""
@@ -116,6 +132,7 @@ class SQLiteMemory:
     async def clear(self) -> None:
         """Delete all stored memories."""
         self._ensure_open()
+        logger.info("Clearing all stored memories")
         await self._db.execute("DELETE FROM memories")  # type: ignore[union-attr]
         await self._db.commit()  # type: ignore[union-attr]
 

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Protocol, runtime_checkable
 
 import litellm
 
 from sage.providers.base import ProviderProtocol
+
+logger = logging.getLogger(__name__)
 
 
 @runtime_checkable
@@ -41,8 +44,13 @@ class LiteLLMEmbedding:
     def __init__(self, model: str, **kwargs: Any) -> None:
         self._model = model
         self._kwargs = kwargs
+        logger.debug("LiteLLMEmbedding initialized with model=%s", model)
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
         """Embed texts via litellm.aembedding."""
+        logger.debug("Embedding %d text(s) via model=%s", len(texts), self._model)
         response = await litellm.aembedding(model=self._model, input=texts, **self._kwargs)
-        return [item["embedding"] for item in response.data]
+        vectors = [item["embedding"] for item in response.data]
+        dims = len(vectors[0]) if vectors else 0
+        logger.debug("Embedding complete: %d vector(s), dimensions=%d", len(vectors), dims)
+        return vectors
