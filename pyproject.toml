@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "sage"
-version = "0.1.0"
+version = "1.0.0-rc.1"
 description = "Sage - Simplified AI agent definition and deployment via configuration"
 authors = [
     {name = "Sage Choi", email = "iamsagebynature@gmail.com"}
