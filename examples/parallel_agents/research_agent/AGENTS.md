@@ -1,7 +1,7 @@
 ---
 name: researcher
 model: azure_ai/gpt-4o
-tools:
+extensions:
   - sage.tools.builtins
 max_turns: 15
 model_params:

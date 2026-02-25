@@ -10,9 +10,9 @@ mcp_servers:
     command: npx
     args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
 max_turns: 10
-tools:
-  - file_read
-  - shell
+permission:
+  read: allow
+  shell: allow
 memory:
   backend: sqlite
   path: mcp_agent_memory.db

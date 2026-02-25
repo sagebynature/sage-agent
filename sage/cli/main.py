@@ -262,7 +262,7 @@ def init(name: str, model: str) -> None:
 name: {name}
 model: {model}
 max_turns: 10
-max_turns: 10
+
 memory:
   backend: sqlite
   path: memory.db

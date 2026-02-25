@@ -5,7 +5,6 @@ memory:
   backend: sqlite
   path: memory.db
   embedding: azure_ai/text-embedding-3-large
-tools: []
 max_turns: 10
 ---
 

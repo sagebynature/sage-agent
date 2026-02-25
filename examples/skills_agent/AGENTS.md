@@ -1,9 +1,9 @@
 ---
 name: dev-assistant
 model: azure_ai/gpt-4o
-tools:
-  - file_read
-  - shell
+permission:
+  read: allow
+  shell: allow
 max_turns: 15
 model_params:
   temperature: 0

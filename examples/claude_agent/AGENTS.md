@@ -1,9 +1,9 @@
 ---
 name: claude-assistant
 model: azure_ai/claude-sonnet-4-6
-tools:
-  - file_read
-  - shell
+permission:
+  read: allow
+  shell: allow
 memory:
   backend: sqlite
   path: ./memory.db
