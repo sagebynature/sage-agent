@@ -6,6 +6,8 @@ Inspired by the recent sprawl of OpenClaw, PicoBot, ZeroClaw, and whatever else 
 
 Sage doesn't aspire to be the next Claude Code. Instead, it's intentionally designed to be a **clean slate out of the box**, so that *you* can make it more intelligent. No opinions. No bloat. Just a solid foundation you can build on top of.
 
+See also: [Sage Evaluator](https://github.com/sagebynature/sage-evaluator) — a companion app for evaluating and benchmarking your agents.
+
 ## Key Features
 
 ### Agents
