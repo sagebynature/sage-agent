@@ -46,6 +46,7 @@ sage = "sage.cli.main:cli"
 
 [tool.uv.build-backend]
 module-root = ""
+module-name = "sage"
 
 [tool.hatch.build.targets.wheel]
 packages = ["sage"]
