@@ -195,6 +195,7 @@ class TestAgentRun:
         config_path = _write_valid_config(tmp_path)
         mock_agent = MagicMock()
         mock_agent.run = AsyncMock(return_value="Hello from the agent!")
+        mock_agent.close = AsyncMock()
 
         mock_cls = MagicMock()
         mock_cls.from_config.return_value = mock_agent
@@ -214,6 +215,7 @@ class TestAgentRun:
     def test_run_stream(self, tmp_path: Path) -> None:
         config_path = _write_valid_config(tmp_path)
         mock_agent = MagicMock()
+        mock_agent.close = AsyncMock()
 
         async def mock_stream(input: str):  # noqa: A002
             for chunk in ["Hello", " from", " stream!"]:
@@ -261,6 +263,7 @@ class TestAgentRun:
         _write_valid_config(tmp_path)  # creates tmp_path/AGENTS.md
         mock_agent = MagicMock()
         mock_agent.run = AsyncMock(return_value="Hello from dir!")
+        mock_agent.close = AsyncMock()
 
         mock_cls = MagicMock()
         mock_cls.from_config.return_value = mock_agent

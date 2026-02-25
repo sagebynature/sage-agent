@@ -114,7 +114,9 @@ class TestResolveMainConfigPath:
         toml_path.write_text("[defaults]\n")
         assert resolve_main_config_path(str(toml_path)) == toml_path
 
-    def test_cli_path_not_found_falls_back(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_cli_path_not_found_falls_back(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.delenv("SAGE_CONFIG_PATH", raising=False)
         monkeypatch.chdir(tmp_path)
         result = resolve_main_config_path(str(tmp_path / "nonexistent.toml"))
@@ -173,7 +175,9 @@ class TestResolveMainConfigPath:
         result = resolve_main_config_path()
         assert result == cwd_toml
 
-    def test_default_path_not_found_returns_none(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def test_default_path_not_found_returns_none(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
         monkeypatch.delenv("SAGE_CONFIG_PATH", raising=False)
         monkeypatch.chdir(tmp_path)  # empty dir, no config.toml
         result = resolve_main_config_path()

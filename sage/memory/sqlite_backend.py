@@ -99,7 +99,7 @@ class SQLiteMemory:
         cursor = await self._db.execute(  # type: ignore[union-attr]
             "SELECT id, content, embedding, metadata, created_at FROM memories"
         )
-        rows = await cursor.fetchall()
+        rows = list(await cursor.fetchall())
 
         scored: list[tuple[float, MemoryEntry]] = []
         for row_id, content, emb_blob, meta_json, created_at in rows:

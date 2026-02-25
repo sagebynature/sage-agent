@@ -666,11 +666,17 @@ class Agent:
         return messages
 
     async def close(self) -> None:
-        """Release resources held by the agent (memory DB connection, etc.).
+        """Release resources held by the agent (MCP connections, memory DB, etc.).
 
-        Call this when you are finished with the agent to ensure the memory
-        database connection is closed cleanly.  Safe to call multiple times.
+        Call this when you are finished with the agent to ensure MCP servers
+        are disconnected and the memory database connection is closed cleanly.
+        Safe to call multiple times.
         """
+        for client in self.mcp_clients:
+            try:
+                await client.disconnect()
+            except Exception as exc:
+                logger.debug("MCP disconnect error: %s", exc)
         if self.memory is not None and hasattr(self.memory, "close"):
             await self.memory.close()
             self._memory_initialized = False

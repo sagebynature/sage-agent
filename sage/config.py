@@ -236,7 +236,11 @@ def load_config(path: str | Path, central: MainConfig | None = None) -> AgentCon
     if config.model_params and config.model_params.to_kwargs():
         logger.info("  model_params=%s", config.model_params.to_kwargs())
     if config.permissions:
-        logger.info("  permissions.default=%s, rules=%d", config.permissions.default, len(config.permissions.rules))
+        logger.info(
+            "  permissions.default=%s, rules=%d",
+            config.permissions.default,
+            len(config.permissions.rules),
+        )
     if config.context:
         logger.info(
             "  context: compaction_threshold=%.2f, reserve_tokens=%d",

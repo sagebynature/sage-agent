@@ -122,14 +122,16 @@ async def _agent_run(
     from sage.agent import Agent
 
     agent = Agent.from_config(config_path, central=main_config)
-
-    if use_stream:
-        async for chunk in agent.stream(user_input):
-            click.echo(chunk, nl=False)
-        click.echo()  # Final newline
-    else:
-        result = await agent.run(user_input)
-        click.echo(result)
+    try:
+        if use_stream:
+            async for chunk in agent.stream(user_input):
+                click.echo(chunk, nl=False)
+            click.echo()  # Final newline
+        else:
+            result = await agent.run(user_input)
+            click.echo(result)
+    finally:
+        await agent.close()
 
 
 @agent.command("orchestrate")

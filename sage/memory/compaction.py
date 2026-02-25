@@ -35,7 +35,11 @@ async def compact_messages(
     non_system = [m for m in messages if m.role != "system"]
 
     if len(non_system) <= keep_recent:
-        logger.debug("Compaction skipped: non-system messages %d <= keep_recent %d", len(non_system), keep_recent)
+        logger.debug(
+            "Compaction skipped: non-system messages %d <= keep_recent %d",
+            len(non_system),
+            keep_recent,
+        )
         return messages
 
     to_summarize = non_system[:-keep_recent]
