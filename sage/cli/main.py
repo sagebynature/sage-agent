@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import apollo_logging  # type: ignore
 import click
 from dotenv import load_dotenv
 
@@ -36,8 +35,6 @@ def _get_central(ctx: click.Context) -> CentralConfig | None:
 def cli(ctx: click.Context, central_config_path: str | None) -> None:
     """Sage - AI agent definition and deployment."""
     load_dotenv()
-    if Path("logging.conf").exists():
-        apollo_logging.init("logging.conf")
     ctx.ensure_object(dict)
     from sage.central_config import resolve_central_config_path, load_central_config
 

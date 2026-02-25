@@ -7,7 +7,7 @@ name = "sage"
 version = "0.1.0"
 description = "Sage - Simplified AI agent definition and deployment via configuration"
 authors = [
-    {name = "Sage Choi", email = "sachoi@apollo.com"}
+    {name = "Sage Choi", email = "iamsagebynature@gmail.com"}
 ]
 requires-python = ">=3.10,<3.13"
 readme = "README.md"
@@ -20,10 +20,10 @@ dependencies = [
     "click>=8.0",
     "numpy>=1.26",
     "mcp>=1.0",
-    "apollo-logging>=0.3.0",
     "python-dotenv>=1.0",
     "textual>=0.50",
     "httpx>=0.27",
+    "colorlog>=6.0",
     "markdownify>=0.14",
     "tomli>=2.0; python_version < '3.11'",
 ]
@@ -46,9 +46,6 @@ sage = "sage.cli.main:cli"
 [tool.hatch.build.targets.wheel]
 packages = ["sage"]
 
-[[tool.uv.index]]
-name = "apollo"
-url = "https://pkgs.dev.azure.com/ApolloAzureDevOps/_packaging/ApolloAzureDevOps/pypi/simple/"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

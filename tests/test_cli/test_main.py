@@ -61,17 +61,6 @@ def _write_config_with_mcp(tmp_path: Path) -> Path:
     return config
 
 
-class TestLoggingInit:
-    def test_cli_initializes_logging(self, tmp_path: Path) -> None:
-        """apollo_logging.init should be called when any subcommand runs."""
-        config_path = tmp_path / "AGENTS.md"
-        config_path.write_text("---\nname: test-agent\nmodel: gpt-4o\n---\n")
-        with patch("sage.cli.main.apollo_logging.init") as mock_init:
-            runner = CliRunner()
-            runner.invoke(cli, ["agent", "validate", str(config_path)])
-            mock_init.assert_called_once()
-
-
 class TestVersion:
     def test_version(self) -> None:
         runner = CliRunner()

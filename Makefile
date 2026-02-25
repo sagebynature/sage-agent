@@ -4,8 +4,6 @@
 
 PACKAGE_NAME = sage
 SRC_DIR = $(PACKAGE_NAME)
-export UV_INDEX_APOLLO_USERNAME := user
-export UV_INDEX_APOLLO_PASSWORD := $(AZURE_ARTIFACTS_ENV_ACCESS_TOKEN)
 
 check-env:
 	@which python >/dev/null 2>&1 || (echo "Python 3 is required. Please install it first." && exit 1)
