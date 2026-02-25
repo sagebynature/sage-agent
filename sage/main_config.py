@@ -27,7 +27,7 @@ from sage.config import (
     MCPServerConfig,
     MemoryConfig,
     ModelParams,
-    PermissionsConfig,
+    Permission,
 )
 from sage.exceptions import ConfigError
 
@@ -42,9 +42,9 @@ class ConfigOverrides(BaseModel):
     model: str | None = None
     model_params: ModelParams | None = None
     max_turns: int | None = None
-    permissions: PermissionsConfig | None = None
+    permission: Permission | None = None
     context: ContextConfig | None = None
-    tools: list[str] | None = None
+    extensions: list[str] | None = None
     mcp_servers: list[MCPServerConfig] | None = None
 
 

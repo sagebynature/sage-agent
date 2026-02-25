@@ -123,7 +123,8 @@ def create_temp_project() -> Path:
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Demo runner for the safe-coder agent")
     parser.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
         help="Enable debug logging for sage internals",
     )
@@ -150,14 +151,10 @@ async def main() -> None:
     print("=" * 60)
     print(f"\n  Agent:       {config.name}")
     print(f"  Model:       {config.model}")
-    print(f"  Tools:       {config.tools}")
-
-    if config.permissions:
-        print(f"  Permissions: default={config.permissions.default}")
-        for rule in config.permissions.rules:
-            patterns = f" patterns={rule.patterns}" if rule.patterns else ""
-            destr = " [destructive]" if rule.destructive else ""
-            print(f"    - {rule.tool}: {rule.action}{patterns}{destr}")
+    print(f"  Extensions:  {config.extensions if config.extensions else 'none'}")
+    if config.permission:
+        perm_dict = config.permission.model_dump(exclude_none=True)
+        print(f"  Permission:  {perm_dict}")
 
     if config.context:
         print(f"  Context:     compaction_threshold={config.context.compaction_threshold}")

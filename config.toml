@@ -38,17 +38,10 @@ max_tokens = 4096
 # timeout = 120.0
 # response_format = { type = "json_object" }
 
-# ── Permissions ───────────────────────────────────────────────────────────────
+# ── Permission ────────────────────────────────────────────────────────────────
 # Controls what actions agents can take without asking.
-# default: "allow" | "deny" | "ask"
-[defaults.permissions]
-default = "ask"
-
-[[defaults.permissions.rules]]
-tool = "run_command"
-action = "ask"
-destructive = true
-# patterns = { command = "rm -rf.*" }
+[defaults.permission]
+shell = "ask"
 
 # ── Context Management ────────────────────────────────────────────────────────
 # Token-aware context window management.

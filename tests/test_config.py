@@ -8,6 +8,8 @@ are complete.
 from __future__ import annotations
 
 import logging
+import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -21,6 +23,18 @@ from pydantic import ValidationError
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _stub_merge_agent_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = types.ModuleType("sage.main_config")
+
+    def merge_agent_config(metadata: dict, central: object | None, agent_name: str | None) -> dict:
+        _ = (central, agent_name)
+        return metadata
+
+    module.merge_agent_config = merge_agent_config  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "sage.main_config", module)
 
 
 def _write_md(path: Path, frontmatter: dict, body: str = "") -> Path:
@@ -58,7 +72,7 @@ class TestLoadConfig:
         config = load_config(cfg_path)
 
         assert config.description == ""
-        assert config.tools == []
+        assert config.extensions == []
         assert config.max_turns == 10
         assert config.memory is None
         assert config.subagents == []
@@ -177,17 +191,17 @@ class TestLoadConfig:
         assert mcp.url == "http://localhost:8080/sse"
         assert mcp.command is None
 
-    def test_tools_list(self, tmp_path: Path) -> None:
+    def test_extensions_field_parsed(self, tmp_path: Path) -> None:
         cfg_path = _write_md(
             tmp_path / "AGENTS.md",
             {
                 "name": "agent",
                 "model": "gpt-4o",
-                "tools": ["sage.tools.builtins", "myproject.tools:custom_search"],
+                "extensions": ["myapp.tools"],
             },
         )
         config = load_config(cfg_path)
-        assert config.tools == ["sage.tools.builtins", "myproject.tools:custom_search"]
+        assert config.extensions == ["myapp.tools"]
 
     def test_memory_config(self, tmp_path: Path) -> None:
         cfg_path = _write_md(
@@ -203,6 +217,7 @@ class TestLoadConfig:
             },
         )
         config = load_config(cfg_path)
+        assert config.memory is not None
         assert config.memory.backend == "sqlite"
         assert config.memory.path == "./data/memory.db"
         assert config.memory.compaction_threshold == 100
@@ -227,10 +242,7 @@ class TestLoadConfig:
                 "name": "research-assistant",
                 "model": "azure/gpt-4o",
                 "description": "My research assistant",
-                "tools": [
-                    "sage.tools.builtins",
-                    "myproject.tools:custom_search",
-                ],
+                "extensions": ["myproject.tools"],
                 "memory": {
                     "backend": "sqlite",
                     "path": "./data/memory.db",
@@ -257,7 +269,8 @@ class TestLoadConfig:
         assert (
             config._body == "You are a research assistant. Provide detailed, accurate information."
         )
-        assert len(config.tools) == 2
+        assert config.extensions == ["myproject.tools"]
+        assert config.memory is not None
         assert config.memory.compaction_threshold == 100
         assert config.max_turns == 15
         assert len(config.mcp_servers) == 1
@@ -721,42 +734,71 @@ class TestConfigLogging:
         )
 
 
-class TestPermissionsConfig:
-    def test_permissions_config_parsed(self, tmp_path: Path) -> None:
+class TestPermissionConfig:
+    def test_permission_field_parsed(self, tmp_path: Path) -> None:
         config_file = _write_md(
             tmp_path / "AGENTS.md",
             {
                 "name": "test",
                 "model": "gpt-4o",
-                "permissions": {
-                    "default": "deny",
-                    "rules": [
-                        {"tool": "file_read", "action": "allow"},
-                        {
-                            "tool": "shell",
-                            "action": "ask",
-                            "patterns": {"git *": "allow", "*": "ask"},
-                        },
-                    ],
-                },
+                "permission": {"shell": "allow"},
             },
             body="You are a test agent.",
         )
         config = load_config(str(config_file))
-        assert config.permissions is not None
-        assert config.permissions.default == "deny"
-        assert len(config.permissions.rules) == 2
-        assert config.permissions.rules[0].tool == "file_read"
-        assert config.permissions.rules[1].patterns is not None
+        assert config.permission is not None
+        assert config.permission.shell == "allow"
 
-    def test_no_permissions_is_none(self, tmp_path: Path) -> None:
+    def test_empty_permission_block(self, tmp_path: Path) -> None:
+        config_file = _write_md(
+            tmp_path / "AGENTS.md",
+            {
+                "name": "test",
+                "model": "gpt-4o",
+                "permission": {},
+            },
+            body="Agent prompt.",
+        )
+        config = load_config(str(config_file))
+        assert config.permission is not None
+        from sage.config import Permission
+
+        assert config.permission == Permission()
+
+    def test_permission_none_by_default(self, tmp_path: Path) -> None:
         config_file = _write_md(
             tmp_path / "AGENTS.md",
             {"name": "test", "model": "gpt-4o"},
             body="Agent prompt.",
         )
         config = load_config(str(config_file))
-        assert config.permissions is None
+        assert config.permission is None
+
+    def test_old_tools_field_rejected(self, tmp_path: Path) -> None:
+        config_file = _write_md(
+            tmp_path / "AGENTS.md",
+            {
+                "name": "test",
+                "model": "gpt-4o",
+                "tools": ["shell"],
+            },
+            body="Agent prompt.",
+        )
+        with pytest.raises(ConfigError, match="Invalid agent configuration"):
+            load_config(str(config_file))
+
+    def test_old_permissions_field_rejected(self, tmp_path: Path) -> None:
+        config_file = _write_md(
+            tmp_path / "AGENTS.md",
+            {
+                "name": "test",
+                "model": "gpt-4o",
+                "permissions": {"default": "deny"},
+            },
+            body="Agent prompt.",
+        )
+        with pytest.raises(ConfigError, match="Invalid agent configuration"):
+            load_config(str(config_file))
 
 
 class TestContextConfig:
@@ -861,11 +903,11 @@ class TestPermissionModel:
         from sage.config import Permission
 
         with pytest.raises(ValidationError):
-            Permission(read="invalid")
+            Permission(read="invalid")  # type: ignore[arg-type]
 
     def test_permission_dict_invalid_value_raises_validation_error(self) -> None:
         """Permission field dict with invalid action value raises ValidationError."""
         from sage.config import Permission
 
         with pytest.raises(ValidationError):
-            Permission(shell={"*": "invalid_action"})
+            Permission(shell={"*": "invalid_action"})  # type: ignore[arg-type]

@@ -184,8 +184,10 @@ def agent_validate(ctx: click.Context, config_path: str) -> None:
         main_config = _get_main_config(ctx)
         config = load_config(config_path, central=main_config)
         click.echo(f"Config valid: {config.name} (model: {config.model})")
-        if config.tools:
-            click.echo(f"  Tools: {', '.join(config.tools)}")
+        if config.extensions:
+            click.echo(f"  Extensions: {', '.join(config.extensions)}")
+        if config.permission:
+            click.echo(f"  Permission: {config.permission.model_dump(exclude_none=True)}")
         if config.subagents:
             click.echo(f"  Subagents: {', '.join(s.name for s in config.subagents)}")
         if config.mcp_servers:
@@ -229,13 +231,23 @@ def tool_list(ctx: click.Context, config_path: str) -> None:
     try:
         main_config = _get_main_config(ctx)
         config = load_config(config_path, central=main_config)
-        if not config.tools:
+        if not config.extensions and not config.permission:
             click.echo("No tools configured.")
             return
 
         click.echo(f"Tools for {config.name}:")
-        for tool_path in config.tools:
-            click.echo(f"  - {tool_path}")
+        if config.extensions:
+            click.echo("  Extensions:")
+            for ext in config.extensions:
+                click.echo(f"    - {ext}")
+        if config.permission:
+            # Show non-deny permission categories
+            perm_dict = config.permission.model_dump(exclude_none=True)
+            if perm_dict:
+                click.echo("  Permissions:")
+                for key, value in perm_dict.items():
+                    if value != "deny":
+                        click.echo(f"    {key}: {value}")
     except ConfigError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
@@ -249,7 +261,7 @@ def init(name: str, model: str) -> None:
     md_content = f"""---
 name: {name}
 model: {model}
-tools: []
+max_turns: 10
 max_turns: 10
 memory:
   backend: sqlite

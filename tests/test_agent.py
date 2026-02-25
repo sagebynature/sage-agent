@@ -1968,13 +1968,8 @@ class TestAgentFromConfigWithPermissions:
             ---
             name: test
             model: gpt-4o
-            tools:
-              - file_read
-            permissions:
-              default: deny
-              rules:
-                - tool: file_read
-                  action: allow
+            permission:
+              read: allow
             ---
             You are a test agent.
         """)

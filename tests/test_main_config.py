@@ -49,9 +49,9 @@ class TestConfigOverrides:
         assert overrides.model is None
         assert overrides.model_params is None
         assert overrides.max_turns is None
-        assert overrides.permissions is None
+        assert overrides.permission is None
         assert overrides.context is None
-        assert overrides.tools is None
+        assert overrides.extensions is None
         assert overrides.mcp_servers is None
 
     def test_model_dump_excludes_none(self) -> None:
@@ -213,13 +213,13 @@ class TestLoadMainConfig:
 [defaults]
 model = "azure_ai/gpt-4o"
 max_turns = 20
-tools = ["sage.tools.builtins"]
+extensions = ["sage.tools.builtins"]
 
 [defaults.model_params]
 temperature = 0.7
 
-[defaults.permissions]
-default = "allow"
+[defaults.permission]
+shell = "allow"
 
 [agents.research-assistant]
 model = "azure_ai/gpt-4o"
@@ -238,8 +238,8 @@ max_turns = 5
         assert cfg.defaults.model == "azure_ai/gpt-4o"
         assert cfg.defaults.model_params is not None
         assert cfg.defaults.model_params.temperature == 0.7
-        assert cfg.defaults.permissions is not None
-        assert cfg.defaults.permissions.default == "allow"
+        assert cfg.defaults.permission is not None
+        assert cfg.defaults.permission.shell == "allow"
         assert "research-assistant" in cfg.agents
         assert cfg.agents["research-assistant"].max_turns == 30
         assert cfg.agents["research-assistant"].model_params is not None
@@ -417,10 +417,10 @@ class TestLoadConfigWithCentral:
             {"name": "agent", "description": "Tool user"},
         )
         central = MainConfig(
-            defaults=ConfigOverrides(model="gpt-4o", tools=["sage.tools.builtins"])
+            defaults=ConfigOverrides(model="gpt-4o", extensions=["sage.tools.builtins"])
         )
         config = load_config(cfg_path, central=central)
-        assert config.tools == ["sage.tools.builtins"]
+        assert config.extensions == ["sage.tools.builtins"]
 
     def test_permissions_from_central(self, tmp_path: Path) -> None:
         cfg_path = _write_md(
@@ -430,12 +430,13 @@ class TestLoadConfigWithCentral:
         central = MainConfig(
             defaults=ConfigOverrides(
                 model="gpt-4o",
-                permissions={"default": "deny"},  # type: ignore[arg-type]
+                permission={"shell": "deny"},  # type: ignore[arg-type]
             )
         )
+
         config = load_config(cfg_path, central=central)
-        assert config.permissions is not None
-        assert config.permissions.default == "deny"
+        assert config.permission is not None
+        assert config.permission.shell == "deny"
 
     def test_config_ref_subagent_merged_with_central(self, tmp_path: Path) -> None:
         """Config-ref subagents are merged with main config."""

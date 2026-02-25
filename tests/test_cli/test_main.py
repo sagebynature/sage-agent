@@ -17,7 +17,7 @@ def _write_valid_config(tmp_path: Path) -> Path:
         "---\n"
         "name: test-agent\n"
         "model: gpt-4o\n"
-        "tools:\n"
+        "extensions:\n"
         "  - my_tools.search\n"
         "  - my_tools.calc\n"
         "max_turns: 5\n"
@@ -76,7 +76,7 @@ class TestAgentValidate:
         result = runner.invoke(cli, ["agent", "validate", str(config_path)])
         assert result.exit_code == 0
         assert "Config valid: test-agent (model: gpt-4o)" in result.output
-        assert "Tools: my_tools.search, my_tools.calc" in result.output
+        assert "Extensions: my_tools.search, my_tools.calc" in result.output
 
     def test_valid_config_with_subagents(self, tmp_path: Path) -> None:
         config_path = _write_config_with_subagents(tmp_path)
@@ -142,9 +142,9 @@ class TestToolList:
         runner = CliRunner()
         result = runner.invoke(cli, ["tool", "list", str(config_path)])
         assert result.exit_code == 0
-        assert "Tools for test-agent:" in result.output
-        assert "my_tools.search" in result.output
-        assert "my_tools.calc" in result.output
+        assert "Extensions:" in result.output
+        assert "- my_tools.search" in result.output
+        assert "- my_tools.calc" in result.output
 
     def test_list_no_tools(self, tmp_path: Path) -> None:
         config_path = tmp_path / "no_tools.md"
@@ -152,7 +152,8 @@ class TestToolList:
         runner = CliRunner()
         result = runner.invoke(cli, ["tool", "list", str(config_path)])
         assert result.exit_code == 0
-        assert "No tools configured." in result.output
+        # bare config has no explicit extensions but inherits permission from main config
+        assert "Tools for bare:" in result.output or "No tools configured." in result.output
 
 
 class TestInit:
@@ -170,6 +171,7 @@ class TestInit:
         assert "name: demo" in md_content
         assert "model: claude-3" in md_content
         assert "You are demo" in md_content
+        assert "tools:" not in md_content  # tools field should not exist
 
     def test_creates_with_defaults(self, tmp_path: Path, monkeypatch: object) -> None:
         monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]

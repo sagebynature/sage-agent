@@ -172,21 +172,38 @@ class Agent:
 
         # Build permission handler from config.
         permission_handler = None
-        if config.permissions is not None:
+        if config.permission is not None:
             from sage.permissions.base import PermissionAction
-            from sage.permissions.policy import PolicyPermissionHandler, PermissionRule
+            from sage.permissions.policy import CategoryPermissionRule, PolicyPermissionHandler
+            from sage.tools.registry import CATEGORY_TOOLS
 
-            rules = [
-                PermissionRule(
-                    tool=r.tool,
-                    action=PermissionAction(r.action),
-                    patterns=r.patterns,
+            rules: list[CategoryPermissionRule] = []
+            for category in CATEGORY_TOOLS:
+                category_permission = getattr(config.permission, category, None)
+                if category_permission is None:
+                    continue
+                if isinstance(category_permission, dict):
+                    rules.append(
+                        CategoryPermissionRule(
+                            category=category,
+                            action=PermissionAction.ASK,
+                            patterns={
+                                pattern: PermissionAction(action)
+                                for pattern, action in category_permission.items()
+                            },
+                        )
+                    )
+                    continue
+                rules.append(
+                    CategoryPermissionRule(
+                        category=category,
+                        action=PermissionAction(category_permission),
+                    )
                 )
-                for r in config.permissions.rules
-            ]
+
             permission_handler = PolicyPermissionHandler(
                 rules=rules,
-                default=PermissionAction(config.permissions.default),
+                default=PermissionAction.ASK,
             )
 
         # Build token budget from config.
@@ -207,7 +224,6 @@ class Agent:
             name=config.name,
             model=config.model,
             description=config.description,
-            tools=config.tools or None,
             max_turns=config.max_turns,
             subagents=subagents,
             body=config._body,
@@ -219,6 +235,15 @@ class Agent:
             if config.memory is not None
             else 50,
         )
+
+        if config.permission is not None:
+            agent.tool_registry.register_from_permissions(
+                config.permission,
+                extensions=config.extensions or None,
+            )
+        elif config.extensions:
+            for extension_path in config.extensions:
+                agent.tool_registry.load_from_module(extension_path)
 
         # Wire permission handler into tool registry.
         if permission_handler is not None:
