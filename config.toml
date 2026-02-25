@@ -16,7 +16,7 @@
 [defaults]
 
 # LLM model identifier (provider/model format)
-model = "azure_ai/gpt-4o"
+model = "azure_ai/Kimi-K2.5"
 
 # Maximum agentic turns before stopping
 max_turns = 10
