@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.0.0 (2026-02-25)
+
+### Documentation
+
+- Add Sage Evaluator companion app reference to README
+  ([`47b241b`](https://github.com/sagebynature/sage-agent/commit/47b241be635ac6c538c7ced5b1681ae86e96302a))
+
+
 ## v1.0.0-rc.7 (2026-02-25)
 
 ### Bug Fixes
