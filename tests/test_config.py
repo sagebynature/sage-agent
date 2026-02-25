@@ -735,7 +735,6 @@ class TestPermissionsConfig:
                         {
                             "tool": "shell",
                             "action": "ask",
-                            "destructive": True,
                             "patterns": {"git *": "allow", "*": "ask"},
                         },
                     ],
@@ -748,7 +747,6 @@ class TestPermissionsConfig:
         assert config.permissions.default == "deny"
         assert len(config.permissions.rules) == 2
         assert config.permissions.rules[0].tool == "file_read"
-        assert config.permissions.rules[1].destructive is True
         assert config.permissions.rules[1].patterns is not None
 
     def test_no_permissions_is_none(self, tmp_path: Path) -> None:
@@ -792,3 +790,82 @@ class TestContextConfig:
         )
         config = load_config(str(config_file))
         assert config.context is None
+
+
+# ---------------------------------------------------------------------------
+# Permission model tests (NEW)
+# ---------------------------------------------------------------------------
+
+
+class TestPermissionModel:
+    """Tests for the new Permission model (config-level permissions)."""
+
+    def test_permission_all_none_fields(self) -> None:
+        """Permission model instantiates with all fields defaulting to None."""
+        from sage.config import Permission
+
+        perm = Permission()
+        assert perm.read is None
+        assert perm.edit is None
+        assert perm.shell is None
+        assert perm.web is None
+        assert perm.memory is None
+        assert perm.task is None
+
+    def test_permission_string_action(self) -> None:
+        """Permission field accepts plain string action."""
+        from sage.config import Permission
+
+        perm = Permission(read="allow", shell="deny", web="ask")
+        assert perm.read == "allow"
+        assert perm.shell == "deny"
+        assert perm.web == "ask"
+
+    def test_permission_dict_pattern(self) -> None:
+        """Permission field accepts dict with string-to-action pattern mapping."""
+        from sage.config import Permission
+
+        perm = Permission(
+            shell={"*": "deny", "git log*": "allow"},
+            memory={"store": "ask", "recall": "allow"},
+        )
+        assert perm.shell == {"*": "deny", "git log*": "allow"}
+        assert perm.memory == {"store": "ask", "recall": "allow"}
+
+    def test_permission_mixed_string_and_dict(self) -> None:
+        """Permission model supports mix of string and dict fields."""
+        from sage.config import Permission
+
+        perm = Permission(read="allow", shell={"*": "deny"}, task={"compile": "allow"})
+        assert perm.read == "allow"
+        assert perm.shell == {"*": "deny"}
+        assert perm.task == {"compile": "allow"}
+
+    def test_permission_extra_field_allowed(self) -> None:
+        """Permission model allows extra fields (for MCP/custom tool categories)."""
+        from sage.config import Permission
+
+        perm = Permission(
+            read="allow",
+            custom_mcp_tool="ask",  # type: ignore[call-arg]
+            another_custom={"pattern": "allow"},  # type: ignore[call-arg]
+        )
+        assert perm.read == "allow"
+        # Extra fields should be accessible via model_dump
+        dumped = perm.model_dump()
+        assert dumped["custom_mcp_tool"] == "ask"
+        assert dumped["another_custom"] == {"pattern": "allow"}
+
+    def test_permission_invalid_string_action_raises_validation_error(self) -> None:
+        """Permission field rejects invalid string action."""
+        from sage.config import Permission
+
+        with pytest.raises(ValidationError):
+            Permission(read="invalid")
+
+    def test_permission_dict_invalid_value_raises_validation_error(self) -> None:
+        """Permission field dict with invalid action value raises ValidationError."""
+        from sage.config import Permission
+
+        with pytest.raises(ValidationError):
+            Permission(shell={"*": "invalid_action"})

@@ -19,7 +19,6 @@ class PermissionRule(BaseModel):
     tool: str
     action: PermissionAction = PermissionAction.ASK
     patterns: dict[str, str] | None = None
-    destructive: bool = False
 
 
 class PolicyPermissionHandler:
@@ -75,7 +74,6 @@ class PolicyPermissionHandler:
             if not command:
                 return PermissionDecision(
                     action=matched_rule.action,
-                    destructive=matched_rule.destructive,
                 )
 
             # Evaluate patterns — last match wins.
@@ -86,10 +84,8 @@ class PolicyPermissionHandler:
 
             return PermissionDecision(
                 action=resolved_action,
-                destructive=matched_rule.destructive,
             )
 
         return PermissionDecision(
             action=matched_rule.action,
-            destructive=matched_rule.destructive,
         )

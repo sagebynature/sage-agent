@@ -43,17 +43,14 @@ class InteractivePermissionHandler:
             return PermissionDecision(
                 action=PermissionAction.DENY,
                 reason="No ask callback configured; denied by default.",
-                destructive=decision.destructive,
             )
 
         approved = await self._ask_callback(tool_name, arguments)
         if approved:
             return PermissionDecision(
                 action=PermissionAction.ALLOW,
-                destructive=decision.destructive,
             )
         return PermissionDecision(
             action=PermissionAction.DENY,
             reason=f"User denied execution of '{tool_name}'.",
-            destructive=decision.destructive,
         )

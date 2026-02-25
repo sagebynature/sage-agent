@@ -13,11 +13,7 @@ class TestPermissionRule:
         assert rule.tool == "file_read"
         assert rule.action == PermissionAction.ALLOW
         assert rule.patterns is None
-        assert rule.destructive is False
-
-    def test_destructive_rule(self) -> None:
-        rule = PermissionRule(tool="shell", action=PermissionAction.ASK, destructive=True)
-        assert rule.destructive is True
+        assert rule.patterns is None
 
     def test_pattern_rule(self) -> None:
         rule = PermissionRule(
@@ -103,20 +99,6 @@ class TestPolicyPermissionHandler:
         )
         decision = await handler.check("shell", {"command": "curl example.com"})
         assert decision.action == PermissionAction.ASK
-
-    async def test_destructive_flag_propagated(self) -> None:
-        handler = self._handler(
-            rules=[
-                PermissionRule(
-                    tool="file_write",
-                    action=PermissionAction.ALLOW,
-                    destructive=True,
-                )
-            ]
-        )
-        decision = await handler.check("file_write", {"path": "/tmp/x", "content": "y"})
-        assert decision.action == PermissionAction.ALLOW
-        assert decision.destructive is True
 
     async def test_unmatched_tool_gets_default(self) -> None:
         handler = self._handler(

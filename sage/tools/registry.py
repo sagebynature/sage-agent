@@ -17,6 +17,24 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+CATEGORY_TOOLS: dict[str, list[str]] = {
+    "read": ["file_read"],
+    "edit": ["file_write", "file_edit"],
+    "shell": ["shell"],
+    "web": ["web_fetch", "web_search", "http_request"],
+    "memory": ["memory_store", "memory_recall"],
+    "task": [],
+}
+
+CATEGORY_ARG_MAP: dict[str, str | None] = {
+    "read": "path",
+    "edit": "path",
+    "shell": "command",
+    "web": "url",
+    "memory": None,
+    "task": None,
+}
+
 
 class ToolRegistry:
     """Central registry that stores tool functions and dispatches calls by name.

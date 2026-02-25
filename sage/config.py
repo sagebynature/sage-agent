@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Dict, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
 
@@ -64,7 +64,6 @@ class PermissionRuleConfig(BaseModel):
     tool: str
     action: str = "ask"
     patterns: dict[str, str] | None = None
-    destructive: bool = False
 
 
 class PermissionsConfig(BaseModel):
@@ -72,6 +71,24 @@ class PermissionsConfig(BaseModel):
 
     default: str = "ask"
     rules: list[PermissionRuleConfig] = Field(default_factory=list)
+
+
+# Type aliases for permission configuration
+PermissionAction = Literal["allow", "deny", "ask"]
+PermissionValue = Union[PermissionAction, Dict[str, PermissionAction]]
+
+
+class Permission(BaseModel):
+    """Granular permission configuration for specific tools/categories."""
+
+    model_config = ConfigDict(extra="allow")
+
+    read: PermissionValue | None = None
+    edit: PermissionValue | None = None
+    shell: PermissionValue | None = None
+    web: PermissionValue | None = None
+    memory: PermissionValue | None = None
+    task: PermissionValue | None = None
 
 
 class ContextConfig(BaseModel):

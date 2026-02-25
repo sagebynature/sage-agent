@@ -181,7 +181,6 @@ class Agent:
                     tool=r.tool,
                     action=PermissionAction(r.action),
                     patterns=r.patterns,
-                    destructive=r.destructive,
                 )
                 for r in config.permissions.rules
             ]
