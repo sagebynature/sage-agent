@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.0.0-rc.7 (2026-02-25)
+
+### Bug Fixes
+
+- Update README formatting and enhance feature descriptions
+  ([`09966d0`](https://github.com/sagebynature/sage-agent/commit/09966d0c2c78d25f6dcd3f3f163d168668697281))
+
+
 ## v1.0.0-rc.6 (2026-02-25)
 
 ### Bug Fixes
