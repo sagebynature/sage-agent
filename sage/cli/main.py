@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import logging.config
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -15,6 +17,39 @@ from sage.exceptions import SageError, ConfigError
 
 if TYPE_CHECKING:
     from sage.central_config import CentralConfig
+
+# Default search locations for logging.conf (checked in order):
+#   1. Explicit --log-config CLI option
+#   2. Current working directory
+#   3. Project root (one level above the sage package)
+_PACKAGE_DIR = Path(__file__).resolve().parent.parent
+_DEFAULT_LOG_CONFIG_CANDIDATES = [
+    Path.cwd() / "logging.conf",
+    _PACKAGE_DIR.parent / "logging.conf",
+]
+
+
+def _setup_logging(config_path: str | None = None, verbose: bool = False) -> None:
+    """Initialize logging from a config file with optional verbose override."""
+    log_config: Path | None = None
+    if config_path is not None:
+        log_config = Path(config_path)
+    else:
+        for candidate in _DEFAULT_LOG_CONFIG_CANDIDATES:
+            if candidate.is_file():
+                log_config = candidate
+                break
+
+    if log_config is not None and log_config.is_file():
+        logging.config.fileConfig(str(log_config), disable_existing_loggers=False)
+    else:
+        logging.basicConfig(
+            level=logging.DEBUG if verbose else logging.WARNING,
+            format="%(asctime)s|%(name)s:%(funcName)s:L%(lineno)s|%(levelname)s %(message)s",
+        )
+
+    if verbose:
+        logging.getLogger("sage").setLevel(logging.DEBUG)
 
 
 def _get_central(ctx: click.Context) -> CentralConfig | None:
@@ -31,10 +66,23 @@ def _get_central(ctx: click.Context) -> CentralConfig | None:
     default=None,
     help="Path to central config.toml (also reads SAGE_CONFIG_PATH env var)",
 )
+@click.option(
+    "--log-config",
+    "log_config_path",
+    default=None,
+    help="Path to logging.conf (default: auto-detected from cwd or project root)",
+)
+@click.option(
+    "--verbose", "-v",
+    is_flag=True,
+    default=False,
+    help="Enable debug logging for sage internals",
+)
 @click.pass_context
-def cli(ctx: click.Context, central_config_path: str | None) -> None:
+def cli(ctx: click.Context, central_config_path: str | None, log_config_path: str | None, verbose: bool) -> None:
     """Sage - AI agent definition and deployment."""
     load_dotenv()
+    _setup_logging(log_config_path, verbose)
     ctx.ensure_object(dict)
     from sage.central_config import resolve_central_config_path, load_central_config
 

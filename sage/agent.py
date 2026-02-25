@@ -110,9 +110,7 @@ class Agent:
     # ── Factory methods ───────────────────────────────────────────────
 
     @classmethod
-    def from_config(
-        cls, path: str | Path, central: CentralConfig | None = None
-    ) -> Agent:
+    def from_config(cls, path: str | Path, central: CentralConfig | None = None) -> Agent:
         """Create an Agent from a Markdown config file or directory containing AGENTS.md."""
         resolved = Path(path)
         if resolved.is_dir():

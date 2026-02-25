@@ -157,9 +157,7 @@ class AgentConfig(BaseModel):
         return self
 
 
-def load_config(
-    path: str | Path, central: CentralConfig | None = None
-) -> AgentConfig:
+def load_config(path: str | Path, central: CentralConfig | None = None) -> AgentConfig:
     """Load and validate an agent configuration from a Markdown file.
 
     The markdown file must contain YAML frontmatter with agent config fields

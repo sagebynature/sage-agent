@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -15,7 +14,7 @@ from sage.central_config import (
     merge_agent_config,
     resolve_central_config_path,
 )
-from sage.config import AgentConfig, load_config
+from sage.config import load_config
 from sage.exceptions import ConfigError
 
 import yaml
@@ -84,9 +83,7 @@ class TestCentralConfig:
         assert cfg.agents == {}
 
     def test_with_defaults(self) -> None:
-        cfg = CentralConfig(
-            defaults=ConfigOverrides(model="gpt-4o", max_turns=20)
-        )
+        cfg = CentralConfig(defaults=ConfigOverrides(model="gpt-4o", max_turns=20))
         assert cfg.defaults.model == "gpt-4o"
         assert cfg.defaults.max_turns == 20
 
@@ -144,9 +141,7 @@ class TestResolveCentralConfigPath:
         monkeypatch.setenv("SAGE_CONFIG_PATH", str(env_path))
         assert resolve_central_config_path(str(cli_path)) == cli_path
 
-    def test_default_path_not_found_returns_none(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_default_path_not_found_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("SAGE_CONFIG_PATH", raising=False)
         # Default path (~/.config/sage/config.toml) almost certainly doesn't exist in CI
         result = resolve_central_config_path()
@@ -244,9 +239,7 @@ class TestMergeAgentConfig:
         assert merge_agent_config(metadata, None) is metadata
 
     def test_defaults_applied(self) -> None:
-        central = CentralConfig(
-            defaults=ConfigOverrides(model="gpt-4o", max_turns=20)
-        )
+        central = CentralConfig(defaults=ConfigOverrides(model="gpt-4o", max_turns=20))
         metadata: dict[str, object] = {"name": "agent"}
         merged = merge_agent_config(metadata, central)
         assert merged["model"] == "gpt-4o"
@@ -320,9 +313,7 @@ class TestLoadConfigWithCentral:
             {"name": "research-assistant", "description": "Research agent"},
             body="You are a researcher.",
         )
-        central = CentralConfig(
-            defaults=ConfigOverrides(model="azure_ai/gpt-4o", max_turns=20)
-        )
+        central = CentralConfig(defaults=ConfigOverrides(model="azure_ai/gpt-4o", max_turns=20))
         config = load_config(cfg_path, central=central)
         assert config.name == "research-assistant"
         assert config.model == "azure_ai/gpt-4o"
@@ -336,9 +327,7 @@ class TestLoadConfigWithCentral:
         )
         central = CentralConfig(
             defaults=ConfigOverrides(model="azure_ai/gpt-4o", max_turns=20),
-            agents={
-                "summarizer": AgentOverrides(model="azure_ai/gpt-4o-mini", max_turns=5)
-            },
+            agents={"summarizer": AgentOverrides(model="azure_ai/gpt-4o-mini", max_turns=5)},
         )
         config = load_config(cfg_path, central=central)
         assert config.model == "azure_ai/gpt-4o-mini"
@@ -350,9 +339,7 @@ class TestLoadConfigWithCentral:
             tmp_path / "AGENTS.md",
             {"name": "agent", "model": "custom/model", "max_turns": 99},
         )
-        central = CentralConfig(
-            defaults=ConfigOverrides(model="azure_ai/gpt-4o", max_turns=20)
-        )
+        central = CentralConfig(defaults=ConfigOverrides(model="azure_ai/gpt-4o", max_turns=20))
         config = load_config(cfg_path, central=central)
         assert config.model == "custom/model"
         assert config.max_turns == 99
@@ -392,9 +379,7 @@ class TestLoadConfigWithCentral:
             {"name": "agent", "description": "Tool user"},
         )
         central = CentralConfig(
-            defaults=ConfigOverrides(
-                model="gpt-4o", tools=["sage.tools.builtins"]
-            )
+            defaults=ConfigOverrides(model="gpt-4o", tools=["sage.tools.builtins"])
         )
         config = load_config(cfg_path, central=central)
         assert config.tools == ["sage.tools.builtins"]
@@ -429,9 +414,7 @@ class TestLoadConfigWithCentral:
                 "subagents": [{"config": "sub.md"}],
             },
         )
-        central = CentralConfig(
-            defaults=ConfigOverrides(model="azure_ai/gpt-4o", max_turns=25)
-        )
+        central = CentralConfig(defaults=ConfigOverrides(model="azure_ai/gpt-4o", max_turns=25))
         config = load_config(cfg_path, central=central)
         sub = config.subagents[0]
         assert sub.name == "sub-agent"
@@ -450,9 +433,7 @@ class TestLoadConfigWithCentral:
                 ],
             },
         )
-        central = CentralConfig(
-            defaults=ConfigOverrides(max_turns=99)
-        )
+        central = CentralConfig(defaults=ConfigOverrides(max_turns=99))
         config = load_config(cfg_path, central=central)
         sub = config.subagents[0]
         assert sub.model == "gpt-4o-mini"
@@ -471,8 +452,6 @@ class TestLoadConfigWithCentral:
                 ],
             },
         )
-        central = CentralConfig(
-            defaults=ConfigOverrides(model="gpt-4o")
-        )
+        central = CentralConfig(defaults=ConfigOverrides(model="gpt-4o"))
         with pytest.raises(ConfigError, match="Inline subagent.*must specify 'model'"):
             load_config(cfg_path, central=central)
