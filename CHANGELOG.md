@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v1.0.0-rc.4 (2026-02-25)
+
+### Bug Fixes
+
+- Update CI workflow to simplify testing and bump version to 1.0.0rc3
+  ([`b58bfa3`](https://github.com/sagebynature/sage-agent/commit/b58bfa3f6a60add6c8ba420a837d357c5bf461c4))
+
+### Chores
+
+- Fixed uv.lock
+  ([`dc89dc8`](https://github.com/sagebynature/sage-agent/commit/dc89dc84bbdcc303d4245e99251aa42edd2b25e1))
+
+
 ## v1.0.0-rc.3 (2026-02-25)
 
 ### Bug Fixes
