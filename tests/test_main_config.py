@@ -118,6 +118,7 @@ class TestResolveMainConfigPath:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.delenv("SAGE_CONFIG_PATH", raising=False)
+        monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.chdir(tmp_path)
         result = resolve_main_config_path(str(tmp_path / "nonexistent.toml"))
         # No config.toml in cwd or default location → None
@@ -133,6 +134,7 @@ class TestResolveMainConfigPath:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("SAGE_CONFIG_PATH", str(tmp_path / "nope.toml"))
+        monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.chdir(tmp_path)
         result = resolve_main_config_path()
         # No config.toml in cwd or default location → None
