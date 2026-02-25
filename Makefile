@@ -19,6 +19,8 @@ check-deps:
 
 install: check-env
 	uv sync --frozen --group dev
+	uv run pre-commit install
+	uv run pre-commit install --hook-type commit-msg
 
 update: check-env
 	uv sync --group dev

@@ -1,6 +1,6 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.10.0,<0.11.0"]
+build-backend = "uv_build"
 
 [project]
 name = "sage"
@@ -9,8 +9,9 @@ description = "Sage - Simplified AI agent definition and deployment via configur
 authors = [
     {name = "Sage Choi", email = "iamsagebynature@gmail.com"}
 ]
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.10"
 readme = "README.md"
+license = { file = "LICENSE" }
 dependencies = [
     "litellm>=1.40",
     "pydantic>=2.0",
@@ -42,6 +43,9 @@ dev = [
 
 [project.scripts]
 sage = "sage.cli.main:cli"
+
+[tool.uv.build-backend]
+module-root = ""
 
 [tool.hatch.build.targets.wheel]
 packages = ["sage"]
@@ -78,3 +82,17 @@ line-length = 100
 [tool.mypy]
 python_version = "3.10"
 strict = true
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+major_on_zero = false
+upload_to_pypi = false
+upload_to_release = true
+
+[tool.semantic_release.branches.main]
+match = "main"
+
+[tool.semantic_release.branches.dev]
+match = "dev"
+prerelease = true
+prerelease_token = "rc"
