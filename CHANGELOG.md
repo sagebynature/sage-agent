@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.0.0-rc.6 (2026-02-25)
+
+### Bug Fixes
+
+- Update project name from 'Apollo Agent' to 'Sage Agent' in scripts
+  ([`e9ee1d3`](https://github.com/sagebynature/sage-agent/commit/e9ee1d300798588308feab6efbb7c9b6006657f2))
+
+
 ## v1.0.0-rc.5 (2026-02-25)
 
 ### Bug Fixes
