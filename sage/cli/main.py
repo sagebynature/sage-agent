@@ -86,10 +86,11 @@ def cli(
     load_dotenv()
     _setup_logging(log_config_path, verbose)
     ctx.ensure_object(dict)
-    from sage.main_config import resolve_main_config_path, load_main_config
+    from sage.main_config import resolve_main_config_path, load_main_config, resolve_and_apply_env
 
     resolved = resolve_main_config_path(main_config_path)
     ctx.obj["main_config"] = load_main_config(resolved)
+    resolve_and_apply_env(ctx.obj["main_config"])
 
 
 @cli.group()
