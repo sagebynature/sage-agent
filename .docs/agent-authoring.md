@@ -361,6 +361,16 @@ result = await agent.run("What is 2 + 3?")
 async for chunk in agent.stream("What is 2 + 3?"):
     print(chunk, end="")
 
+# Structured output — parse response into a Pydantic model
+from pydantic import BaseModel
+
+class Summary(BaseModel):
+    title: str
+    points: list[str]
+
+summary = await agent.run("Summarise the GIL", response_model=Summary)
+print(summary.title)   # Summary is a Summary instance, not a str
+
 # Multi-turn (history accumulates across calls)
 r1 = await agent.run("My name is Alice")
 r2 = await agent.run("What is my name?")  # Sees prior context
@@ -371,6 +381,8 @@ agent.clear_history()
 # Clean up resources
 await agent.close()
 ```
+
+When `response_model` is provided, sage injects the Pydantic JSON schema as a system message, strips any markdown code fences the LLM may add, and calls `model_validate_json()` on the response. `pydantic.ValidationError` is raised if the output cannot be parsed.
 
 ### Delegation to Subagents
 
@@ -685,7 +697,13 @@ result = await pipeline.run("Analyze the Python GIL")
 # Using >> operator
 pipeline = researcher >> summarizer >> reviewer
 result = await pipeline.run("Analyze the Python GIL")
+
+# Streaming — intermediate agents run(), final agent streams
+async for chunk in pipeline.stream("Analyze the Python GIL"):
+    print(chunk, end="")
 ```
+
+`stream()` runs every agent except the last using `run()`, then streams the final agent's output. Single-agent and empty pipelines are handled gracefully.
 
 ### Parallel Execution (`sage/orchestrator/parallel.py`)
 
@@ -706,13 +724,15 @@ results = await Orchestrator.run_parallel(
     ["Input for A", "Input for B"]
 )
 
-# Race mode -- first to succeed wins, others are cancelled
+# Race mode -- first to succeed wins, others are cancelled and awaited
 winner = await Orchestrator.run_race(
     [fast_agent, slow_agent, fallback_agent],
     "Answer this quickly"
 )
 print(f"Winner: {winner.agent_name}: {winner.output}")
 ```
+
+Cancelled losing agents are fully awaited before `run_race()` returns, ensuring their `finally` blocks and resource cleanup (open connections, file handles) run to completion.
 
 ### Autonomous Delegation (LLM-Driven)
 
