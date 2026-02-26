@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.0.2 (2026-02-26)
+
+### Bug Fixes
+
+- **tests**: Remove obsolete version test
+  ([`d3930ea`](https://github.com/sagebynature/sage-agent/commit/d3930ea57f28a7ed18f8f867dfb122586523dde6))
+
+
 ## v1.0.1 (2026-02-26)
 
 ### Bug Fixes
