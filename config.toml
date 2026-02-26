@@ -16,8 +16,8 @@
 # Resolution order: config.toml [env] > .env file > os.environ
 # Unresolved ${VAR} references cause a startup error.
 [env]
-AZURE_AI_API_KEY = "${AZURE_AI_API_KEY}"
-AZURE_AI_API_BASE = "https://d-ue2-aicorepltfm-aisvcs.services.ai.azure.com"
+AZURE_AI_API_KEY = "${ANTHROPIC_FOUNDRY_API_KEY}"
+AZURE_AI_API_BASE = "https://${ANTHROPIC_FOUNDRY_RESOURCE}.services.ai.azure.com"
 
 
 # ─── Global Defaults ──────────────────────────────────────────────────────────
