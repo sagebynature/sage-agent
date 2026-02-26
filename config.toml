@@ -55,24 +55,22 @@ tool_output_max_chars = 5000  # max chars per tool output before truncation
 # Model Context Protocol server connections.
 # Each server uses either stdio (command) or sse (url) transport.
 #
-# [[defaults.mcp_servers]]
+# [defaults.mcp_servers.filesystem]
 # transport = "stdio"
 # command = "npx"
 # args = ["-y", "@modelcontextprotocol/server-filesystem"]
 # env = { ROOT_DIR = "/workspace" }
 #
-# [[defaults.mcp_servers]]
+# [defaults.mcp_servers.my-sse-server]
 # transport = "sse"
 # url = "http://localhost:8080/sse"
 
-[[defaults.mcp_servers]]
-name = "context7"
+[defaults.mcp_servers.context7]
 transport = "stdio"
 command = "npx"
 args = ["-y", "@upstash/context7-mcp@latest"]
 
-[[defaults.mcp_servers]]
-name = "sequentialthinking"
+[defaults.mcp_servers.sequentialthinking]
 transport = "stdio"
 command = "npx"
 args = ["-y", "@modelcontextprotocol/server-sequential-thinking@latest"]

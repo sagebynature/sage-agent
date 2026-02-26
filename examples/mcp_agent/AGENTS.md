@@ -6,7 +6,8 @@ model_params:
   max_tokens: 4096
   timeout: 45.0
 mcp_servers:
-  - transport: stdio
+  filesystem:
+    transport: stdio
     command: npx
     args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
 max_turns: 10

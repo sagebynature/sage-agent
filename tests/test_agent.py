@@ -1070,7 +1070,8 @@ class TestAgentMCPWiring:
             name: mcp-test
             model: gpt-4o
             mcp_servers:
-              - transport: stdio
+              echo-server:
+                transport: stdio
                 command: echo
                 args: [hello]
             ---

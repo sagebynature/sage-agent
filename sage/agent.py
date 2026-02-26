@@ -144,7 +144,7 @@ class Agent:
         if config.mcp_servers:
             from sage.mcp.client import MCPClient
 
-            for mcp_cfg in config.mcp_servers:
+            for mcp_cfg in config.mcp_servers.values():
                 mcp_clients.append(
                     MCPClient(
                         transport=mcp_cfg.transport,

@@ -120,7 +120,7 @@ class AgentConfig(BaseModel):
     extensions: list[str] = Field(default_factory=list)
     memory: MemoryConfig | None = None
     subagents: list[AgentConfig] = Field(default_factory=list)
-    mcp_servers: list[MCPServerConfig] = Field(default_factory=list)
+    mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
     max_turns: int = 10
     model_params: ModelParams = Field(default_factory=ModelParams)
     skills_dir: str | None = None

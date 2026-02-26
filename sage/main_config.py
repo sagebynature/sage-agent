@@ -45,7 +45,7 @@ class ConfigOverrides(BaseModel):
     permission: Permission | None = None
     context: ContextConfig | None = None
     extensions: list[str] | None = None
-    mcp_servers: list[MCPServerConfig] | None = None
+    mcp_servers: dict[str, MCPServerConfig] | None = None
 
 
 class AgentOverrides(ConfigOverrides):

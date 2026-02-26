@@ -76,7 +76,7 @@ class TestLoadConfig:
         assert config.max_turns == 10
         assert config.memory is None
         assert config.subagents == []
-        assert config.mcp_servers == []
+        assert config.mcp_servers == {}
 
     def test_body_becomes_system_prompt(self, tmp_path: Path) -> None:
         body_text = "You are an expert analyst. Always cite your sources."
@@ -155,20 +155,20 @@ class TestLoadConfig:
             {
                 "name": "agent",
                 "model": "gpt-4o",
-                "mcp_servers": [
-                    {
+                "mcp_servers": {
+                    "filesystem": {
                         "transport": "stdio",
                         "command": "npx",
                         "args": ["-y", "@modelcontextprotocol/server-filesystem"],
                         "env": {"HOME": "/tmp"},
                     }
-                ],
+                },
             },
         )
         config = load_config(cfg_path)
 
         assert len(config.mcp_servers) == 1
-        mcp = config.mcp_servers[0]
+        mcp = config.mcp_servers["filesystem"]
         assert mcp.transport == "stdio"
         assert mcp.command == "npx"
         assert mcp.args == ["-y", "@modelcontextprotocol/server-filesystem"]
@@ -181,12 +181,12 @@ class TestLoadConfig:
             {
                 "name": "agent",
                 "model": "gpt-4o",
-                "mcp_servers": [{"transport": "sse", "url": "http://localhost:8080/sse"}],
+                "mcp_servers": {"my-sse": {"transport": "sse", "url": "http://localhost:8080/sse"}},
             },
         )
         config = load_config(cfg_path)
 
-        mcp = config.mcp_servers[0]
+        mcp = config.mcp_servers["my-sse"]
         assert mcp.transport == "sse"
         assert mcp.url == "http://localhost:8080/sse"
         assert mcp.command is None
@@ -249,13 +249,13 @@ class TestLoadConfig:
                     "compaction_threshold": 100,
                 },
                 "max_turns": 15,
-                "mcp_servers": [
-                    {
+                "mcp_servers": {
+                    "filesystem": {
                         "transport": "stdio",
                         "command": "npx",
                         "args": ["-y", "@modelcontextprotocol/server-filesystem"],
                     }
-                ],
+                },
                 "subagents": [
                     {"name": "summarizer", "model": "azure/gpt-4o-mini"},
                 ],
