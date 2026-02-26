@@ -2488,3 +2488,120 @@ class TestMemoryRelevanceFilter:
 
         # Fail-safe: parse failure defaults to score=1.0, which is >= 0.5, so stored
         mock_memory.store.assert_awaited_once()
+
+
+# ── Structured Output Tests ────────────────────────────────────────────────
+
+
+class TestStructuredOutput:
+    """Tests for Agent.run() with response_model for structured Pydantic output."""
+
+    class _UserInfo:
+        pass  # defined below as a proper Pydantic model
+
+    # We define the model here so it's accessible in all test methods.
+    from pydantic import BaseModel as _BaseModel
+
+    class _UserInfo(_BaseModel):
+        name: str
+        age: int
+
+    @pytest.mark.asyncio
+    async def test_run_without_response_model_returns_str(self) -> None:
+        """run() without response_model returns a plain str as before."""
+        provider = MockProvider([_text_result("Hello, world!")])
+        agent = Agent(name="test", model="test-model", provider=provider)
+
+        result = await agent.run("Say hello")
+
+        assert isinstance(result, str)
+        assert result == "Hello, world!"
+
+    @pytest.mark.asyncio
+    async def test_run_with_response_model_returns_parsed_object(self) -> None:
+        """run() with response_model parses JSON and returns the model instance."""
+        provider = MockProvider([_text_result('{"name": "Alice", "age": 30}')])
+        agent = Agent(name="test", model="test-model", provider=provider)
+
+        result = await agent.run("Give me user info", response_model=TestStructuredOutput._UserInfo)
+
+        assert isinstance(result, TestStructuredOutput._UserInfo)
+        assert result.name == "Alice"
+        assert result.age == 30
+
+    @pytest.mark.asyncio
+    async def test_run_schema_injected_in_system_message(self) -> None:
+        """When response_model is set, a schema system message is injected."""
+        provider = MockProvider([_text_result('{"name": "Bob", "age": 25}')])
+        agent = Agent(name="test", model="test-model", provider=provider)
+
+        await agent.run("Give me user info", response_model=TestStructuredOutput._UserInfo)
+
+        # Inspect the messages sent to the provider on the first (only) call.
+        call_messages: list[Message] = provider.call_args[0]["messages"]
+        system_messages = [m for m in call_messages if m.role == "system"]
+
+        # At least one system message should mention JSON schema.
+        schema_messages = [m for m in system_messages if "JSON" in (m.content or "")]
+        assert len(schema_messages) >= 1
+
+        # The schema message should contain the field names from _UserInfo.
+        schema_content = schema_messages[0].content or ""
+        assert "name" in schema_content
+        assert "age" in schema_content
+
+    @pytest.mark.asyncio
+    async def test_run_invalid_json_raises_validation_error(self) -> None:
+        """If provider returns invalid JSON, model_validate_json raises ValidationError."""
+        from pydantic import ValidationError
+
+        provider = MockProvider([_text_result("not valid json at all")])
+        agent = Agent(name="test", model="test-model", provider=provider)
+
+        with pytest.raises(ValidationError):
+            await agent.run("Give me user info", response_model=TestStructuredOutput._UserInfo)
+
+    @pytest.mark.asyncio
+    async def test_run_with_markdown_fenced_json(self) -> None:
+        """Markdown code fences around JSON are stripped before parsing."""
+        fenced = '```json\n{"name": "Charlie", "age": 42}\n```'
+        provider = MockProvider([_text_result(fenced)])
+        agent = Agent(name="test", model="test-model", provider=provider)
+
+        result = await agent.run("Give me user info", response_model=TestStructuredOutput._UserInfo)
+
+        assert result.name == "Charlie"
+        assert result.age == 42
+
+    @pytest.mark.asyncio
+    async def test_run_schema_inserted_before_user_message(self) -> None:
+        """The schema system message appears before the user message in the list."""
+        provider = MockProvider([_text_result('{"name": "Dana", "age": 28}')])
+        # Give agent a body so it generates a system message naturally.
+        agent = Agent(
+            name="test",
+            model="test-model",
+            provider=provider,
+            body="You are a helpful assistant.",
+        )
+
+        await agent.run("Give me user info", response_model=TestStructuredOutput._UserInfo)
+
+        call_messages: list[Message] = provider.call_args[0]["messages"]
+        # Find the index of the schema system message and the user message.
+        schema_idx = next(
+            (
+                i
+                for i, m in enumerate(call_messages)
+                if m.role == "system" and "JSON" in (m.content or "")
+            ),
+            None,
+        )
+        user_idx = next(
+            (i for i, m in enumerate(call_messages) if m.role == "user"),
+            None,
+        )
+
+        assert schema_idx is not None, "Schema system message not found"
+        assert user_idx is not None, "User message not found"
+        assert schema_idx < user_idx, "Schema message must appear before user message"
