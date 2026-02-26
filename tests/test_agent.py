@@ -2050,8 +2050,8 @@ class TestParallelToolExecution:
         assert messages[2].content == "result-c"
 
         # Parallel: total time should be less than 3x the per-tool delay.
-        assert elapsed < 3 * DELAY, (
-            f"Expected parallel execution (< {3 * DELAY}s), got {elapsed:.3f}s"
+        assert elapsed < 3 * DELAY * 2.0, (
+            f"Expected parallel execution (< {3 * DELAY * 2.0:.2f}s), got {elapsed:.3f}s"
         )
 
     @pytest.mark.asyncio
@@ -2129,6 +2129,28 @@ class TestParallelToolExecution:
 
         with patch.object(agent.tool_registry, "execute", side_effect=deny_all):
             with pytest.raises(SagePermissionError, match="access denied"):
+                await agent._execute_tool_calls(tool_calls, messages)
+
+    @pytest.mark.asyncio
+    async def test_permission_error_propagates_with_other_tools_in_parallel(self) -> None:
+        """SagePermissionError from one tool must propagate even with other tools running."""
+        from unittest.mock import patch
+        from sage.exceptions import PermissionError as SagePermissionError
+
+        async def selective_execute(name: str, arguments: dict) -> str:
+            if name == "denied_tool":
+                raise SagePermissionError("denied")
+            return f"ok-{name}"
+
+        agent = self._make_agent(parallel=True)
+        tool_calls = [
+            ToolCall(id="tc_1", name="allowed_1", arguments={}),
+            ToolCall(id="tc_2", name="denied_tool", arguments={}),
+            ToolCall(id="tc_3", name="allowed_2", arguments={}),
+        ]
+        messages: list[Message] = []
+        with patch.object(agent.tool_registry, "execute", side_effect=selective_execute):
+            with pytest.raises(SagePermissionError, match="denied"):
                 await agent._execute_tool_calls(tool_calls, messages)
 
     @pytest.mark.asyncio

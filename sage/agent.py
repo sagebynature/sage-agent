@@ -6,7 +6,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from sage.config import AgentConfig, load_config
 
@@ -501,7 +501,15 @@ class Agent:
                 return tc.id, f"Error executing tool '{tc.name}': {exc}"
 
         if self.parallel_tool_execution:
-            pairs = await asyncio.gather(*(_safe_execute(tc) for tc in tool_calls))
+            raw = await asyncio.gather(
+                *(_safe_execute(tc) for tc in tool_calls),
+                return_exceptions=True,
+            )
+            # Re-raise any SagePermissionError (fatal; must not be swallowed).
+            for item in raw:
+                if isinstance(item, SagePermissionError):
+                    raise item
+            pairs = cast(list[tuple[str, str]], raw)
         else:
             pairs = [await _safe_execute(tc) for tc in tool_calls]
 
