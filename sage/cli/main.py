@@ -59,7 +59,7 @@ def _get_main_config(ctx: click.Context) -> MainConfig | None:
 
 
 @click.group()
-@click.version_option(version="0.1.0", prog_name="sage")
+@click.version_option(version="1.0.0-rc.7", prog_name="sage")
 @click.option(
     "--config",
     "main_config_path",

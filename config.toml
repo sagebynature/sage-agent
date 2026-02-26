@@ -21,8 +21,8 @@ model = "azure_ai/Kimi-K2.5"
 # Maximum agentic turns before stopping
 max_turns = 10
 
-# Tools available to agents (list of Python module paths)
-# tools = ["sage.tools.builtins"]
+# Custom tool extensions (list of Python module paths)
+# extensions = ["myapp.tools"]
 
 # ── Model Parameters ──────────────────────────────────────────────────────────
 # Only set fields are forwarded to the provider; omitted fields use provider defaults.

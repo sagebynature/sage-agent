@@ -66,7 +66,7 @@ class TestVersion:
         runner = CliRunner()
         result = runner.invoke(cli, ["--version"])
         assert result.exit_code == 0
-        assert "0.1.0" in result.output
+        assert "1.0.0-rc.7" in result.output
 
 
 class TestAgentValidate:

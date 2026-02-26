@@ -53,9 +53,8 @@ sage/
 |   |-- base.py              # ToolBase abstract class
 |   |-- decorator.py         # @tool decorator
 |   |-- registry.py          # ToolRegistry dispatch
-|   |-- builtins.py          # shell, file_read, file_write, http_request
-|   |-- file_tools.py        # file_edit, glob_find, grep_search
-|   |-- git_tools.py         # git_status, git_diff, git_commit, etc.
+|   |-- builtins.py          # shell, file_read, file_write, http_request, memory_store, memory_recall
+|   |-- file_tools.py        # file_edit
 |   +-- web_tools.py         # web_search, web_fetch
 |-- skills/
 |   +-- loader.py            # Skill file loader
@@ -122,12 +121,12 @@ name: agent-name          # Required: unique identifier
 model: gpt-4o             # Required: LLM model (litellm format)
 description: A helper     # Optional: display-only, NOT sent to LLM
 max_turns: 10             # Optional: max agentic loop iterations (default: 10)
-tools: [...]              # Optional: list of tool references
+permission: {...}         # Optional: tool access control by category
+extensions: [...]         # Optional: custom tool module paths
 memory: {...}             # Optional: persistent memory config
 subagents: [...]          # Optional: child agents for delegation
 mcp_servers: [...]        # Optional: MCP server connections
 model_params: {...}       # Optional: LLM parameters
-permissions: {...}        # Optional: access control rules
 context: {...}            # Optional: token budget management
 skills_dir: skills/       # Optional: path to skills directory
 ---
@@ -160,44 +159,64 @@ The parser splits on `---` delimiters, extracts the YAML block via `yaml.safe_lo
 | `model` | `str` | required* | LLM model in litellm format |
 | `description` | `str` | `""` | Display-only metadata (not sent to LLM) |
 | `max_turns` | `int` | `10` | Max agentic loop iterations |
-| `tools` | `list[str]` | `[]` | Tool module paths or built-in names |
+| `permission` | `Permission` | `None` | Category-based tool access control |
+| `extensions` | `list[str]` | `[]` | Custom tool module paths |
 | `memory` | `MemoryConfig` | `None` | Persistent memory configuration |
 | `subagents` | `list` | `[]` | Child agent references |
 | `mcp_servers` | `list[MCPServerConfig]` | `[]` | MCP server connections |
 | `model_params` | `ModelParams` | `{}` | LLM generation parameters |
-| `permissions` | `PermissionsConfig` | `None` | Tool access control |
 | `context` | `ContextConfig` | `None` | Token budget management |
 | `skills_dir` | `str` | `None` | Skills directory path |
 
 *`model` can be inherited from main config defaults.
 
-### Tool References in Frontmatter
+### Permission Configuration (Category-Based)
 
-Tools are specified as strings that resolve via the `ToolRegistry`:
+Instead of listing individual tools, you control access via **permission categories**. Each category controls which built-in tools are available:
 
 ```yaml
-tools:
-  # Built-in shorthand names
-  - shell                          # -> sage.tools.builtins:shell
-  - file_read                      # -> sage.tools.builtins:file_read
-  - file_write                     # -> sage.tools.builtins:file_write
-  - file_edit                      # -> sage.tools.file_tools:file_edit
-  - glob_find                      # -> sage.tools.file_tools:glob_find
-  - grep_search                    # -> sage.tools.file_tools:grep_search
-  - git_status                     # -> sage.tools.git_tools:git_status
-  - git_diff                       # -> sage.tools.git_tools:git_diff
-  - web_search                     # -> sage.tools.web_tools:web_search
-  - web_fetch                      # -> sage.tools.web_tools:web_fetch
-
-  # Full module path (registers all @tool functions in module)
-  - sage.tools.builtins
-
-  # Module:attribute (registers specific function)
-  - examples.custom_tools.tools:calculate
-
-  # Custom module (all @tool-decorated functions)
-  - examples.custom_tools.tools
+permission:
+  read: allow              # Controls file_read
+  edit: allow              # Controls file_write, file_edit
+  shell: allow             # Controls shell
+  web: allow               # Controls web_fetch, web_search, http_request
+  memory: allow            # Controls memory_store, memory_recall
+  task: allow              # Reserved for future task management
 ```
+
+Values for each category: `"allow"` | `"deny"` | `"ask"` | `{pattern: action, ...}`
+
+**Category-to-Tools Mapping:**
+- `read: allow` -> registers `file_read`
+- `edit: allow` -> registers `file_write`, `file_edit`
+- `shell: allow` -> registers `shell`
+- `web: allow` -> registers `web_fetch`, `web_search`, `http_request`
+- `memory: allow` -> registers `memory_store`, `memory_recall`
+- `task: allow` -> (reserved, no tools currently)
+
+When a category is set to `"deny"`, its tools are not available to the LLM. When `"ask"`, the agent prompts for approval before executing. When set to a dict, you can specify per-pattern rules:
+
+```yaml
+permission:
+  read: allow                      # All file_read calls allowed
+  shell:                           # Per-pattern shell control
+    "*": ask                        # Default: ask for permission
+    "git status": allow             # Exception: always allow git status
+    "git diff*": allow              # Wildcard pattern: allow git diff
+    "git log*": allow               # Wildcard pattern: allow git log
+```
+
+### Extensions (Custom Tools)
+
+To register custom tools from a Python module, use the `extensions` field:
+
+```yaml
+extensions:
+  - examples.custom_tools.tools           # All @tool-decorated functions in module
+  - myapp.tools.database                  # Another custom tools module
+```
+
+Each extension is a Python module path containing functions decorated with `@tool`. They are automatically discovered and registered.
 
 ### Subagent References
 
@@ -258,22 +277,6 @@ model_params:
 ```
 
 Only fields that are set are forwarded; omitted fields use provider defaults.
-
-### Permissions Configuration
-
-```yaml
-permissions:
-  default: ask             # "allow" | "deny" | "ask"
-  rules:
-    - tool: file_read
-      action: allow
-    - tool: shell
-      action: deny
-      destructive: true
-      patterns:
-        "git log *": allow
-        "rm *": deny
-```
 
 ### Context Management
 
@@ -490,12 +493,12 @@ registry.register(calculate)
 # Register a ToolBase instance (all its @tool methods)
 registry.register(db_tools)
 
-# Load from module path
-registry.load_from_module("shell")                       # Built-in shorthand
-registry.load_from_module("sage.tools.builtins")          # All built-ins
-registry.load_from_module("sage.tools.builtins:shell")    # Specific tool
-registry.load_from_module("myapp.tools")                  # Custom module
-registry.load_from_module("myapp.tools:search")           # Specific attribute
+# Load from module path (via permission categories or extensions)
+registry.register_from_permissions(permission_config)  # Auto-register by permission
+registry.load_from_module("sage.tools.builtins")       # All built-ins
+registry.load_from_module("sage.tools.builtins:shell") # Specific tool
+registry.load_from_module("myapp.tools")               # Custom module
+registry.load_from_module("myapp.tools:search")        # Specific attribute
 
 # Register MCP-discovered tool
 registry.register_mcp_tool(schema, mcp_client)
@@ -526,14 +529,6 @@ result = await registry.execute("calculate", {"expression": "2+3"})
 | `memory_store` | `sage.tools.builtins` | Store to memory |
 | `memory_recall` | `sage.tools.builtins` | Recall from memory |
 | `file_edit` | `sage.tools.file_tools` | Edit files with replacements |
-| `glob_find` | `sage.tools.file_tools` | Find files by glob pattern |
-| `grep_search` | `sage.tools.file_tools` | Search file contents |
-| `git_status` | `sage.tools.git_tools` | Git status |
-| `git_diff` | `sage.tools.git_tools` | Git diff |
-| `git_commit` | `sage.tools.git_tools` | Git commit |
-| `git_log` | `sage.tools.git_tools` | Git log |
-| `git_checkout` | `sage.tools.git_tools` | Git checkout |
-| `git_pr_create` | `sage.tools.git_tools` | Create pull request |
 | `web_search` | `sage.tools.web_tools` | Web search |
 | `web_fetch` | `sage.tools.web_tools` | Fetch web page |
 
@@ -768,32 +763,41 @@ If no provider is supplied to the Agent constructor, `LiteLLMProvider(model)` is
 
 ## 9. Permissions System
 
-### Permission Actions
+### Permission Categories and Actions
+
+Access control is based on **tool categories**, each with one of four actions:
 
 ```python
-class PermissionAction(Enum):
-    ALLOW = "allow"   # Tool call proceeds
-    DENY  = "deny"    # Tool call is blocked (raises PermissionError)
-    ASK   = "ask"     # Interactive prompt (falls back to allow if no handler)
+"allow"  # Tool calls proceed
+"deny"   # Tool calls are blocked (raises PermissionError)
+"ask"    # Interactive prompt (falls back to allow if no handler)
+# Or a dict mapping patterns to actions (for pattern-based control)
 ```
 
-### Policy Configuration
+### Category-Based Permission Configuration
 
 ```yaml
-permissions:
-  default: ask
-  rules:
-    - tool: file_read
-      action: allow
-    - tool: shell
-      action: deny
-      destructive: true
-      patterns:
-        "git log *": allow    # Exception: allow read-only git
-        "rm *": deny          # Explicit deny for destructive commands
+permission:
+  read: allow              # file_read allowed
+  edit: deny               # file_write, file_edit denied
+  shell:                   # Per-pattern shell rules
+    "*": ask               # Default: ask
+    "git status": allow    # Exception: allow git status
+    "git diff*": allow     # Wildcard: allow git diff*
 ```
 
-Rules are evaluated last-match-wins by `PolicyPermissionHandler` (`sage/permissions/policy.py`). Permission checks happen inside `ToolRegistry.execute()` before dispatch.
+Categories are evaluated by `PolicyPermissionHandler` (`sage/permissions/policy.py`). Permission checks happen inside `ToolRegistry.execute()` before dispatch.
+
+### How Categories Map to Tools
+
+Built-in tool categories (via ToolRegistry):
+- `read: allow` -> registers `file_read`
+- `edit: allow` -> registers `file_write`, `file_edit`
+- `shell: allow` -> registers `shell`
+- `web: allow` -> registers `web_fetch`, `web_search`, `http_request`
+- `memory: allow` -> registers `memory_store`, `memory_recall`
+
+When a category is `"deny"`, its tools become invisible to the LLM (not registered).
 
 ---
 
@@ -818,8 +822,9 @@ max_turns = 10
 temperature = 0.7
 max_tokens = 4096
 
-[defaults.permissions]
-default = "ask"
+[defaults.permission]
+read = "allow"
+shell = "ask"
 
 [defaults.context]
 compaction_threshold = 0.75
@@ -954,7 +959,6 @@ SageError                    # Base
 ---
 name: assistant
 model: azure_ai/gpt-4o
-tools: []
 max_turns: 10
 model_params:
   temperature: 0.7
@@ -972,10 +976,11 @@ Be friendly but professional.
 ---
 name: tool-agent
 model: azure_ai/gpt-4o
-tools:
+extensions:
   - examples.custom_tools.tools
 model_params:
   temperature: 0.1
+  max_tokens: 2048
   seed: 0
 ---
 
@@ -1005,19 +1010,20 @@ def word_count(text: str) -> str:
     return f"{count} words"
 ```
 
-### Agent with Skills
+### Agent with Built-in Tools
 
 **AGENTS.md:**
 ```markdown
 ---
 name: dev-assistant
 model: azure_ai/gpt-4o
-tools:
-  - file_read
-  - shell
+permission:
+  read: allow
+  shell: allow
 max_turns: 15
 model_params:
   temperature: 0
+  max_tokens: 4096
   seed: 0
 ---
 
@@ -1054,7 +1060,6 @@ memory:
   backend: sqlite
   path: memory.db
   embedding: azure_ai/text-embedding-3-large
-tools: []
 max_turns: 10
 ---
 
@@ -1067,13 +1072,17 @@ You are a concise historian. Answer questions using only the provided context.
 ---
 name: mcp-assistant
 model: azure_ai/claude-sonnet-4-6
+permission:
+  read: allow
+  shell: allow
+model_params:
+  temperature: 0.0
+  max_tokens: 4096
+  timeout: 45.0
 mcp_servers:
   - transport: stdio
     command: npx
     args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
-tools:
-  - file_read
-  - shell
 memory:
   backend: sqlite
   path: mcp_agent_memory.db
@@ -1091,33 +1100,42 @@ You are an assistant that can interact with the filesystem via MCP.
 name: safe-reviewer
 model: azure_ai/gpt-4o
 description: A code reviewer with strict permission boundaries
-tools:
-  - file_read
-  - glob_find
-  - grep_search
-  - git_status
-  - git_diff
-  - git_log
-  - shell
-permissions:
-  default: ask
-  rules:
-    - tool: file_read
-      action: allow
-    - tool: glob_find
-      action: allow
-    - tool: shell
-      action: deny
-      destructive: true
-      patterns:
-        "git log *": allow
-        "git diff *": allow
-        "rm *": deny
-        "*": deny
+permission:
+  read: allow
+  shell:
+    "*": ask
+    "git status": allow
+    "git diff*": allow
+    "git log*": allow
 ---
 
 You are a safe code reviewer. You have read-only access to the filesystem
-and git history. Shell access is denied by default.
+and git history. Shell access is restricted to git commands.
+```
+
+### Agent with Context Management
+
+```markdown
+---
+name: safe-coder
+model: azure_ai/Kimi-K2.5
+description: A coding assistant with permissions and token budget management
+permission:
+  read: allow
+  edit: allow
+  shell:
+    "*": ask
+    "git status": allow
+    "git diff*": allow
+    "git log*": allow
+context:
+  compaction_threshold: 0.8
+  reserve_tokens: 8192
+  prune_tool_outputs: true
+  tool_output_max_chars: 4000
+---
+
+You are a coding assistant. Be thoughtful about file modifications.
 ```
 
 ### Orchestrator with Subagents

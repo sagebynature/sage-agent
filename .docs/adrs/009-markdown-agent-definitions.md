@@ -29,7 +29,7 @@ Replace the YAML + separate Markdown format with **single Markdown files using Y
 name: assistant
 model: gpt-4o
 description: A helpful AI assistant
-tools:
+permission:
   - shell
   - file_read
 max_turns: 10

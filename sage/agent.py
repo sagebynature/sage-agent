@@ -664,31 +664,6 @@ class Agent:
         """Reset the conversation history for a fresh session."""
         self._conversation_history.clear()
 
-    def _build_initial_messages(
-        self, input: str, memory_context: str | None = None
-    ) -> list[Message]:
-        """Build the initial message list with system prompt and user input."""
-        messages: list[Message] = []
-
-        # System message from description/body + skills.
-        system_parts: list[str] = []
-        if self._body:
-            system_parts.append(self._body)
-        for skill in self.skills:
-            header = f"## Skill: {skill.name}"
-            if skill.description:
-                header += f"\n_{skill.description}_"
-            system_parts.append(f"{header}\n\n{skill.content}")
-        if system_parts:
-            messages.append(Message(role="system", content="\n\n".join(system_parts)))
-
-        # Prepend recalled memory as a system-level context block.
-        if memory_context:
-            messages.append(Message(role="system", content=f"[Relevant memory]\n{memory_context}"))
-
-        messages.append(Message(role="user", content=input))
-        return messages
-
     async def close(self) -> None:
         """Release resources held by the agent (MCP connections, memory DB, etc.).
 
