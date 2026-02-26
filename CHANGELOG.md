@@ -2,6 +2,25 @@
 
 <!-- version list -->
 
+## v1.5.0 (2026-02-26)
+
+### Features
+
+- **tracing**: OpenTelemetry integration — `span()` async context manager in `sage/tracing.py`
+  instruments agent runs, tool execution, LLM calls, and memory operations with parent-child spans;
+  falls back to a zero-cost no-op when `opentelemetry-api` is not installed so no code changes are
+  needed for untraced deployments
+
+- **tracing**: `TracingConfig` model — configure via `tracing:` in agent frontmatter:
+  `enabled`, `service_name`, `exporter` (`"none"` | `"console"` | `"otlp"`); enable with
+  `pip install sage-agent[tracing]`; OTLP export requires the additional
+  `opentelemetry-exporter-otlp-proto-grpc` package
+
+- **tracing**: Span hierarchy — `agent.run` → `tool.execute` + `llm.complete` + `memory.recall` /
+  `memory.store` form nested parent-child spans via OTel contextvars; exceptions are recorded on
+  spans with `StatusCode.ERROR` before re-raising
+
+
 ## v1.4.0 (2026-02-26)
 
 ### Features
