@@ -51,6 +51,7 @@ class MemoryConfig(BaseModel):
     path: str = "memory.db"
     embedding: str = "text-embedding-3-large"
     compaction_threshold: int = 50
+    vector_search: Literal["auto", "sqlite_vec", "numpy"] = "auto"
 
 
 class ModelParams(BaseModel):

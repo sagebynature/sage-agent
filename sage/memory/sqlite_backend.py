@@ -6,7 +6,7 @@ import json
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 import numpy as np
@@ -17,6 +17,9 @@ from sage.memory.base import MemoryEntry
 from sage.memory.embedding import EmbeddingProtocol
 from sage.models import Message
 
+if TYPE_CHECKING:
+    from sage.config import MemoryConfig
+
 logger = logging.getLogger(__name__)
 
 
@@ -25,6 +28,12 @@ class SQLiteMemory:
 
     Call :meth:`initialize` before any other operation to create the
     database schema.
+
+    When *config* is provided and ``config.vector_search`` is ``"auto"`` or
+    ``"sqlite_vec"``, the backend attempts to load the ``sqlite-vec`` extension
+    for O(log n) ANN search.  If the extension is unavailable the numpy O(n)
+    path is used transparently.  Setting ``vector_search="numpy"`` forces the
+    numpy path even when ``sqlite-vec`` is installed.
     """
 
     def __init__(
@@ -32,10 +41,13 @@ class SQLiteMemory:
         path: str = "memory.db",
         *,
         embedding: EmbeddingProtocol,
+        config: MemoryConfig | None = None,
     ) -> None:
         self._path = path
         self._embedding = embedding
+        self._config = config
         self._db: aiosqlite.Connection | None = None
+        self._vec_available: bool = False
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -59,6 +71,55 @@ class SQLiteMemory:
         await self._db.commit()
         logger.info("Memory database schema ensured")
 
+        # Determine whether to attempt sqlite-vec setup
+        vector_search = "auto"
+        if self._config is not None:
+            vector_search = self._config.vector_search
+
+        if vector_search in ("auto", "sqlite_vec"):
+            await self._try_enable_vec()
+
+    async def _try_enable_vec(self) -> None:
+        """Attempt to load the sqlite-vec extension and create the vec table.
+
+        Failures are caught and logged at DEBUG level; the numpy fallback is
+        used in that case.
+        """
+        try:
+            # aiosqlite proxies enable_load_extension as a coroutine.
+            await self._db.enable_load_extension(True)  # type: ignore[union-attr]
+        except AttributeError:
+            # Older aiosqlite versions may not proxy this method.
+            import asyncio
+
+            await asyncio.get_event_loop().run_in_executor(
+                None,
+                self._db._conn.enable_load_extension,  # type: ignore[union-attr]
+                True,
+            )
+
+        try:
+            import sqlite_vec
+
+            await self._db.load_extension(sqlite_vec.loadable_path())  # type: ignore[union-attr]
+
+            # Probe the embedding dimension with a dummy embedding.
+            probe = await self._embedding.embed(["probe"])
+            dim = len(probe[0])
+
+            await self._db.execute(  # type: ignore[union-attr]
+                f"""
+                CREATE VIRTUAL TABLE IF NOT EXISTS memory_vec
+                USING vec0(embedding float[{dim}])
+                """
+            )
+            await self._db.commit()  # type: ignore[union-attr]
+            self._vec_available = True
+            logger.debug("sqlite-vec ANN search enabled (dim=%d)", dim)
+        except Exception as exc:
+            logger.debug("sqlite-vec unavailable (%s), using numpy fallback", exc)
+            self._vec_available = False
+
     async def close(self) -> None:
         """Close the database connection."""
         if self._db is not None:
@@ -76,14 +137,29 @@ class SQLiteMemory:
 
         memory_id = uuid.uuid4().hex
         vectors = await self._embedding.embed([content])
-        embedding_blob = np.array(vectors[0], dtype=np.float32).tobytes()
+        embedding_array = np.array(vectors[0], dtype=np.float32)
+        embedding_blob = embedding_array.tobytes()
         meta_json = json.dumps(metadata or {})
         created_at = datetime.now(timezone.utc).isoformat()
 
-        await self._db.execute(  # type: ignore[union-attr]
+        cursor = await self._db.execute(  # type: ignore[union-attr]
             "INSERT INTO memories (id, content, embedding, metadata, created_at) VALUES (?, ?, ?, ?, ?)",
             (memory_id, content, embedding_blob, meta_json, created_at),
         )
+
+        if self._vec_available:
+            try:
+                import sqlite_vec
+
+                rowid = cursor.lastrowid
+                embedding_bytes = sqlite_vec.serialize_float32(embedding_array)
+                await self._db.execute(  # type: ignore[union-attr]
+                    "INSERT INTO memory_vec(rowid, embedding) VALUES (?, ?)",
+                    [rowid, embedding_bytes],
+                )
+            except Exception as exc:
+                logger.debug("sqlite-vec insert failed (%s), vec index may be stale", exc)
+
         await self._db.commit()  # type: ignore[union-attr]
         logger.debug("Stored memory id=%s, content_preview=%.80s", memory_id, content)
         return memory_id
@@ -94,7 +170,15 @@ class SQLiteMemory:
         logger.debug("Recalling memories: query_preview=%.80s, limit=%d", query, limit)
 
         query_vectors = await self._embedding.embed([query])
-        query_vec = np.array(query_vectors[0], dtype=np.float32)
+        query_embedding = query_vectors[0]
+
+        if self._vec_available:
+            return await self._recall_vec(query_embedding, limit)
+        return await self._recall_numpy(query_embedding, limit)
+
+    async def _recall_numpy(self, query_embedding: list[float], limit: int) -> list[MemoryEntry]:
+        """O(n) numpy cosine-similarity recall (original implementation)."""
+        query_vec = np.array(query_embedding, dtype=np.float32)
 
         cursor = await self._db.execute(  # type: ignore[union-attr]
             "SELECT id, content, embedding, metadata, created_at FROM memories"
@@ -118,12 +202,50 @@ class SQLiteMemory:
         results = [entry for _, entry in scored[:limit]]
         top_scores = [f"{s:.4f}" for s, _ in scored[:limit]]
         logger.debug(
-            "Recall complete: candidates=%d, returned=%d, top_scores=%s",
+            "Recall complete (numpy): candidates=%d, returned=%d, top_scores=%s",
             len(rows),
             len(results),
             top_scores,
         )
         return results
+
+    async def _recall_vec(self, query_embedding: list[float], limit: int) -> list[MemoryEntry]:
+        """O(log n) ANN recall using sqlite-vec vec_distance_cosine."""
+        import sqlite_vec
+
+        query_array = np.array(query_embedding, dtype=np.float32)
+        query_bytes = sqlite_vec.serialize_float32(query_array)
+
+        rows = await self._db.execute_fetchall(  # type: ignore[union-attr]
+            """
+            SELECT m.id, m.content, m.metadata, m.created_at,
+                   vec_distance_cosine(mv.embedding, ?) AS distance
+            FROM memory_vec mv
+            JOIN memories m ON m.id = (
+                SELECT id FROM memories WHERE rowid = mv.rowid
+            )
+            ORDER BY distance ASC
+            LIMIT ?
+            """,
+            [query_bytes, limit],
+        )
+        entries = [
+            MemoryEntry(
+                id=row[0],
+                content=row[1],
+                metadata=json.loads(row[2]) if row[2] else {},
+                score=1.0 - float(row[4]),  # convert distance to similarity
+                created_at=row[3],
+            )
+            for row in rows
+        ]
+        top_scores = [f"{e.score:.4f}" for e in entries]
+        logger.debug(
+            "Recall complete (sqlite-vec): returned=%d, top_scores=%s",
+            len(entries),
+            top_scores,
+        )
+        return entries
 
     async def compact(self, messages: list[Message]) -> list[Message]:
         """Pass-through; compaction is handled by :func:`compact_messages`."""
@@ -134,6 +256,8 @@ class SQLiteMemory:
         self._ensure_open()
         logger.info("Clearing all stored memories")
         await self._db.execute("DELETE FROM memories")  # type: ignore[union-attr]
+        if self._vec_available:
+            await self._db.execute("DELETE FROM memory_vec")  # type: ignore[union-attr]
         await self._db.commit()  # type: ignore[union-attr]
 
     # ------------------------------------------------------------------
