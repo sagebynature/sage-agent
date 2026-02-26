@@ -2,6 +2,28 @@
 
 <!-- version list -->
 
+## v1.4.0 (2026-02-26)
+
+### Features
+
+- **orchestrator**: Fix race cancellation — `run_race()` now awaits cancelled losing tasks with
+  `asyncio.gather(*tasks, return_exceptions=True)` so their `finally` blocks and resource cleanup
+  run before the winner's result is returned
+
+- **orchestrator**: `Pipeline.stream()` — run all intermediate agents via `run()`, then stream the
+  final agent; supports the `>>` operator and single/empty pipeline edge cases
+
+- **memory**: Relevance filtering for memory storage — three modes: `"none"` (default, store
+  everything), `"length"` (skip if exchange shorter than `min_exchange_length`, default 100 chars),
+  `"llm"` (score with provider, skip below `relevance_threshold`, default 0.5); configure via
+  `memory.relevance_filter` in agent frontmatter
+
+- **agent**: Structured output via `response_model` — `await agent.run(input, response_model=MyModel)`
+  injects the Pydantic JSON schema as a system message and parses the response with
+  `model_validate_json()`; markdown code fences are stripped automatically; raises
+  `pydantic.ValidationError` on invalid JSON
+
+
 ## v1.3.0 (2026-02-26)
 
 ### Features

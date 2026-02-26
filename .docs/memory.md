@@ -97,6 +97,9 @@ INFO  Opening memory database at memory.db
 | `embedding` | `str` | `"text-embedding-3-large"` | Any litellm-compatible embedding model string. |
 | `compaction_threshold` | `int` | `50` | Number of conversation messages before history compaction triggers. |
 | `vector_search` | `"auto"` \| `"sqlite_vec"` \| `"numpy"` | `"auto"` | Vector search backend. `"auto"` uses sqlite-vec when available (O(log n) ANN) and falls back to numpy (O(n) cosine). `"sqlite_vec"` requires the `sage-agent[vec]` optional dep. `"numpy"` forces the numpy path even when sqlite-vec is installed. |
+| `relevance_filter` | `"none"` \| `"length"` \| `"llm"` | `"none"` | Filter applied before storing each exchange. `"none"` stores everything (default, backward-compatible). `"length"` skips exchanges shorter than `min_exchange_length`. `"llm"` asks the provider to score relevance 0–1 and skips below `relevance_threshold`. |
+| `min_exchange_length` | `int` | `100` | Minimum character count for an exchange to be stored (length filter only). |
+| `relevance_threshold` | `float` | `0.5` | Minimum provider relevance score to store (llm filter only; 0.0–1.0). |
 
 ### Config Sources and Priority
 
@@ -264,6 +267,12 @@ Assistant: <output>
 ```
 
 This is embedded and stored with an auto-generated UUID and timestamp. Metadata can be attached when using the API directly.
+
+Before storing, a **relevance filter** is applied (configured via `relevance_filter`):
+
+- `"none"` (default): every exchange is stored.
+- `"length"`: exchanges shorter than `min_exchange_length` characters (default 100) are skipped. Useful for filtering out trivial interactions like "OK" or "Thanks".
+- `"llm"`: the provider scores the exchange from 0.0 to 1.0; exchanges below `relevance_threshold` (default 0.5) are skipped. More accurate but costs an extra provider call per turn.
 
 ### Storage Schema
 
