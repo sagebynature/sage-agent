@@ -2,6 +2,47 @@
 
 <!-- version list -->
 
+## v1.0.1 (2026-02-26)
+
+### Bug Fixes
+
+- **mcp**: Handle CancelledError during agent cleanup
+  ([`7f72368`](https://github.com/sagebynature/sage-agent/commit/7f72368d9c2b180273a85a7e2a52436bfeb5e181))
+
+### Chores
+
+- Stick to main version
+  ([`0b3d783`](https://github.com/sagebynature/sage-agent/commit/0b3d7835cdc07a87e27ff8f70be8081cb0198a30))
+
+- **examples**: Migrate all AGENTS.md to new permission format
+  ([`8909eb0`](https://github.com/sagebynature/sage-agent/commit/8909eb07c87babc57ba7ac21d854c741e1913d0d))
+
+### Documentation
+
+- Update all docs to reflect permission + extensions config model
+  ([`57e0d66`](https://github.com/sagebynature/sage-agent/commit/57e0d66101659d3cf5090cbd9cca3d25e60268b9))
+
+- **readme**: Update config reference and add 41 integration tests
+  ([`3cbe3c0`](https://github.com/sagebynature/sage-agent/commit/3cbe3c086f838695dd2584cc3fd9e6bda316d248))
+
+### Refactoring
+
+- **config**: Add Permission schema, CATEGORY_TOOLS, remove destructive flag, add bool coercion
+  ([`3f9c592`](https://github.com/sagebynature/sage-agent/commit/3f9c592fe75b3086779cd7df0ea1fdd88ca47ddd))
+
+- **config**: AgentConfig with permission + extensions fields, remove tools/permissions
+  ([`53b1234`](https://github.com/sagebynature/sage-agent/commit/53b12347edca7f9c5e26c431fbe823b106296807))
+
+- **config**: Use named dict for mcp_servers instead of list
+  ([`8ea9cd7`](https://github.com/sagebynature/sage-agent/commit/8ea9cd76c03d1463eb4b58c699f491fe7ac99079))
+
+- **permissions**: Category-aware PolicyPermissionHandler + ToolRegistry.register_from_permissions
+  ([`7a8855a`](https://github.com/sagebynature/sage-agent/commit/7a8855a580265141c6e7b2356f3ff39c1b070eb6))
+
+- **tools**: Remove git_tools, glob_find, grep_search
+  ([`53c3618`](https://github.com/sagebynature/sage-agent/commit/53c36184e9a56f4acd3ef0650f5f543ec9b56fb9))
+
+
 ## v1.0.0 (2026-02-25)
 
 ### Documentation
