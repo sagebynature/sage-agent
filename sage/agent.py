@@ -12,7 +12,7 @@ from sage.config import AgentConfig, load_config
 
 if TYPE_CHECKING:
     from sage.main_config import MainConfig
-from sage.exceptions import ToolError
+from sage.exceptions import MaxTurnsExceeded, ToolError
 from sage.models import CompletionResult, Message, ToolCall, ToolSchema
 from sage.providers.litellm_provider import LiteLLMProvider
 from sage.skills.loader import Skill, load_skills_from_directory
@@ -337,7 +337,9 @@ class Agent:
 
                 try:
                     tool_result = await self._execute_tool(tc)
-                except Exception as e:
+                except ToolError as e:
+                    # ToolError is a recoverable tool-execution failure; feed the
+                    # error back to the model so it can retry or self-correct.
                     logger.error("Tool '%s' failed: %s", tc.name, e)
                     tool_result = f"Error executing tool '{tc.name}': {e}"
 
@@ -349,21 +351,16 @@ class Agent:
                     )
                 )
 
-        # Max turns exceeded — return last assistant content.
+        # Max turns exceeded — persist partial progress, then raise.
         logger.warning("Agent '%s' reached max_turns (%d)", self.name, self.max_turns)
+        last_content = ""
         for msg in reversed(messages):
             if msg.role == "assistant" and msg.content:
-                final_output = msg.content
-                self._conversation_history.append(Message(role="user", content=input))
-                self._conversation_history.append(Message(role="assistant", content=final_output))
-                compacted = await self._maybe_compact_history()
-                _ = compacted
-                self._update_token_usage(
-                    [message.model_dump() for message in self._build_messages("")]
-                )
-                await self._store_memory(input, final_output)
-                return final_output
-        return ""
+                last_content = msg.content
+                break
+        if last_content:
+            await self._store_memory(input, last_content)
+        raise MaxTurnsExceeded(turns=self.max_turns, last_content=last_content)
 
     async def stream(self, input: str) -> AsyncIterator[str]:
         """Streaming variant of :meth:`run` — yields text chunks as they arrive.
@@ -435,7 +432,9 @@ class Agent:
             for tc in turn_tool_calls:
                 try:
                     tool_result = await self._execute_tool(tc)
-                except Exception as e:
+                except ToolError as e:
+                    # ToolError is a recoverable tool-execution failure; feed the
+                    # error back to the model so it can retry or self-correct.
                     logger.error("Tool '%s' failed: %s", tc.name, e)
                     tool_result = f"Error executing tool '{tc.name}': {e}"
 
@@ -447,19 +446,16 @@ class Agent:
                     )
                 )
 
-        # Max turns exceeded — find last assistant content.
+        # Max turns exceeded — persist partial progress, then raise.
         logger.warning("Agent '%s' reached max_turns (%d) during stream", self.name, self.max_turns)
+        last_content = ""
         for msg in reversed(messages):
             if msg.role == "assistant" and msg.content:
-                self._conversation_history.append(Message(role="user", content=input))
-                self._conversation_history.append(Message(role="assistant", content=msg.content))
-                compacted = await self._maybe_compact_history()
-                _ = compacted
-                self._update_token_usage(
-                    [message.model_dump() for message in self._build_messages("")]
-                )
-                await self._store_memory(input, msg.content)
-                return
+                last_content = msg.content
+                break
+        if last_content:
+            await self._store_memory(input, last_content)
+        raise MaxTurnsExceeded(turns=self.max_turns, last_content=last_content)
 
     def _detect_context_window_limit(self) -> None:
         if self._context_window_detected:
@@ -468,24 +464,15 @@ class Agent:
         self._context_window_detected = True
         self._context_window_limit = None
 
-        try:
-            import litellm
-
-            model_info = litellm.get_model_info(self.model)
-            max_input_tokens = model_info.get("max_input_tokens")
-            if isinstance(max_input_tokens, int):
-                self._context_window_limit = max_input_tokens
-            elif isinstance(max_input_tokens, float):
-                self._context_window_limit = int(max_input_tokens)
-        except Exception:
-            self._context_window_limit = None
+        # Delegate to the provider so agent.py never imports litellm directly.
+        if hasattr(self.provider, "get_context_window"):
+            self._context_window_limit = self.provider.get_context_window()
 
     def _update_token_usage(self, messages: list[dict[str, Any]]) -> None:
-        try:
-            import litellm
-
-            self._token_usage = int(litellm.token_counter(model=self.model, messages=messages))
-        except Exception:
+        # Delegate to the provider so agent.py never imports litellm directly.
+        if hasattr(self.provider, "count_tokens"):
+            self._token_usage = self.provider.count_tokens(messages)
+        else:
             self._token_usage = 0
 
     def get_usage_stats(self) -> dict[str, int | float | bool | None]:

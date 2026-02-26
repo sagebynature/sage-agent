@@ -326,9 +326,9 @@ class TestToolRegistryPermissions:
         with pytest.raises(SagePermissionError, match="Permission denied"):
             await registry.execute("add", {"a": 1, "b": 2})
 
-    async def test_ask_permission_allows_with_warning(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    async def test_ask_permission_raises_no_interactive_handler(self) -> None:
+        """ASK action with no interactive handler must raise SagePermissionError."""
+        from sage.exceptions import PermissionError as SagePermissionError
         from sage.permissions.base import PermissionAction, PermissionDecision
 
         handler = AsyncMock()
@@ -338,11 +338,8 @@ class TestToolRegistryPermissions:
         registry.set_permission_handler(handler)
         registry.register(add)
 
-        with caplog.at_level(logging.WARNING, logger="sage.tools.registry"):
-            result = await registry.execute("add", {"a": 1, "b": 2})
-
-        assert result == "3"
-        assert "ASK" in caplog.text
+        with pytest.raises(SagePermissionError, match="no interactive handler"):
+            await registry.execute("add", {"a": 1, "b": 2})
 
     async def test_no_handler_allows_execution(self) -> None:
         """Without a permission handler, tools execute normally."""

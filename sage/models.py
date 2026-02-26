@@ -37,7 +37,7 @@ class CompletionResult(BaseModel):
 
     message: Message
     usage: Usage = Field(default_factory=Usage)
-    raw_response: Any = None
+    raw_response: object = None
 
 
 class StreamChunk(BaseModel):

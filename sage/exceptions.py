@@ -30,3 +30,17 @@ class PermissionError(SageError):
     Named without 'Sage' prefix for ergonomics — does not shadow
     the builtin PermissionError since that is rarely caught explicitly.
     """
+
+
+class MaxTurnsExceeded(SageError):
+    """Raised when the agent run loop exhausts ``max_turns`` without finishing.
+
+    Attributes:
+        turns: The number of turns that were attempted.
+        last_content: The last assistant message text seen (may be empty).
+    """
+
+    def __init__(self, turns: int, last_content: str = "") -> None:
+        self.turns = turns
+        self.last_content = last_content
+        super().__init__(f"Agent reached max_turns={turns} without producing a final response.")

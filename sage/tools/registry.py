@@ -113,10 +113,16 @@ class ToolRegistry:
                 raise SagePermissionError(reason)
 
             if decision.action == PermissionAction.ASK:
-                logger.warning(
-                    "Permission ASK for tool %r but no interactive handler registered; allowing.",
-                    name,
+                # No interactive handler is wired — fail closed (deny).
+                # To enable interactive prompts, register a handler that
+                # resolves ASK decisions before reaching this point.
+                reason = (
+                    f"Permission ASK for tool {name!r} but no interactive handler "
+                    "is registered. Wire an interactive permission handler or change "
+                    "the policy to 'allow'/'deny' explicitly."
                 )
+                logger.error(reason)
+                raise SagePermissionError(reason)
 
         logger.debug("Executing tool: %s, args=%s", name, list(arguments.keys()))
         try:

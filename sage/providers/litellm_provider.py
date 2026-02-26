@@ -251,6 +251,33 @@ class LiteLLMProvider:
 
         return [item["embedding"] for item in response.data]
 
+    # ── Provider-level model info helpers ─────────────────────────────────
+
+    def get_context_window(self) -> int | None:
+        """Return the max input token count for this model, or None if unknown.
+
+        Encapsulates the litellm.get_model_info() call so that callers outside
+        ``sage/providers/`` never import litellm directly.
+        """
+        try:
+            model_info = litellm.get_model_info(self.model)
+            max_input = model_info.get("max_input_tokens")
+            if isinstance(max_input, (int, float)):
+                return int(max_input)
+        except Exception:
+            pass
+        return None
+
+    def count_tokens(self, messages: list[dict[str, object]]) -> int:
+        """Return an approximate token count for *messages* using litellm.
+
+        Returns 0 on any failure so callers can degrade gracefully.
+        """
+        try:
+            return int(litellm.token_counter(model=self.model, messages=messages))
+        except Exception:
+            return 0
+
     # ── Private helpers ────────────────────────────────────────────────
 
     def _build_request_kwargs(

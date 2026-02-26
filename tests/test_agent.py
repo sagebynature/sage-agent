@@ -149,10 +149,10 @@ class TestAgentRun:
 
     @pytest.mark.asyncio
     async def test_run_max_turns_exceeded(self) -> None:
-        """Agent stops after max_turns even if the model keeps making tool calls."""
-        # Create a provider that always returns tool calls.
+        """Agent raises MaxTurnsExceeded when max_turns is exhausted."""
+        from sage.exceptions import MaxTurnsExceeded
+
         tool_calls = [ToolCall(id="tc_loop", name="add", arguments={"a": 1, "b": 1})]
-        # Each turn: tool-call response, so we need max_turns responses.
         responses = [_tool_call_result(tool_calls, content="still thinking...") for _ in range(3)]
         provider = MockProvider(responses)
         agent = Agent(
@@ -163,15 +163,18 @@ class TestAgentRun:
             max_turns=3,
         )
 
-        result = await agent.run("Loop forever")
+        with pytest.raises(MaxTurnsExceeded) as exc_info:
+            await agent.run("Loop forever")
 
-        # Should return last assistant content after exhausting turns.
-        assert result == "still thinking..."
+        assert exc_info.value.turns == 3
+        assert exc_info.value.last_content == "still thinking..."
         assert provider.call_count == 3
 
     @pytest.mark.asyncio
     async def test_run_max_turns_no_content(self) -> None:
-        """Max turns exceeded with no assistant content returns empty string."""
+        """MaxTurnsExceeded carries empty last_content when there was no text."""
+        from sage.exceptions import MaxTurnsExceeded
+
         tool_calls = [ToolCall(id="tc_x", name="add", arguments={"a": 0, "b": 0})]
         responses = [_tool_call_result(tool_calls, content=None) for _ in range(2)]
         provider = MockProvider(responses)
@@ -183,8 +186,11 @@ class TestAgentRun:
             max_turns=2,
         )
 
-        result = await agent.run("No content")
-        assert result == ""
+        with pytest.raises(MaxTurnsExceeded) as exc_info:
+            await agent.run("No content")
+
+        assert exc_info.value.turns == 2
+        assert exc_info.value.last_content == ""
 
     @pytest.mark.asyncio
     async def test_run_tool_error_handled(self) -> None:
@@ -370,7 +376,9 @@ class TestAgentStreamWithTools:
 
     @pytest.mark.asyncio
     async def test_stream_max_turns_exceeded(self) -> None:
-        """Stream stops after max_turns even if model keeps making tool calls."""
+        """Stream raises MaxTurnsExceeded when max_turns is exhausted."""
+        from sage.exceptions import MaxTurnsExceeded
+
         tool_calls = [ToolCall(id="tc_loop", name="add", arguments={"a": 1, "b": 1})]
         responses = [_tool_call_result(tool_calls, content="still thinking...") for _ in range(3)]
         provider = MockProvider(responses)
@@ -382,13 +390,12 @@ class TestAgentStreamWithTools:
             max_turns=3,
         )
 
-        chunks: list[str] = []
-        async for chunk in agent.stream("Loop forever"):
-            chunks.append(chunk)
+        with pytest.raises(MaxTurnsExceeded) as exc_info:
+            async for _ in agent.stream("Loop forever"):
+                pass
 
-        # Should get text from each turn that had content.
-        full_text = "".join(chunks)
-        assert "still thinking..." in full_text
+        assert exc_info.value.turns == 3
+        assert exc_info.value.last_content == "still thinking..."
         assert provider.call_count == 3
 
     @pytest.mark.asyncio
@@ -1180,7 +1187,10 @@ class TestAgentMemoryWiring:
             max_turns=2,
         )
 
-        await agent.run("loop")
+        from sage.exceptions import MaxTurnsExceeded
+
+        with pytest.raises(MaxTurnsExceeded):
+            await agent.run("loop")
 
         # store() should still have been called.
         mock_memory.store.assert_awaited_once()
@@ -1931,7 +1941,7 @@ class TestAgentPermissions:
 
     async def test_permission_allow_executes_normally(self) -> None:
         from sage.permissions.base import PermissionAction
-        from sage.permissions.policy import PolicyPermissionHandler, PermissionRule
+        from sage.permissions.policy import PolicyPermissionHandler
 
         @tool
         def safe_tool() -> str:
@@ -1939,7 +1949,8 @@ class TestAgentPermissions:
             return "safe result"
 
         handler = PolicyPermissionHandler(
-            rules=[PermissionRule(tool="safe_tool", action=PermissionAction.ALLOW)],
+            rules=[],
+            default=PermissionAction.ALLOW,
         )
 
         provider = MockProvider(

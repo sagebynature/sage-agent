@@ -231,3 +231,70 @@ class TestLiteLLMProviderLogging:
         assert "gpt-4o" in messages or "messages=1" in messages, (
             f"Expected model or message count in logs, got: {messages}"
         )
+
+
+class TestLiteLLMProviderHelpers:
+    """Tests for get_context_window() and count_tokens() helper methods."""
+
+    @patch("sage.providers.litellm_provider.litellm")
+    def test_get_context_window_returns_int_on_success(
+        self, mock_litellm: MagicMock, provider: LiteLLMProvider
+    ) -> None:
+        mock_litellm.get_model_info.return_value = {"max_input_tokens": 128_000}
+        result = provider.get_context_window()
+        assert result == 128_000
+        mock_litellm.get_model_info.assert_called_once_with("azure/gpt-4o")
+
+    @patch("sage.providers.litellm_provider.litellm")
+    def test_get_context_window_returns_none_on_exception(
+        self, mock_litellm: MagicMock, provider: LiteLLMProvider
+    ) -> None:
+        mock_litellm.get_model_info.side_effect = RuntimeError("Unknown model")
+        result = provider.get_context_window()
+        assert result is None
+
+    @patch("sage.providers.litellm_provider.litellm")
+    def test_get_context_window_returns_none_when_key_missing(
+        self, mock_litellm: MagicMock, provider: LiteLLMProvider
+    ) -> None:
+        mock_litellm.get_model_info.return_value = {}
+        result = provider.get_context_window()
+        assert result is None
+
+    @patch("sage.providers.litellm_provider.litellm")
+    def test_get_context_window_coerces_float_to_int(
+        self, mock_litellm: MagicMock, provider: LiteLLMProvider
+    ) -> None:
+        mock_litellm.get_model_info.return_value = {"max_input_tokens": 32768.0}
+        result = provider.get_context_window()
+        assert result == 32768
+        assert isinstance(result, int)
+
+    @patch("sage.providers.litellm_provider.litellm")
+    def test_count_tokens_returns_int_on_success(
+        self, mock_litellm: MagicMock, provider: LiteLLMProvider
+    ) -> None:
+        mock_litellm.token_counter.return_value = 42
+        messages: list[dict[str, object]] = [{"role": "user", "content": "Hello"}]
+        result = provider.count_tokens(messages)
+        assert result == 42
+        mock_litellm.token_counter.assert_called_once_with(model="azure/gpt-4o", messages=messages)
+
+    @patch("sage.providers.litellm_provider.litellm")
+    def test_count_tokens_returns_zero_on_exception(
+        self, mock_litellm: MagicMock, provider: LiteLLMProvider
+    ) -> None:
+        mock_litellm.token_counter.side_effect = RuntimeError("Counter failed")
+        messages: list[dict[str, object]] = [{"role": "user", "content": "Hello"}]
+        result = provider.count_tokens(messages)
+        assert result == 0
+
+    @patch("sage.providers.litellm_provider.litellm")
+    def test_count_tokens_coerces_float_to_int(
+        self, mock_litellm: MagicMock, provider: LiteLLMProvider
+    ) -> None:
+        mock_litellm.token_counter.return_value = 99.7
+        messages: list[dict[str, object]] = [{"role": "user", "content": "Hello"}]
+        result = provider.count_tokens(messages)
+        assert result == 99
+        assert isinstance(result, int)
