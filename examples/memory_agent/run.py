@@ -5,8 +5,8 @@ facts by semantic similarity, then feeds the recalled context to a
 chat agent that answers questions.
 
 Prerequisites:
-    Set AZURE_AI_API_KEY and AZURE_AI_API_BASE, or source the project
-    .env file before running.
+    Ensure AZURE_AI_API_KEY and AZURE_AI_API_BASE are available via
+    config.toml [env] section, .env file, or environment variables.
 
 Usage:
     cd /path/to/sage
@@ -22,6 +22,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from sage.agent import Agent
+from sage.main_config import load_main_config, resolve_and_apply_env, resolve_main_config_path
 from sage.memory.embedding import ProviderEmbedding
 from sage.memory.sqlite_backend import SQLiteMemory
 from sage.providers.litellm_provider import LiteLLMProvider
@@ -52,6 +53,8 @@ QUERIES = [
 
 async def main() -> None:
     load_dotenv()
+    config = load_main_config(resolve_main_config_path())
+    resolve_and_apply_env(config)
 
     # Cohere-embed-v3-english via Azure AI Foundry.
     # Pass credentials explicitly: the azure/ provider reads AZURE_OPENAI_API_KEY
