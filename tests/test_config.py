@@ -320,6 +320,7 @@ class TestMemoryConfig:
         assert cfg.path == "memory.db"
         assert cfg.embedding == "text-embedding-3-large"
         assert cfg.compaction_threshold == 50
+        assert cfg.vector_search == "auto"
 
 
 class TestAgentConfig:

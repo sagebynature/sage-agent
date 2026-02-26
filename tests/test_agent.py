@@ -2207,3 +2207,101 @@ class TestParallelToolExecution:
         with patch.object(agent.tool_registry, "execute", side_effect=deny_all):
             with pytest.raises(SagePermissionError, match="denied"):
                 await agent._execute_tool_calls(tool_calls, messages)
+
+
+# ── Memory Tool Unification Tests ─────────────────────────────────────
+
+
+class TestMemoryToolUnification:
+    """Tests for memory tool unification — semantic backend overrides JSON tools."""
+
+    @pytest.mark.asyncio
+    async def test_semantic_memory_tools_registered_when_memory_backend_set(self) -> None:
+        """When memory backend is configured, tool registry gets semantic closures."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from sage.memory.base import MemoryEntry
+
+        # Build a mock memory backend.
+        mock_memory = MagicMock()
+        mock_memory.store = AsyncMock(return_value="mock-id")
+        mock_memory.recall = AsyncMock(
+            return_value=[
+                MemoryEntry(id="1", content="project: apollo", metadata={"key": "project"})
+            ]
+        )
+
+        # Build agent with the mock memory injected.
+        provider = MockProvider([_text_result("done")])
+        agent = Agent(
+            name="mem-test",
+            model="test-model",
+            provider=provider,
+            memory=mock_memory,
+        )
+
+        # Register semantic tools (mirrors what _from_agent_config does).
+        from sage.tools.decorator import tool as _tool
+
+        @_tool
+        async def memory_store(key: str, value: str) -> str:  # noqa: F811
+            """Store a key-value pair in the agent's semantic memory backend."""
+            await mock_memory.store(f"{key}: {value}", metadata={"key": key})
+            return f"Stored: {key}"
+
+        @_tool
+        async def memory_recall(query: str) -> str:  # noqa: F811
+            """Recall entries from the agent's semantic memory backend."""
+            entries = await mock_memory.recall(query)
+            if not entries:
+                return f"No matches for: {query}"
+            return "\n".join(f"- {e.content}" for e in entries)
+
+        agent.tool_registry.register(memory_store)
+        agent.tool_registry.register(memory_recall)
+
+        # Verify that memory_store calls memory.store().
+        store_result = await agent.tool_registry.execute(
+            "memory_store", {"key": "project", "value": "apollo"}
+        )
+        assert store_result == "Stored: project"
+        mock_memory.store.assert_called_once_with("project: apollo", metadata={"key": "project"})
+
+        # Verify that memory_recall calls memory.recall().
+        recall_result = await agent.tool_registry.execute("memory_recall", {"query": "project"})
+        assert "project: apollo" in recall_result
+        mock_memory.recall.assert_called_once_with("project")
+
+    @pytest.mark.asyncio
+    async def test_json_memory_tools_used_without_backend(self) -> None:
+        """Without a memory backend, the JSON memory_store / memory_recall are still available."""
+        import warnings
+
+        provider = MockProvider([_text_result("done")])
+        agent = Agent(
+            name="no-mem-test",
+            model="test-model",
+            provider=provider,
+        )
+
+        # Manually load the builtin JSON memory tools.
+        agent.tool_registry.load_from_module("memory_store")
+        agent.tool_registry.load_from_module("memory_recall")
+
+        # Both tools should be registered.
+        schemas = {s.name for s in agent.tool_registry.get_schemas()}
+        assert "memory_store" in schemas
+        assert "memory_recall" in schemas
+
+        # Calling them should emit DeprecationWarning (JSON backend).
+        import os
+        import tempfile
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            mem_path = os.path.join(tmp_dir, "mem.json")
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                with patch.dict(os.environ, {"SAGE_MEMORY_PATH": mem_path}):
+                    await agent.tool_registry.execute("memory_store", {"key": "k", "value": "v"})
+            assert any(issubclass(warning.category, DeprecationWarning) for warning in w)

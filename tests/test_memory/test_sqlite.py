@@ -165,3 +165,128 @@ class TestSQLiteMemoryLifecycle:
         assert len(results) == 1
         assert results[0].id == mid
         await mem2.close()
+
+
+class TestVectorSearchConfig:
+    """Tests for the vector_search configuration field and branching logic."""
+
+    def test_default_is_auto(self) -> None:
+        from sage.config import MemoryConfig
+
+        config = MemoryConfig(backend="sqlite", embedding="test")
+        assert config.vector_search == "auto"
+
+    def test_numpy_mode_forces_vec_unavailable(self, tmp_path: Any) -> None:
+        """vector_search='numpy' must keep _vec_available=False even if sqlite-vec installed."""
+        from sage.config import MemoryConfig
+
+        config = MemoryConfig(backend="sqlite", embedding="test", vector_search="numpy")
+        mem = SQLiteMemory(
+            path=str(tmp_path / "numpy_forced.db"),
+            embedding=DeterministicEmbedding(),
+            config=config,
+        )
+        # Before initialize, _vec_available starts False
+        assert mem._vec_available is False
+
+    @pytest.mark.asyncio
+    async def test_numpy_mode_stays_false_after_init(self, tmp_path: Any) -> None:
+        """After initialize() with vector_search='numpy', _vec_available must be False."""
+        from sage.config import MemoryConfig
+
+        config = MemoryConfig(backend="sqlite", embedding="test", vector_search="numpy")
+        mem = SQLiteMemory(
+            path=str(tmp_path / "numpy_init.db"),
+            embedding=DeterministicEmbedding(),
+            config=config,
+        )
+        await mem.initialize()
+        try:
+            assert mem._vec_available is False
+        finally:
+            await mem.close()
+
+    @pytest.mark.asyncio
+    async def test_numpy_fallback_produces_results(self, tmp_path: Any) -> None:
+        """The numpy recall path returns correct ranked results."""
+        from sage.config import MemoryConfig
+
+        config = MemoryConfig(backend="sqlite", embedding="test", vector_search="numpy")
+        mem = SQLiteMemory(
+            path=str(tmp_path / "numpy_results.db"),
+            embedding=DeterministicEmbedding(),
+            config=config,
+        )
+        await mem.initialize()
+        try:
+            await mem.store("the quick brown fox")
+            await mem.store("lazy dog sleeps")
+            results = await mem.recall("the quick brown fox", limit=2)
+            assert len(results) == 2
+            assert results[0].content == "the quick brown fox"
+            assert results[0].score == pytest.approx(1.0, abs=1e-5)
+        finally:
+            await mem.close()
+
+    @pytest.mark.asyncio
+    async def test_auto_mode_uses_numpy_when_sqlite_vec_absent(self, tmp_path: Any) -> None:
+        """With vector_search='auto' and no sqlite-vec installed, numpy path is used."""
+        from sage.config import MemoryConfig
+
+        config = MemoryConfig(backend="sqlite", embedding="test", vector_search="auto")
+        mem = SQLiteMemory(
+            path=str(tmp_path / "auto_fallback.db"),
+            embedding=DeterministicEmbedding(),
+            config=config,
+        )
+        await mem.initialize()
+        try:
+            # Whether _vec_available is True or False depends on the environment;
+            # the important thing is that recall() works regardless.
+            await mem.store("hello world")
+            results = await mem.recall("hello world", limit=1)
+            assert len(results) == 1
+            assert results[0].content == "hello world"
+        finally:
+            await mem.close()
+
+    def test_vector_search_literal_values(self) -> None:
+        """Only 'auto', 'sqlite_vec', 'numpy' are valid values."""
+        from sage.config import MemoryConfig
+
+        for valid in ("auto", "sqlite_vec", "numpy"):
+            cfg = MemoryConfig(backend="sqlite", embedding="test", vector_search=valid)
+            assert cfg.vector_search == valid
+
+    @pytest.mark.asyncio
+    async def test_operational_error_from_enable_load_extension_falls_back(
+        self, tmp_path: Any
+    ) -> None:
+        """OperationalError (SQLite compiled without SQLITE_ENABLE_LOAD_EXTENSION) must
+        not crash initialize() — _vec_available stays False and numpy path is used."""
+        import sqlite3
+        from unittest.mock import AsyncMock, patch
+
+        from sage.config import MemoryConfig
+
+        config = MemoryConfig(backend="sqlite", embedding="test", vector_search="auto")
+        mem = SQLiteMemory(
+            path=str(tmp_path / "op_error.db"),
+            embedding=DeterministicEmbedding(),
+            config=config,
+        )
+
+        with patch(
+            "aiosqlite.Connection.enable_load_extension",
+            new=AsyncMock(side_effect=sqlite3.OperationalError("not authorized")),
+        ):
+            await mem.initialize()  # must not raise
+
+        try:
+            assert mem._vec_available is False
+            # numpy path must still work
+            await mem.store("fallback test")
+            results = await mem.recall("fallback test", limit=1)
+            assert len(results) == 1
+        finally:
+            await mem.close()

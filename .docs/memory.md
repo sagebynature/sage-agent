@@ -29,6 +29,7 @@ backend = "sqlite"
 path = "memory.db"
 embedding = "text-embedding-3-large"
 compaction_threshold = 50
+# vector_search = "auto"   # default: use sqlite-vec if available, numpy fallback
 ```
 
 Or in your agent's `.md` frontmatter:
@@ -42,6 +43,7 @@ memory:
   path: memory.db
   embedding: text-embedding-3-large
   compaction_threshold: 50
+  # vector_search: auto   # default
 ---
 ```
 
@@ -94,6 +96,7 @@ INFO  Opening memory database at memory.db
 | `path` | `str` | `"memory.db"` | Path to the SQLite database file. Relative paths are resolved from the working directory. |
 | `embedding` | `str` | `"text-embedding-3-large"` | Any litellm-compatible embedding model string. |
 | `compaction_threshold` | `int` | `50` | Number of conversation messages before history compaction triggers. |
+| `vector_search` | `"auto"` \| `"sqlite_vec"` \| `"numpy"` | `"auto"` | Vector search backend. `"auto"` uses sqlite-vec when available (O(log n) ANN) and falls back to numpy (O(n) cosine). `"sqlite_vec"` requires the `sage-agent[vec]` optional dep. `"numpy"` forces the numpy path even when sqlite-vec is installed. |
 
 ### Config Sources and Priority
 
@@ -229,9 +232,16 @@ flowchart TD
 When the agent recalls memory, the process is:
 
 1. The user's input is embedded into a vector using the configured embedding model.
-2. All stored memory embeddings are loaded from SQLite.
-3. Cosine similarity is computed between the query vector and every stored vector.
-4. The top results (default: 5) are returned, ranked by score.
+2. The top-k nearest neighbours are retrieved — either via sqlite-vec ANN search (O(log n), when available) or numpy cosine similarity across all rows (O(n) fallback).
+3. The top results (default: 5) are returned, ranked by score.
+
+**sqlite-vec ANN search** (default when `sqlite-vec` is installed):
+
+```bash
+pip install sage-agent[vec]   # installs sqlite-vec
+```
+
+On `initialize()`, sage attempts to load the `sqlite-vec` extension and creates a `memory_vec` virtual table alongside the main `memories` table. If the extension is unavailable (not installed, or SQLite compiled without `SQLITE_ENABLE_LOAD_EXTENSION`), the numpy path is used transparently.
 
 The recalled memories are injected as a system message before the conversation history:
 
@@ -257,7 +267,7 @@ This is embedded and stored with an auto-generated UUID and timestamp. Metadata 
 
 ### Storage Schema
 
-The SQLite database contains a single table:
+The SQLite database contains the main memories table, and optionally a sqlite-vec virtual table:
 
 ```sql
 CREATE TABLE IF NOT EXISTS memories (
@@ -267,7 +277,13 @@ CREATE TABLE IF NOT EXISTS memories (
     metadata   TEXT DEFAULT '{}', -- JSON string
     created_at TEXT NOT NULL       -- ISO 8601 UTC timestamp
 );
+
+-- Created only when sqlite-vec extension is available:
+CREATE VIRTUAL TABLE IF NOT EXISTS memory_vec
+USING vec0(embedding float[N]);   -- N = embedding dimension
 ```
+
+When sqlite-vec is active, each `store()` inserts into both tables (using the memories row's `rowid` as the foreign key). `recall()` uses `vec_distance_cosine` for O(log n) ANN retrieval; `clear()` deletes from both tables atomically.
 
 ### Compaction
 
@@ -438,7 +454,7 @@ pytest tests/test_memory/ -v
 | `SageMemoryError: Database not initialized` | `memory.initialize()` was not called before `store()`/`recall()` | This happens automatically via `_ensure_memory_initialized()` in `Agent`. If using `SQLiteMemory` directly, call `await memory.initialize()` first. |
 | `AuthenticationError` from embedding call | Missing or invalid API key for the embedding model | Set the correct env vars for your embedding provider (see [Embedding Model Examples](#embedding-model-examples)). |
 | Memory not being recalled | No stored memories yet, or embedding model mismatch | Run with `-v` to see recall logs. Check that the embedding model matches what was used during storage. If you change models, clear the DB (`await memory.clear()`) and re-populate. |
-| Slow recall on large databases | Cosine similarity is a linear scan (O(n)) | Expected for the SQLite backend. For thousands of memories, consider implementing a backend with vector indexing (pgvector, FAISS). |
+| Slow recall on large databases | sqlite-vec not installed; numpy O(n) scan is in use | Install `pip install sage-agent[vec]` to enable O(log n) ANN search. Check verbose logs for `"sqlite-vec ANN search enabled"` to confirm. On platforms where SQLite is compiled without `SQLITE_ENABLE_LOAD_EXTENSION`, the numpy fallback is automatic. |
 | `memory.db` file not created | Memory not configured or config not reaching the agent | Check that `[agents.<name>.memory]` is uncommented in `config.toml` and the agent name matches. Run with `-v` to see config loading logs. |
 | Compaction not triggering | Message count below threshold | Default threshold is 50. Lower `compaction_threshold` to trigger earlier, or check if token-aware compaction is also configured. |
 | `litellm.exceptions.BadRequestError` | Embedding model string not recognized by litellm | Verify the model string against [litellm's embedding docs](https://docs.litellm.ai/docs/embedding/supported_embedding). |
@@ -463,7 +479,7 @@ All memory logging uses Python's standard `logging` module. Run with `-v` for DE
 | `Compaction complete: before=N, after=N` | `sage.memory.compaction` | Summarization finished |
 | `Compacting history for agent '<agent>': N messages before compaction` | `sage.agent` | Agent-level compaction start |
 | `History compacted for agent '<agent>': N -> N messages` | `sage.agent` | Agent-level compaction complete |
-| `memory: backend=..., path=..., embedding=..., compaction_threshold=...` | `sage.config` | Config loaded with memory section |
+| `memory: backend=..., path=..., embedding=..., compaction_threshold=..., vector_search=...` | `sage.config` | Config loaded with memory section |
 
 ### DEBUG Level (visible with `-v`)
 
@@ -475,8 +491,11 @@ All memory logging uses Python's standard `logging` module. Run with `-v` for DE
 | `Memory stored for agent '<agent>': id=..., content_len=...` | `sage.agent` | After successful store |
 | `Embedding N text(s) via model=...` | `sage.memory.embedding` | Before embedding API call |
 | `Embedding complete: N vector(s), dimensions=...` | `sage.memory.embedding` | After embedding API call |
-| `Recalling memories: query_preview=..., limit=...` | `sage.memory.sqlite_backend` | Before cosine search |
-| `Recall complete: candidates=N, returned=N, top_scores=[...]` | `sage.memory.sqlite_backend` | After cosine search |
+| `sqlite-vec ANN search enabled (dim=N)` | `sage.memory.sqlite_backend` | sqlite-vec extension loaded successfully |
+| `sqlite-vec unavailable (...), using numpy fallback` | `sage.memory.sqlite_backend` | Extension load failed; numpy will be used |
+| `Recalling memories: query_preview=..., limit=...` | `sage.memory.sqlite_backend` | Before vector search |
+| `Recall complete (numpy): candidates=N, returned=N, top_scores=[...]` | `sage.memory.sqlite_backend` | After numpy cosine search |
+| `Recall complete (sqlite-vec): returned=N, top_scores=[...]` | `sage.memory.sqlite_backend` | After sqlite-vec ANN search |
 | `Stored memory id=..., content_preview=...` | `sage.memory.sqlite_backend` | After DB insert |
 | `Closing memory database connection` | `sage.memory.sqlite_backend` | Database closing |
 | `Compaction skipped: message count N <= threshold N` | `sage.memory.compaction` | Below threshold |

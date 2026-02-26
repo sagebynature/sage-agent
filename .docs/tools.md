@@ -236,32 +236,41 @@ Searches the web using DuckDuckGo.
 
 ### Memory Tools
 
-Both memory tools live in `sage.tools.builtins`. They provide simple
-key-value persistence across sessions.
+`memory_store` and `memory_recall` are registered when `memory: allow` is set in permissions. Their
+behaviour depends on whether a `memory:` backend is configured in the agent frontmatter:
+
+**With `memory:` backend configured (recommended):**
+
+The tools delegate to the agent's semantic memory backend (SQLiteMemory). Stored entries are
+embedded and indexed for vector similarity search.
 
 #### memory_store
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `key` | `str` | yes | Key to store under |
+| `key` | `str` | yes | Logical key for the entry |
 | `value` | `str` | yes | Value to store |
 
-Data is persisted as JSON at `~/.sage/memory_store.json` (override with
-`SAGE_MEMORY_PATH` environment variable).
+Stores `"key: value"` as a single embedded document in the semantic backend. Returns `"Stored: {key}"`.
 
 #### memory_recall
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `query` | `str` | yes | Search string |
+| `query` | `str` | yes | Natural language search query |
 
-Performs case-insensitive substring matching on both keys and values.
-Returns a JSON object of matches.
+Retrieves the top-5 semantically similar entries. Returns a bulleted list of matches.
 
-> **Note:** These are the simple built-in memory tools. For vector-based
-> semantic memory (embedding + SQLite), configure the `memory:` section
-> in your agent frontmatter instead. See the
-> [memory_agent example](../examples/memory_agent/).
+**Without `memory:` backend (legacy fallback — deprecated):**
+
+Falls back to a simple JSON key-value file at `~/.sage/memory_store.json` (override with
+`SAGE_MEMORY_PATH`). Recall performs case-insensitive substring matching. Calling these tools
+without a backend emits a `DeprecationWarning`. Configure a `memory:` section to silence it and
+gain semantic search.
+
+> **Migration:** Add `memory: {backend: sqlite, path: memory.db, embedding: text-embedding-3-large}`
+> to your agent frontmatter to upgrade from JSON to vector-based semantic memory. See
+> [memory.md](memory.md) for the full configuration reference.
 
 ---
 

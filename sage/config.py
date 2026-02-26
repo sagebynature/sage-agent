@@ -51,6 +51,7 @@ class MemoryConfig(BaseModel):
     path: str = "memory.db"
     embedding: str = "text-embedding-3-large"
     compaction_threshold: int = 50
+    vector_search: Literal["auto", "sqlite_vec", "numpy"] = "auto"
 
 
 class ModelParams(BaseModel):
@@ -70,6 +71,8 @@ class ModelParams(BaseModel):
     stop: list[str] | None = None
     timeout: float | None = None
     response_format: dict[str, Any] | None = None
+    num_retries: int | None = None
+    retry_after: float | None = None
 
     def to_kwargs(self) -> dict[str, Any]:
         """Return only the explicitly set parameters (exclude None values)."""
@@ -277,11 +280,12 @@ def load_config(path: str | Path, central: MainConfig | None = None) -> AgentCon
         )
     if config.memory:
         logger.info(
-            "  memory: backend=%s, path=%s, embedding=%s, compaction_threshold=%d",
+            "  memory: backend=%s, path=%s, embedding=%s, compaction_threshold=%d, vector_search=%s",
             config.memory.backend,
             config.memory.path,
             config.memory.embedding,
             config.memory.compaction_threshold,
+            config.memory.vector_search,
         )
     if config.mcp_servers:
         logger.info("  mcp_servers: %d configured", len(config.mcp_servers))
