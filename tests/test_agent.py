@@ -1988,3 +1988,183 @@ class TestAgentFromConfigWithPermissions:
         )
         agent = Agent.from_config(str(config_file))
         assert agent.tool_registry._permission_handler is not None
+
+
+class TestParallelToolExecution:
+    """Tests for _execute_tool_calls with parallel_tool_execution flag."""
+
+    def _make_agent(
+        self,
+        parallel: bool = True,
+        tools: list[Any] | None = None,
+        provider: Any | None = None,
+    ) -> Agent:
+        """Build a minimal Agent with the given parallel flag."""
+        return Agent(
+            name="parallel-test",
+            model="test-model",
+            tools=tools,
+            provider=provider or MockProvider([_text_result("done")]),
+            parallel_tool_execution=parallel,
+        )
+
+    @pytest.mark.asyncio
+    async def test_parallel_tools_run_concurrently(self) -> None:
+        """Three tools with asyncio.sleep should complete in roughly one sleep duration."""
+        import time
+        import asyncio
+        from unittest.mock import patch
+
+        DELAY = 0.1
+        call_order: list[str] = []
+
+        async def slow_tool(name: str) -> str:
+            await asyncio.sleep(DELAY)
+            call_order.append(name)
+            return f"result-{name}"
+
+        agent = self._make_agent(parallel=True)
+
+        tool_calls = [
+            ToolCall(id="tc_1", name="tool_a", arguments={"name": "a"}),
+            ToolCall(id="tc_2", name="tool_b", arguments={"name": "b"}),
+            ToolCall(id="tc_3", name="tool_c", arguments={"name": "c"}),
+        ]
+
+        async def fake_execute(name: str, arguments: dict[str, Any]) -> str:
+            return await slow_tool(arguments["name"])
+
+        messages: list[Message] = []
+        with patch.object(agent.tool_registry, "execute", side_effect=fake_execute):
+            start = time.monotonic()
+            await agent._execute_tool_calls(tool_calls, messages)
+            elapsed = time.monotonic() - start
+
+        # All three ran, in order in the result messages.
+        assert len(messages) == 3
+        assert messages[0].tool_call_id == "tc_1"
+        assert messages[1].tool_call_id == "tc_2"
+        assert messages[2].tool_call_id == "tc_3"
+        assert messages[0].content == "result-a"
+        assert messages[1].content == "result-b"
+        assert messages[2].content == "result-c"
+
+        # Parallel: total time should be less than 3x the per-tool delay.
+        assert elapsed < 3 * DELAY, (
+            f"Expected parallel execution (< {3 * DELAY}s), got {elapsed:.3f}s"
+        )
+
+    @pytest.mark.asyncio
+    async def test_error_in_one_tool_does_not_block_others(self) -> None:
+        """An error in one tool should not prevent others from completing."""
+        from unittest.mock import patch
+
+        async def sometimes_fail(name: str, arguments: dict[str, Any]) -> str:
+            if name == "fail_tool":
+                raise RuntimeError("boom")
+            return "ok"
+
+        agent = self._make_agent(parallel=True)
+
+        tool_calls = [
+            ToolCall(id="tc_ok1", name="ok_tool", arguments={}),
+            ToolCall(id="tc_fail", name="fail_tool", arguments={}),
+            ToolCall(id="tc_ok2", name="ok_tool2", arguments={}),
+        ]
+
+        messages: list[Message] = []
+        with patch.object(agent.tool_registry, "execute", side_effect=sometimes_fail):
+            await agent._execute_tool_calls(tool_calls, messages)
+
+        assert len(messages) == 3
+        assert messages[0].content == "ok"
+        assert "Error executing tool 'fail_tool'" in messages[1].content
+        assert messages[2].content == "ok"
+
+    @pytest.mark.asyncio
+    async def test_sequential_mode_when_disabled(self) -> None:
+        """When parallel_tool_execution=False, tools run sequentially (order preserved)."""
+        import asyncio
+        from unittest.mock import patch
+
+        execution_order: list[str] = []
+
+        async def ordered_execute(name: str, arguments: dict[str, Any]) -> str:
+            execution_order.append(name)
+            await asyncio.sleep(0)  # yield control to event loop
+            return f"result-{name}"
+
+        agent = self._make_agent(parallel=False)
+
+        tool_calls = [
+            ToolCall(id="tc_1", name="first", arguments={}),
+            ToolCall(id="tc_2", name="second", arguments={}),
+            ToolCall(id="tc_3", name="third", arguments={}),
+        ]
+
+        messages: list[Message] = []
+        with patch.object(agent.tool_registry, "execute", side_effect=ordered_execute):
+            await agent._execute_tool_calls(tool_calls, messages)
+
+        # Sequential mode: tools execute in strict call order.
+        assert execution_order == ["first", "second", "third"]
+        assert len(messages) == 3
+        assert messages[0].content == "result-first"
+        assert messages[1].content == "result-second"
+        assert messages[2].content == "result-third"
+
+    @pytest.mark.asyncio
+    async def test_permission_error_propagates(self) -> None:
+        """SagePermissionError must not be swallowed by _safe_execute."""
+        from unittest.mock import patch
+        from sage.exceptions import PermissionError as SagePermissionError
+
+        async def deny_all(name: str, arguments: dict[str, Any]) -> str:
+            raise SagePermissionError("access denied")
+
+        agent = self._make_agent(parallel=True)
+
+        tool_calls = [ToolCall(id="tc_1", name="some_tool", arguments={})]
+        messages: list[Message] = []
+
+        with patch.object(agent.tool_registry, "execute", side_effect=deny_all):
+            with pytest.raises(SagePermissionError, match="access denied"):
+                await agent._execute_tool_calls(tool_calls, messages)
+
+    @pytest.mark.asyncio
+    async def test_parallel_tool_execution_default_is_true(self) -> None:
+        """Agent defaults to parallel_tool_execution=True."""
+        agent = Agent(name="default-test", model="test-model")
+        assert agent.parallel_tool_execution is True
+
+    @pytest.mark.asyncio
+    async def test_result_order_preserved_in_parallel_mode(self) -> None:
+        """asyncio.gather preserves order — messages must match tool_calls order."""
+        import asyncio
+        from unittest.mock import patch
+
+        # Tools complete in reverse order (last tool finishes first).
+        async def reverse_latency(name: str, arguments: dict[str, Any]) -> str:
+            delays = {"slow": 0.05, "medium": 0.02, "fast": 0.0}
+            await asyncio.sleep(delays.get(name, 0))
+            return f"done-{name}"
+
+        agent = self._make_agent(parallel=True)
+
+        tool_calls = [
+            ToolCall(id="id_slow", name="slow", arguments={}),
+            ToolCall(id="id_medium", name="medium", arguments={}),
+            ToolCall(id="id_fast", name="fast", arguments={}),
+        ]
+
+        messages: list[Message] = []
+        with patch.object(agent.tool_registry, "execute", side_effect=reverse_latency):
+            await agent._execute_tool_calls(tool_calls, messages)
+
+        # Despite different completion times, messages must appear in call order.
+        assert messages[0].tool_call_id == "id_slow"
+        assert messages[0].content == "done-slow"
+        assert messages[1].tool_call_id == "id_medium"
+        assert messages[1].content == "done-medium"
+        assert messages[2].tool_call_id == "id_fast"
+        assert messages[2].content == "done-fast"

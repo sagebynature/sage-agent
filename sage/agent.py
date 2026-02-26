@@ -12,7 +12,7 @@ from sage.config import AgentConfig, load_config
 
 if TYPE_CHECKING:
     from sage.main_config import MainConfig
-from sage.exceptions import MaxTurnsExceeded, ToolError
+from sage.exceptions import MaxTurnsExceeded, PermissionError as SagePermissionError, ToolError
 from sage.models import CompletionResult, Message, ToolCall, ToolSchema
 from sage.providers.litellm_provider import LiteLLMProvider
 from sage.skills.loader import Skill, load_skills_from_directory
@@ -70,6 +70,7 @@ class Agent:
         skills: list[Skill] | None = None,
         mcp_clients: list[MCPClient] | None = None,
         compaction_threshold: int = 50,
+        parallel_tool_execution: bool = True,
     ) -> None:
         self.name = name
         self.model = model
@@ -92,6 +93,7 @@ class Agent:
         self._compacted_last_turn: bool = False
         self._token_budget: Any | None = None
         self._git_config: Any | None = None
+        self.parallel_tool_execution: bool = parallel_tool_execution
 
         # Default to LiteLLM provider if none supplied.
         self.provider: ProviderProtocol = provider or LiteLLMProvider(model, **(model_params or {}))  # type: ignore[assignment]
@@ -236,6 +238,7 @@ class Agent:
             compaction_threshold=config.memory.compaction_threshold
             if config.memory is not None
             else 50,
+            parallel_tool_execution=config.parallel_tool_execution,
         )
 
         if config.permission is not None:
@@ -453,14 +456,20 @@ class Agent:
     async def _execute_tool_calls(
         self, tool_calls: list[ToolCall], messages: list[Message]
     ) -> None:
-        """Execute tool calls sequentially and append tool result messages."""
+        """Execute tool calls and append result messages.
+
+        When parallel_tool_execution is enabled (default), all calls run
+        concurrently via asyncio.gather, preserving the original call order in
+        the results. Errors in individual tools are captured as error messages
+        so other tools in the same turn can still succeed.
+        """
         tool_names = [tc.name for tc in tool_calls]
         logger.debug("Dispatching tools: %s", tool_names)
 
         # Build a quick lookup for skill-name matching.
         skill_names = {s.name for s in self.skills}
 
-        for tc in tool_calls:
+        async def _safe_execute(tc: ToolCall) -> tuple[str, str]:
             # Log whether this tool dispatch is skill-driven.
             if tc.name == "delegate":
                 # Delegation is logged inside delegate(); skip here.
@@ -480,20 +489,24 @@ class Agent:
                 logger.debug("Executing tool '%s': %s", tc.name, str(tc.arguments)[:120])
 
             try:
-                tool_result = await self._execute_tool(tc)
-            except ToolError as e:
-                # ToolError is a recoverable tool-execution failure; feed the
-                # error back to the model so it can retry or self-correct.
-                logger.error("Tool '%s' failed: %s", tc.name, e)
-                tool_result = f"Error executing tool '{tc.name}': {e}"
+                result = await self.tool_registry.execute(tc.name, tc.arguments or {})
+                return tc.id, str(result)
+            except SagePermissionError:
+                raise  # Never swallow permission errors — re-raise so the agent loop can handle them
+            except ToolError as exc:
+                logger.error("Tool '%s' failed: %s", tc.name, exc)
+                return tc.id, f"Error executing tool '{tc.name}': {exc}"
+            except Exception as exc:
+                logger.error("Tool '%s' raised unexpected error: %s", tc.name, exc)
+                return tc.id, f"Error executing tool '{tc.name}': {exc}"
 
-            messages.append(
-                Message(
-                    role="tool",
-                    content=str(tool_result),
-                    tool_call_id=tc.id,
-                )
-            )
+        if self.parallel_tool_execution:
+            pairs = await asyncio.gather(*(_safe_execute(tc) for tc in tool_calls))
+        else:
+            pairs = [await _safe_execute(tc) for tc in tool_calls]
+
+        for tc, (call_id, result_text) in zip(tool_calls, pairs):
+            messages.append(Message(role="tool", content=result_text, tool_call_id=call_id))
 
     async def _post_loop_cleanup(self, input: str, final_output: str) -> None:
         """Append to history, compact history, update token usage, store memory."""

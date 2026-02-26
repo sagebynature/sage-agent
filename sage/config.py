@@ -154,6 +154,7 @@ class AgentConfig(BaseModel):
     context: ContextConfig | None = None
     git: GitConfig | None = None
     sandbox: SandboxConfig | None = None
+    parallel_tool_execution: bool = True
 
     @field_validator("subagents", mode="before")
     @classmethod
