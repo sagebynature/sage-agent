@@ -298,3 +298,55 @@ class TestLiteLLMProviderHelpers:
         result = provider.count_tokens(messages)
         assert result == 99
         assert isinstance(result, int)
+
+
+class TestModelParamsRetry:
+    """Tests for num_retries and retry_after fields on ModelParams."""
+
+    def test_num_retries_in_kwargs(self) -> None:
+        """num_retries appears in to_kwargs() output when set."""
+        from sage.config import ModelParams
+
+        params = ModelParams(num_retries=3)
+        kwargs = params.to_kwargs()
+        assert kwargs.get("num_retries") == 3
+
+    def test_retry_after_in_kwargs(self) -> None:
+        """retry_after appears in to_kwargs() output when set."""
+        from sage.config import ModelParams
+
+        params = ModelParams(retry_after=1.0)
+        kwargs = params.to_kwargs()
+        assert kwargs.get("retry_after") == 1.0
+
+    def test_none_values_excluded(self) -> None:
+        """None retry fields must not appear in kwargs (avoids passing None to litellm)."""
+        from sage.config import ModelParams
+
+        params = ModelParams()
+        kwargs = params.to_kwargs()
+        assert "num_retries" not in kwargs
+        assert "retry_after" not in kwargs
+
+    def test_both_retry_params_in_kwargs(self) -> None:
+        """Both num_retries and retry_after appear together when both are set."""
+        from sage.config import ModelParams
+
+        params = ModelParams(num_retries=5, retry_after=2.5)
+        kwargs = params.to_kwargs()
+        assert kwargs.get("num_retries") == 5
+        assert kwargs.get("retry_after") == 2.5
+
+    @patch("sage.providers.litellm_provider.litellm")
+    async def test_retry_params_reach_litellm(self, mock_litellm: MagicMock) -> None:
+        """When num_retries is set, it is passed through to litellm.acompletion."""
+        mock_litellm.acompletion = AsyncMock(return_value=_make_response())
+
+        provider = LiteLLMProvider("gpt-4o", num_retries=3, retry_after=0.5)
+        messages = [Message(role="user", content="Hello")]
+
+        await provider.complete(messages)
+
+        call_kwargs = mock_litellm.acompletion.call_args.kwargs
+        assert call_kwargs.get("num_retries") == 3
+        assert call_kwargs.get("retry_after") == 0.5

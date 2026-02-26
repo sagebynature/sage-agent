@@ -71,6 +71,8 @@ class ModelParams(BaseModel):
     stop: list[str] | None = None
     timeout: float | None = None
     response_format: dict[str, Any] | None = None
+    num_retries: int | None = None
+    retry_after: float | None = None
 
     def to_kwargs(self) -> dict[str, Any]:
         """Return only the explicitly set parameters (exclude None values)."""
