@@ -251,6 +251,16 @@ class Agent:
         if permission_handler is not None:
             agent.tool_registry.set_permission_handler(permission_handler)
 
+        # Wire sandbox: replace the module-level shell tool with a per-agent
+        # sandboxed version when sandbox config is present.
+        if config.sandbox is not None:
+            from sage.tools._sandbox import build_sandbox
+            from sage.tools.builtins import make_sandboxed_shell
+
+            sandbox = build_sandbox(config.sandbox)
+            sandboxed_shell = make_sandboxed_shell(sandbox)
+            agent.tool_registry.register(sandboxed_shell)
+
         # Store token budget for later use.
         agent._token_budget = token_budget
         agent._git_config = config.git

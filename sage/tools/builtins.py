@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
 import re
-import urllib.error
-import urllib.request
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+import httpx
 
 from sage.exceptions import ToolError
-from sage.tools._security import validate_url
+from sage.tools._security import ResolvedURL, validate_and_resolve_url
 from sage.tools.decorator import tool
+
+if TYPE_CHECKING:
+    from sage.tools._sandbox import SandboxExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +72,13 @@ _DANGEROUS_PATTERNS: list[str] = [
 ]
 
 
+def _check_dangerous_patterns(command: str) -> None:
+    """Raise ToolError if *command* matches any dangerous pattern."""
+    for pattern in _DANGEROUS_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            raise ToolError(f"Command rejected \u2014 matches dangerous pattern: {pattern}")
+
+
 @tool
 async def shell(command: str) -> str:
     """Run a shell command and return combined stdout and stderr.
@@ -77,10 +87,10 @@ async def shell(command: str) -> str:
     (destructive operations, data exfiltration, command substitution wrapping).
     This is defense-in-depth — not a substitute for OS-level sandboxing.
     """
+    import asyncio
+
     logger.debug("shell: %s", command[:100])
-    for pattern in _DANGEROUS_PATTERNS:
-        if re.search(pattern, command, re.IGNORECASE):
-            raise ToolError(f"Command rejected \u2014 matches dangerous pattern: {pattern}")
+    _check_dangerous_patterns(command)
 
     proc = await asyncio.create_subprocess_shell(
         command,
@@ -95,6 +105,42 @@ async def shell(command: str) -> str:
         if err_text:
             output += f"\n[stderr]\n{err_text}"
     return output.strip()
+
+
+def make_sandboxed_shell(sandbox: SandboxExecutor) -> Any:
+    """Build a ``@tool``-decorated ``shell`` function bound to *sandbox*.
+
+    This factory creates a per-agent ``shell`` tool that executes commands
+    through *sandbox* (environment isolation, optional namespace containment).
+    The dangerous-pattern blocklist still applies as a fast-fail first pass.
+
+    Returns a ``@tool``-decorated async callable that can be passed directly
+    to ``ToolRegistry.register()``.  Registering it under the same name
+    ``"shell"`` replaces the module-level default.
+    """
+
+    @tool
+    async def shell(command: str) -> str:  # noqa: F811
+        """Run a shell command and return combined stdout and stderr.
+
+        Security: Commands are checked against a blocklist of dangerous patterns
+        first, then executed inside an isolated sandbox environment that strips
+        inherited environment variables (blocking ``$SHELL`` / env-var bypass).
+        """
+        logger.debug("shell (sandboxed): %s", command[:100])
+        _check_dangerous_patterns(command)
+        stdout, stderr = await sandbox.execute(command)
+        output = stdout
+        if stderr.strip():
+            output += f"\n[stderr]\n{stderr}"
+        return output.strip()
+
+    return shell
+
+
+# ---------------------------------------------------------------------------
+# File tools
+# ---------------------------------------------------------------------------
 
 
 @tool
@@ -123,6 +169,27 @@ async def file_write(path: str, content: str) -> str:
     return f"Wrote {len(content)} bytes to {path}"
 
 
+# ---------------------------------------------------------------------------
+# HTTP tool
+# ---------------------------------------------------------------------------
+
+
+def _build_pinned_url(resolved: ResolvedURL) -> str:
+    """Build a URL that substitutes the hostname with the resolved IP address.
+
+    The resulting URL connects directly to the pinned IP, preventing DNS
+    rebinding after validation.  Callers must pass the original hostname as
+    the HTTP ``Host`` header and, for HTTPS, set ``sni_hostname`` so that
+    TLS certificate verification uses the correct name.
+    """
+    port = resolved.port
+    if port is None:
+        port = 443 if resolved.scheme == "https" else 80
+    query_str = f"?{resolved.query}" if resolved.query else ""
+    path = resolved.path or "/"
+    return f"{resolved.scheme}://{resolved.resolved_ip}:{port}{path}{query_str}"
+
+
 @tool
 async def http_request(
     url: str,
@@ -132,8 +199,10 @@ async def http_request(
 ) -> str:
     """Make an HTTP request and return the response status and body.
 
-    SSRF protection: blocks private IPs, loopback, link-local,
-    cloud metadata endpoints, and non-HTTP schemes.
+    SSRF protection: resolves the hostname exactly once, validates the
+    resulting IP, then connects to that pinned IP address.  This prevents
+    DNS rebinding (TOCTOU) where a second resolution could return a
+    private/internal address.
 
     Args:
         url: The URL to request.
@@ -143,27 +212,40 @@ async def http_request(
         body: Request body for POST/PUT requests.
 
     Returns:
-        Response as ``Status: <code>\n<body>`` (body truncated to 5000 chars).
+        Response as ``Status: <code>\\n<body>`` (body truncated to 5000 chars).
     """
     logger.debug("http_request: %s %s", method.upper(), url)
-    validate_url(url)
-    req_headers: dict[str, str] = {"User-Agent": "Sage/1.0"}
+    resolved = validate_and_resolve_url(url)
+
+    req_headers: dict[str, str] = {
+        "User-Agent": "Sage/1.0",
+        "Host": resolved.hostname,
+    }
     if headers:
         for h in headers.split(","):
             if ":" in h:
                 k, v = h.split(":", 1)
                 req_headers[k.strip()] = v.strip()
 
-    data = body.encode() if body else None
-    req = urllib.request.Request(url, data=data, headers=req_headers, method=method.upper())
+    pinned_url = _build_pinned_url(resolved)
+    content = body.encode() if body else None
 
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            body_text = resp.read().decode("utf-8", errors="replace")
-            return f"Status: {resp.status}\n{body_text[:5000]}"
-    except urllib.error.HTTPError as exc:
-        error_body = exc.read().decode("utf-8", errors="replace")[:1000]
-        return f"HTTP Error {exc.code}: {error_body}"
+        async with httpx.AsyncClient(verify=True, timeout=30.0) as client:
+            request = client.build_request(
+                method.upper(),
+                pinned_url,
+                headers=req_headers,
+                content=content,
+            )
+            # Pin TLS SNI to the original hostname so cert validation works
+            # correctly when the URL uses the resolved IP address.
+            request.extensions["sni_hostname"] = resolved.hostname.encode()
+            response = await client.send(request)
+            body_text = response.text[:5000]
+            return f"Status: {response.status_code}\n{body_text}"
+    except httpx.HTTPStatusError as exc:
+        return f"HTTP Error {exc.response.status_code}: {exc.response.text[:1000]}"
     except Exception as exc:
         raise ToolError(f"http_request failed: {exc}") from exc
 

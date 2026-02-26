@@ -26,6 +26,24 @@ class MCPServerConfig(BaseModel):
     env: dict[str, str] = Field(default_factory=dict)
 
 
+class SandboxConfig(BaseModel):
+    """Configuration for the shell execution sandbox.
+
+    When ``backend`` is ``"native"`` (the default), commands run with a
+    stripped environment (only ``PATH``, ``HOME``, ``USER``, ``LANG``,
+    ``TERM`` are passed through).  This blocks ``$SHELL``/env-var bypass
+    vectors while remaining portable.
+
+    When ``backend`` is ``"bubblewrap"``, Linux namespace isolation via
+    ``bwrap`` is used in addition to environment sanitization.  Requires
+    ``bwrap`` to be installed.
+    """
+
+    backend: Literal["native", "bubblewrap"] = "native"
+    allowed_env: list[str] = Field(default_factory=list)
+    network: bool = True
+
+
 class MemoryConfig(BaseModel):
     """Configuration for the agent memory backend."""
 
@@ -135,6 +153,7 @@ class AgentConfig(BaseModel):
     skills_dir: str | None = None
     context: ContextConfig | None = None
     git: GitConfig | None = None
+    sandbox: SandboxConfig | None = None
 
     @field_validator("subagents", mode="before")
     @classmethod

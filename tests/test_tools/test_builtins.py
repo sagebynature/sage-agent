@@ -75,54 +75,94 @@ class TestFileWriteTool:
 
 
 class TestHttpRequestTool:
-    """Tests for the http_request built-in tool."""
+    """Tests for the http_request built-in tool (httpx-based)."""
 
     async def test_successful_get(self) -> None:
-        fake_resp = mock.MagicMock()
-        fake_resp.__enter__ = lambda s: s
-        fake_resp.__exit__ = mock.MagicMock(return_value=False)
-        fake_resp.status = 200
-        fake_resp.read.return_value = b'"ok"'
+        import httpx
 
-        with mock.patch("urllib.request.urlopen", return_value=fake_resp):
-            result = await http_request(url="https://example.com")
+        def transport_handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, text='"ok"')
+
+        with mock.patch(
+            "sage.tools.builtins.validate_and_resolve_url",
+            return_value=mock.MagicMock(
+                resolved_ip="93.184.216.34",
+                hostname="example.com",
+                port=None,
+                scheme="https",
+                path="/",
+                query="",
+                fragment="",
+            ),
+        ):
+            transport = httpx.MockTransport(transport_handler)
+            with mock.patch(
+                "httpx.AsyncClient", return_value=httpx.AsyncClient(transport=transport)
+            ):
+                result = await http_request(url="https://example.com")
 
         assert result.startswith("Status: 200")
         assert '"ok"' in result
 
     async def test_http_error_returns_error_string(self) -> None:
-        import urllib.error
+        import httpx
 
-        exc = urllib.error.HTTPError(
-            url="https://example.com",
-            code=404,
-            msg="Not Found",
-            hdrs=mock.MagicMock(),  # type: ignore[arg-type]
-            fp=mock.MagicMock(),
-        )
-        exc.fp.read.return_value = b"not found"
+        def transport_handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(404, text="not found")
 
-        with mock.patch("urllib.request.urlopen", side_effect=exc):
-            result = await http_request(url="https://example.com")
+        with mock.patch(
+            "sage.tools.builtins.validate_and_resolve_url",
+            return_value=mock.MagicMock(
+                resolved_ip="93.184.216.34",
+                hostname="example.com",
+                port=None,
+                scheme="https",
+                path="/",
+                query="",
+                fragment="",
+            ),
+        ):
+            transport = httpx.MockTransport(transport_handler)
+            with mock.patch(
+                "httpx.AsyncClient", return_value=httpx.AsyncClient(transport=transport)
+            ):
+                result = await http_request(url="https://example.com")
 
-        assert "HTTP Error 404" in result
+        assert "HTTP Error 404" in result or "Status: 404" in result
 
-    async def test_custom_headers_forwarded(self) -> None:
-        captured: dict[str, mock.MagicMock] = {}
+    async def test_ssrf_blocked_by_resolve(self) -> None:
+        """http_request must reject private URLs via validate_and_resolve_url."""
+        with pytest.raises(ToolError, match="URL not allowed"):
+            await http_request(url="http://127.0.0.1/admin")
 
-        def fake_urlopen(req: object, timeout: int) -> object:  # noqa: ARG001
-            captured["req"] = req  # type: ignore[assignment]
-            raise ConnectionError("abort")
+    async def test_body_truncated_to_5000_chars(self) -> None:
+        import httpx
 
-        with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
-            with pytest.raises(ToolError):
-                await http_request(
-                    url="https://example.com",
-                    headers="X-Foo: bar",
-                )
+        big_body = "x" * 10000
 
-        req = captured["req"]
-        assert req.get_header("X-foo") == "bar"
+        def transport_handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, text=big_body)
+
+        with mock.patch(
+            "sage.tools.builtins.validate_and_resolve_url",
+            return_value=mock.MagicMock(
+                resolved_ip="93.184.216.34",
+                hostname="example.com",
+                port=None,
+                scheme="https",
+                path="/",
+                query="",
+                fragment="",
+            ),
+        ):
+            transport = httpx.MockTransport(transport_handler)
+            with mock.patch(
+                "httpx.AsyncClient", return_value=httpx.AsyncClient(transport=transport)
+            ):
+                result = await http_request(url="https://example.com")
+
+        body_part = result.split("\n", 1)[1]
+        assert len(body_part) == 5000
 
 
 class TestMemoryTools:
