@@ -6,179 +6,17 @@
 
 ## Table of Contents
 
-1. [Plan 1: Git Integration (P0)](#plan-1-git-integration)
-2. [Plan 2: Execution Sandboxing (P0)](#plan-2-execution-sandboxing)
-3. [Plan 3: Headless / CI Mode (P1)](#plan-3-headless--ci-mode)
-4. [Plan 4: Built-in Evaluation CLI (P1)](#plan-4-built-in-evaluation-cli)
-5. [Plan 5: Observability & Tracing (P1)](#plan-5-observability--tracing)
-6. [Plan 6: IDE Integration (P2)](#plan-6-ide-integration)
-7. [Plan 7: Durable Execution & Sessions (P2)](#plan-7-durable-execution--sessions)
-8. [Plan 8: AGENTS.md Naming Resolution (P2)](#plan-8-agentsmd-naming-resolution)
-9. [Plan 9: Multimodal Input (P3)](#plan-9-multimodal-input)
-10. [Plan 10: CLI UX Table-Stakes (P2)](#plan-10-cli-ux-table-stakes)
-11. [Plan 11: Community & Ecosystem (P3)](#plan-11-community--ecosystem)
-12. [Plan 12: Plugin Marketplace (P3)](#plan-12-plugin-marketplace)
-
----
-
-## Plan 1: Git Integration
-
-**Priority:** P0 (Critical)
-**Effort:** Medium (2-3 weeks)
-**Rationale:** Every major agent CLI has git integration. Aider's identity is built on it. Without git tools, agents can't safely make code changes with rollback capability.
-
-### Current State
-
-- `sage/git/snapshot.py` exists with `GitSnapshot` class (stash-based snapshots using `git stash create` + `git stash store` with `sage:` prefix)
-- `shell` tool can run git commands but has no git-specific dangerous pattern detection
-- Permission system supports pattern matching on shell commands (e.g., `"git log*": allow`)
-- No `git` permission category exists
-
-### Architecture
-
-```
-sage/git/
-  snapshot.py      # existing - stash-based snapshots
-  tools.py         # NEW - GitTools(ToolBase) with @tool methods
-  safety.py        # NEW - git-specific command validation
-
-sage/tools/
-  registry.py      # UPDATE - add "git" permission category
-  builtins.py      # UPDATE - add git patterns to _DANGEROUS_PATTERNS
-```
-
-### Implementation Steps
-
-#### Step 1: Add git-specific dangerous patterns to `_DANGEROUS_PATTERNS`
-
-**File:** `sage/tools/builtins.py`
-
-Add these patterns:
-```python
-r"\bgit\s+push\s+.*--force\b",
-r"\bgit\s+push\s+.*-f\b",
-r"\bgit\s+reset\s+--hard\b",
-r"\bgit\s+clean\s+-[fd]",
-r"\bgit\s+checkout\s+\.\s*$",
-r"\bgit\s+branch\s+-D\b",
-r"\bgit\s+rebase\b",              # requires interactive approval
-r"\bgit\s+push\s+.*main\b",       # push to main should require approval
-r"\bgit\s+push\s+.*master\b",
-```
-
-#### Step 2: Create `GitTools(ToolBase)` class
-
-**File:** `sage/git/tools.py` (new)
-
-```python
-class GitTools(ToolBase):
-    """First-class git integration tools."""
-
-    def __init__(self, repo_root: Path | None = None):
-        super().__init__()
-        self._repo_root = repo_root or Path.cwd()
-        self._sage_commit_hashes: set[str] = set()  # track sage-authored commits
-
-    @tool
-    async def git_status(self) -> str:
-        """Show working tree status (staged, unstaged, untracked files)."""
-
-    @tool
-    async def git_diff(self, ref: str = "HEAD", staged: bool = False) -> str:
-        """Show diff of changes. Use staged=True for staged changes only."""
-
-    @tool
-    async def git_log(self, count: int = 10, oneline: bool = True) -> str:
-        """Show recent commit history."""
-
-    @tool
-    async def git_commit(self, message: str, files: list[str] | None = None) -> str:
-        """Stage and commit files. If files is None, commits all staged changes.
-        Appends 'Co-authored-by: sage-agent' trailer automatically."""
-
-    @tool
-    async def git_branch(self, name: str | None = None, list_branches: bool = False) -> str:
-        """Create a new branch or list existing branches."""
-
-    @tool
-    async def git_undo(self) -> str:
-        """Undo the last sage-authored commit (only if not yet pushed).
-        Uses _sage_commit_hashes to verify safe undo."""
-```
-
-Design decisions (following Aider's proven patterns):
-- Auto-commit attribution via `Co-authored-by: sage-agent <noreply@sagebynature.com>` trailer
-- Track sage commit hashes in `_sage_commit_hashes` for safe undo (Aider pattern)
-- `git_undo` checks: (1) commit was authored by sage, (2) not yet pushed to remote, (3) no dirty files in changed paths
-- Commit dirty files separately before AI edits when `auto_snapshot: true` is set (Aider pattern)
-
-#### Step 3: Add `git` permission category
-
-**File:** `sage/tools/registry.py`
-
-```python
-CATEGORY_TOOLS["git"] = [
-    "git_status", "git_diff", "git_log", "git_commit",
-    "git_branch", "git_undo",
-    "snapshot_create", "snapshot_restore", "snapshot_list",
-]
-
-CATEGORY_ARG_MAP["git"] = "command"  # or None if using structured args
-```
-
-**File:** `sage/config.py`
-
-Add `git` to the `Permission` model.
-
-#### Step 4: Auto-snapshot before agent runs
-
-**File:** `sage/agent.py` — in `run()` method
-
-Before the first turn, if git tools are enabled:
-1. Check for dirty working tree
-2. Call `GitSnapshot.snapshot_create("pre-run")` to save state
-3. Optionally auto-commit dirty files (configurable via `git.auto_commit_dirty: true`)
-
-#### Step 5: Worktree support for parallel agents
-
-**File:** `sage/git/tools.py`
-
-```python
-@tool
-async def git_worktree_create(self, name: str, branch: str | None = None) -> str:
-    """Create an isolated git worktree at .sage/worktrees/<name>.
-    Uses detached HEAD to avoid branch pollution (Codex pattern)."""
-
-@tool
-async def git_worktree_remove(self, name: str) -> str:
-    """Remove a worktree. Warns if uncommitted changes exist."""
-```
-
-Worktree path: `.sage/worktrees/<name>` (following Claude Code convention).
-
-#### Step 6: Agent config support
-
-```yaml
-# AGENTS.md frontmatter
-git:
-  auto_snapshot: true        # snapshot before runs (default: true)
-  auto_commit_dirty: false   # commit dirty files before AI edits (default: false)
-  auto_commit_edits: false   # auto-commit after file_write/file_edit (default: false)
-
-permission:
-  git: allow                 # or {pattern: action} for fine-grained
-```
-
-### Tests
-
-- `tests/test_git/test_tools.py` — unit tests for each git tool
-- `tests/test_git/test_safety.py` — verify dangerous patterns are blocked
-- `tests/test_git/test_undo.py` — verify undo safety checks
-- Integration test: run an agent that edits files, verify commits are attributed
-
-### Dependencies
-
-None new — `asyncio.create_subprocess_exec` for git commands (same as `shell` tool).
+1. [Plan 2: Execution Sandboxing (P0)](#plan-2-execution-sandboxing)
+2. [Plan 3: Headless / CI Mode (P1)](#plan-3-headless--ci-mode)
+3. [Plan 4: Built-in Evaluation CLI (P1)](#plan-4-built-in-evaluation-cli)
+4. [Plan 5: Observability & Tracing (P1)](#plan-5-observability--tracing)
+5. [Plan 6: IDE Integration (P2)](#plan-6-ide-integration)
+6. [Plan 7: Durable Execution & Sessions (P2)](#plan-7-durable-execution--sessions)
+7. [Plan 8: AGENTS.md Naming Resolution (P2)](#plan-8-agentsmd-naming-resolution)
+8. [Plan 9: Multimodal Input (P3)](#plan-9-multimodal-input)
+9. [Plan 10: CLI UX Table-Stakes (P2)](#plan-10-cli-ux-table-stakes)
+10. [Plan 11: Community & Ecosystem (P3)](#plan-11-community--ecosystem)
+11. [Plan 12: Plugin Marketplace (P3)](#plan-12-plugin-marketplace)
 
 ---
 
@@ -1410,7 +1248,7 @@ Create `sagebynature/sage-registry` GitHub repo with `registry.json`:
 ## Implementation Roadmap
 
 ### Wave 1 (Weeks 1-4): Safety & Trust
-- Plan 1: Git Integration (P0)
+- ~~Plan 1: Git Integration~~ ✅ Complete
 - Plan 2: Execution Sandboxing — Layer 1 (app-level hardening) (P0)
 - Plan 3: Headless / CI Mode (P1)
 - Plan 8: AGENTS.md Naming Resolution (P2, low effort)

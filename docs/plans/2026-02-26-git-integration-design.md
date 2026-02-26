@@ -1,5 +1,7 @@
 # Git Integration Design
 
+**Status:** ✅ Complete — implemented 2026-02-26, merged to `20260226-enhancements`
+
 ## Summary
 
 Add first-class git tools to sage-agent following the existing `ToolBase` + `@tool` pattern. Agents get structured git operations (status, diff, log, commit, branch, undo, worktrees) with permission control, dangerous command detection, and auto-snapshot before runs.
@@ -21,9 +23,13 @@ Add first-class git tools to sage-agent following the existing `ToolBase` + `@to
 
 ### New Test Files
 
-- `tests/test_git/test_tools.py` — unit tests for all GitTools methods
-- `tests/test_git/test_safety.py` — dangerous pattern detection tests
-- `tests/test_git/test_undo.py` — undo safety checks
+- `tests/test_git/conftest.py` — shared `git_repo` fixture for all test modules
+- `tests/test_git/test_utils.py` — 4 tests for `run_git()` helper
+- `tests/test_git/test_tools.py` — 24 unit tests for all GitTools methods
+- `tests/test_git/test_safety.py` — 20 dangerous pattern detection tests
+- `tests/test_git/test_undo.py` — 4 undo safety checks
+- `tests/test_git/test_agent_integration.py` — 5 registry wiring tests
+- `tests/test_git/test_integration.py` — 3 end-to-end integration tests
 
 ## Design Decisions
 
@@ -84,7 +90,7 @@ class GitTools(ToolBase):
 
 ## Dangerous Patterns (Step 1)
 
-Added to `_DANGEROUS_PATTERNS` in `builtins.py`:
+Added to `_DANGEROUS_PATTERNS` in `builtins.py`, matched with `re.IGNORECASE`:
 
 ```python
 r"\bgit\s+push\s+.*--force\b",
@@ -98,6 +104,8 @@ r"\bgit\s+push\s+.*main\b",
 r"\bgit\s+push\s+.*master\b",
 ```
 
+All pattern checks use `re.search(pattern, command, re.IGNORECASE)` to prevent case-variant bypasses (e.g., `GIT RESET --HARD`).
+
 ## Permission Integration (Step 3)
 
 ```python
@@ -110,7 +118,14 @@ CATEGORY_TOOLS["git"] = [
 ]
 
 CATEGORY_ARG_MAP["git"] = None  # structured args, no single pattern key
+
+# Auto-loading ToolBase subclasses from modules
+_CATEGORY_MODULES: dict[str, list[str]] = {
+    "git": ["sage.git.tools", "sage.git.snapshot"],
+}
 ```
+
+`register_from_permissions` dynamically imports each module in `_CATEGORY_MODULES["git"]`, finds `ToolBase` subclasses, auto-instantiates them, and registers all their `@tool` methods.
 
 ```python
 # config.py
@@ -155,3 +170,4 @@ In `Agent.run()` and `Agent.stream()`, before the first turn:
 - Uses detached HEAD to avoid branch pollution
 - `git_worktree_create` creates the worktree directory and returns its path
 - `git_worktree_remove` checks for uncommitted changes before removal
+- Path traversal guard: `resolve()` + `relative_to()` prevents `../../../evil` names from escaping the repo root
