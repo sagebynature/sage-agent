@@ -20,10 +20,14 @@ AZURE_AI_API_KEY = "${AZURE_AI_API_KEY}"
 AZURE_AI_API_BASE = "https://d-ue2-aicorepltfm-aisvcs.services.ai.azure.com"
 
 
-# ─── Global Defaults ────────────────────────────────────────────────────────
+# ─── Global Defaults ──────────────────────────────────────────────────────────
 [defaults]
-model = "azure_ai/Kimi-K2.5"    # LiteLLM model identifier (provider/model format)
-max_turns = 20                  # Maximum agentic turns before stopping
+
+# LLM model identifier (provider/model format)
+model = "azure_ai/Kimi-K2.5"
+
+# Maximum agentic turns before stopping
+max_turns = 10
 
 # Custom tool extensions (list of Python module paths)
 # extensions = ["myapp.tools"]
