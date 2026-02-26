@@ -60,6 +60,7 @@ class MainConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    env: dict[str, str] = Field(default_factory=dict)
     defaults: ConfigOverrides = Field(default_factory=ConfigOverrides)
     agents: dict[str, AgentOverrides] = Field(default_factory=dict)
 

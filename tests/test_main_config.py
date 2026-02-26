@@ -98,6 +98,26 @@ class TestMainConfig:
         assert cfg.agents["researcher"].max_turns == 30
         assert cfg.agents["summarizer"].model == "gpt-4o-mini"
 
+    def test_env_field_defaults_empty(self) -> None:
+        cfg = MainConfig()
+        assert cfg.env == {}
+
+    def test_env_field_accepts_dict(self) -> None:
+        cfg = MainConfig(env={"FOO": "bar", "BAZ": "${QUX}"})
+        assert cfg.env == {"FOO": "bar", "BAZ": "${QUX}"}
+
+    def test_env_field_in_toml(self, tmp_path: Path) -> None:
+        toml_path = _write_toml(
+            tmp_path / "config.toml",
+            '[env]\nAZURE_AI_API_KEY = "${AZURE_AI_API_KEY}"\nAZURE_AI_API_BASE = "https://example.com"\n',
+        )
+        cfg = load_main_config(toml_path)
+        assert cfg is not None
+        assert cfg.env == {
+            "AZURE_AI_API_KEY": "${AZURE_AI_API_KEY}",
+            "AZURE_AI_API_BASE": "https://example.com",
+        }
+
     def test_extra_fields_rejected(self) -> None:
         with pytest.raises(Exception):
             MainConfig(unknown_section="value")  # type: ignore[call-arg]
