@@ -1,1 +1,1 @@
-"""Git integration for Sage."""
+"""Git integration for Sage — snapshots, tools, and worktrees."""

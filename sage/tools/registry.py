@@ -25,6 +25,19 @@ CATEGORY_TOOLS: dict[str, list[str]] = {
     "web": ["web_fetch", "web_search", "http_request"],
     "memory": ["memory_store", "memory_recall"],
     "task": [],
+    "git": [
+        "git_status",
+        "git_diff",
+        "git_log",
+        "git_commit",
+        "git_branch",
+        "git_undo",
+        "git_worktree_create",
+        "git_worktree_remove",
+        "snapshot_create",
+        "snapshot_restore",
+        "snapshot_list",
+    ],
 }
 
 CATEGORY_ARG_MAP: dict[str, str | None] = {
@@ -34,6 +47,13 @@ CATEGORY_ARG_MAP: dict[str, str | None] = {
     "web": "url",
     "memory": None,
     "task": None,
+    "git": None,
+}
+
+# Modules containing ToolBase instances for each category.
+# Used by register_from_permissions to load entire modules when a category is enabled.
+_CATEGORY_MODULES: dict[str, list[str]] = {
+    "git": ["sage.git.tools", "sage.git.snapshot"],
 }
 
 
@@ -181,7 +201,18 @@ class ToolRegistry:
             if effective == "deny":
                 continue
             for tool_name in tool_names:
-                self.load_from_module(tool_name)
+                try:
+                    self.load_from_module(tool_name)
+                except (ToolError, ImportError, ModuleNotFoundError):
+                    pass  # tool not yet available
+
+            # Load category modules (for ToolBase classes).
+            if category in _CATEGORY_MODULES:
+                for mod_path in _CATEGORY_MODULES[category]:
+                    try:
+                        self.load_from_module(mod_path)
+                    except (ToolError, ImportError, ModuleNotFoundError):
+                        pass
 
         for module_path in extensions or []:
             self.load_from_module(module_path)
@@ -229,5 +260,12 @@ class ToolRegistry:
                 attr = getattr(mod, name)
                 if isinstance(attr, ToolBase):
                     self.register(attr)
+                elif inspect.isclass(attr) and issubclass(attr, ToolBase) and attr is not ToolBase:
+                    # Instantiate ToolBase subclasses found at module level
+                    # so their @tool-decorated methods are available.
+                    try:
+                        self.register(attr())
+                    except Exception:
+                        pass
                 elif callable(attr) and hasattr(attr, "__tool_schema__"):
                     self.register(attr)

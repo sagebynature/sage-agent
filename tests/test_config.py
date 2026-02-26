@@ -911,3 +911,43 @@ class TestPermissionModel:
 
         with pytest.raises(ValidationError):
             Permission(shell={"*": "invalid_action"})  # type: ignore[arg-type]
+
+    def test_permission_git_field(self) -> None:
+        from sage.config import Permission
+
+        perm = Permission(git="allow")
+        assert perm.git == "allow"
+
+    def test_permission_git_default_none(self) -> None:
+        from sage.config import Permission
+
+        perm = Permission()
+        assert perm.git is None
+
+
+class TestGitConfig:
+    def test_git_config_parsed(self, tmp_path: Path) -> None:
+        config_file = _write_md(
+            tmp_path / "AGENTS.md",
+            {
+                "name": "test",
+                "model": "gpt-4o",
+                "git": {
+                    "auto_snapshot": True,
+                    "auto_commit_dirty": False,
+                    "auto_commit_edits": False,
+                },
+            },
+        )
+        config = load_config(str(config_file))
+        assert config.git is not None
+        assert config.git.auto_snapshot is True
+        assert config.git.auto_commit_dirty is False
+
+    def test_git_config_defaults(self, tmp_path: Path) -> None:
+        config_file = _write_md(
+            tmp_path / "AGENTS.md",
+            {"name": "test", "model": "gpt-4o"},
+        )
+        config = load_config(str(config_file))
+        assert config.git is None
