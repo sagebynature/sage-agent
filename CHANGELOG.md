@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.1.1 (2026-02-26)
+
+### Bug Fixes
+
+- **docs**: Update prerequisites for Azure AI API key and base in run.py
+  ([`6a61b81`](https://github.com/sagebynature/sage-agent/commit/6a61b81705cecf9cbf8e1aa1d8b2f0be3cfba41e))
+
+
 ## v1.1.0 (2026-02-26)
 
 ### Bug Fixes
