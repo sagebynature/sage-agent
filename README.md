@@ -296,6 +296,83 @@ sage/
 - [`examples/devtools_agent/`](examples/devtools_agent/) — Developer tools
 - [`examples/claude_agent/`](examples/claude_agent/) — Anthropic Claude model
 
+## Claude Code Skills
+
+This repo includes [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skills that help you create and optimize Sage agents through a guided, conversational workflow. The skills live in the `skills/` directory.
+
+### Prerequisites
+
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed
+- [sage-evaluator](https://github.com/sagebynature/sage-evaluator) installed (`uv pip install sage-evaluator`) — required by the evaluate skill
+
+### Available Skills
+
+#### `create-sage-agent` — Create a new agent from a description
+
+Walks you through generating a complete `AGENTS.md` from a natural language description. It infers permissions, model settings, and system prompt structure, and identifies opportunities for subagent decomposition.
+
+**Invoke it in Claude Code:**
+
+```
+/skill create-sage-agent
+```
+
+**What it does:**
+
+1. Asks what the agent should do
+2. Infers permissions, model, and complexity from your description
+3. Identifies subagent opportunities (e.g., pipeline stages, distinct roles)
+4. Generates a complete `AGENTS.md` with frontmatter config and system prompt
+5. Validates the config
+6. Optionally hands off to `evaluate-sage-agent` for optimization
+
+**Example interaction:**
+
+```
+You: /skill create-sage-agent
+Claude: What should this agent do?
+You: A code reviewer that reads files, checks git history, and flags security issues
+Claude: [generates AGENTS.md with read + shell permissions, appropriate system prompt]
+```
+
+#### `evaluate-sage-agent` — Validate, benchmark, and optimize an agent
+
+Runs a structured evaluation pipeline on an existing agent config: validation, suggestion generation, model benchmarking, and before/after comparison.
+
+**Invoke it in Claude Code:**
+
+```
+/skill evaluate-sage-agent
+```
+
+**What it does:**
+
+1. **Validate** — Checks the agent config for errors
+2. **Suggest** — Analyzes the config and recommends prompt improvements, tool extractions, guardrails, and architectural changes
+3. **Apply** — Creates a versioned backup (`AGENTS.v1.md`, etc.) and applies accepted suggestions
+4. **Benchmark** — Tests the agent against one or more models, reporting quality, latency, token usage, and cost
+5. **Compare** — Runs a before/after comparison if changes were applied, showing deltas in each metric
+
+**Example interaction:**
+
+```
+You: /skill evaluate-sage-agent
+Claude: Which agent would you like to evaluate?
+You: ./code-reviewer
+Claude: [validates, suggests improvements, benchmarks, shows results]
+```
+
+### Typical Workflow
+
+```
+create-sage-agent  →  evaluate-sage-agent
+  (describe it)         (optimize it)
+```
+
+1. Use `create-sage-agent` to generate a new agent from a description
+2. Use `evaluate-sage-agent` to validate and optimize it
+3. Iterate — the evaluate skill versions your config so you can compare changes
+
 ## Requirements
 
 - Python 3.10+
