@@ -2305,3 +2305,186 @@ class TestMemoryToolUnification:
                 with patch.dict(os.environ, {"SAGE_MEMORY_PATH": mem_path}):
                     await agent.tool_registry.execute("memory_store", {"key": "k", "value": "v"})
             assert any(issubclass(warning.category, DeprecationWarning) for warning in w)
+
+
+# ── Memory Relevance Filter Tests ─────────────────────────────────────────────
+
+
+class TestMemoryRelevanceFilter:
+    """Tests for relevance filtering in _store_memory()."""
+
+    def _make_agent_with_memory_config(
+        self,
+        mock_memory: Any,
+        relevance_filter: str = "length",
+        min_exchange_length: int = 100,
+        relevance_threshold: float = 0.5,
+        provider: Any = None,
+    ) -> Agent:
+        """Build an Agent with a mock memory backend and a custom _memory_config."""
+
+        from sage.config import MemoryConfig
+
+        mem_config = MemoryConfig(
+            relevance_filter=relevance_filter,  # type: ignore[arg-type]
+            min_exchange_length=min_exchange_length,
+            relevance_threshold=relevance_threshold,
+        )
+        if provider is None:
+            provider = MockProvider([])
+        agent = Agent(
+            name="filter-test",
+            model="test-model",
+            memory=mock_memory,
+            provider=provider,
+        )
+        agent._memory_config = mem_config
+        return agent
+
+    @pytest.mark.asyncio
+    async def test_length_filter_skips_short_exchanges(self) -> None:
+        """Length filter: short exchange (< min_exchange_length) is NOT stored."""
+        from unittest.mock import AsyncMock
+
+        mock_memory = AsyncMock()
+        mock_memory.initialize = AsyncMock()
+        mock_memory.recall = AsyncMock(return_value=[])
+        mock_memory.store = AsyncMock(return_value="mem-1")
+
+        agent = self._make_agent_with_memory_config(
+            mock_memory,
+            relevance_filter="length",
+            min_exchange_length=100,
+        )
+
+        # Build a short input/output pair that results in content < 100 chars
+        short_input = "Hi"
+        short_output = "Hello"
+        # "User: Hi\nAssistant: Hello" = 25 chars, well below 100
+        await agent._store_memory(short_input, short_output)
+
+        mock_memory.store.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_length_filter_stores_long_exchanges(self) -> None:
+        """Length filter: long exchange (>= min_exchange_length) IS stored."""
+        from unittest.mock import AsyncMock
+
+        mock_memory = AsyncMock()
+        mock_memory.initialize = AsyncMock()
+        mock_memory.recall = AsyncMock(return_value=[])
+        mock_memory.store = AsyncMock(return_value="mem-2")
+
+        agent = self._make_agent_with_memory_config(
+            mock_memory,
+            relevance_filter="length",
+            min_exchange_length=100,
+        )
+
+        # Build input/output that together exceed 100 chars
+        long_input = "What is the best way to learn Python programming for beginners?"
+        long_output = "Start with the official Python tutorial and practice with small projects."
+        # "User: <long_input>\nAssistant: <long_output>" far exceeds 100 chars
+        await agent._store_memory(long_input, long_output)
+
+        mock_memory.store.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_none_filter_stores_everything(self) -> None:
+        """None filter: even very short exchanges are stored."""
+        from unittest.mock import AsyncMock
+
+        mock_memory = AsyncMock()
+        mock_memory.initialize = AsyncMock()
+        mock_memory.recall = AsyncMock(return_value=[])
+        mock_memory.store = AsyncMock(return_value="mem-3")
+
+        agent = self._make_agent_with_memory_config(
+            mock_memory,
+            relevance_filter="none",
+            min_exchange_length=100,
+        )
+
+        # Short exchange that would be skipped by "length" filter
+        await agent._store_memory("OK", "Sure")
+
+        mock_memory.store.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_llm_filter_skips_low_score(self) -> None:
+        """LLM filter: provider returns a low score -> exchange is NOT stored."""
+        from unittest.mock import AsyncMock
+
+        mock_memory = AsyncMock()
+        mock_memory.initialize = AsyncMock()
+        mock_memory.recall = AsyncMock(return_value=[])
+        mock_memory.store = AsyncMock(return_value="mem-4")
+
+        # Provider returns "0.2" for the scoring call
+        scoring_provider = MockProvider([_text_result("0.2")])
+
+        agent = self._make_agent_with_memory_config(
+            mock_memory,
+            relevance_filter="llm",
+            relevance_threshold=0.5,
+            provider=scoring_provider,
+        )
+
+        await agent._store_memory("Hello", "Hi there")
+
+        mock_memory.store.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_llm_filter_stores_high_score(self) -> None:
+        """LLM filter: provider returns a high score -> exchange IS stored."""
+        from unittest.mock import AsyncMock
+
+        mock_memory = AsyncMock()
+        mock_memory.initialize = AsyncMock()
+        mock_memory.recall = AsyncMock(return_value=[])
+        mock_memory.store = AsyncMock(return_value="mem-5")
+
+        # Provider returns "0.8" for the scoring call
+        scoring_provider = MockProvider([_text_result("0.8")])
+
+        agent = self._make_agent_with_memory_config(
+            mock_memory,
+            relevance_filter="llm",
+            relevance_threshold=0.5,
+            provider=scoring_provider,
+        )
+
+        await agent._store_memory(
+            "What is the capital of France?",
+            "The capital of France is Paris.",
+        )
+
+        mock_memory.store.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_llm_filter_defaults_to_store_on_parse_failure(self) -> None:
+        """LLM filter: when provider returns unparseable text, exchange is stored (fail-safe)."""
+        from unittest.mock import AsyncMock
+
+        mock_memory = AsyncMock()
+        mock_memory.initialize = AsyncMock()
+        mock_memory.recall = AsyncMock(return_value=[])
+        mock_memory.store = AsyncMock(return_value="mem-6")
+
+        # Provider returns a non-numeric response
+        scoring_provider = MockProvider([_text_result("not a number")])
+
+        agent = self._make_agent_with_memory_config(
+            mock_memory,
+            relevance_filter="llm",
+            relevance_threshold=0.5,
+            provider=scoring_provider,
+        )
+
+        await agent._store_memory(
+            "What is the answer?",
+            "The answer is 42.",
+        )
+
+        # Fail-safe: parse failure defaults to score=1.0, which is >= 0.5, so stored
+        mock_memory.store.assert_awaited_once()
