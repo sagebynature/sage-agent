@@ -71,6 +71,7 @@ class Agent:
         mcp_clients: list[MCPClient] | None = None,
         compaction_threshold: int = 50,
         parallel_tool_execution: bool = True,
+        tool_timeout: float | None = None,
     ) -> None:
         self.name = name
         self.model = model
@@ -99,7 +100,7 @@ class Agent:
         self.provider: ProviderProtocol = provider or LiteLLMProvider(model, **(model_params or {}))  # type: ignore[assignment]
 
         # Build tool registry from the supplied tool list.
-        self.tool_registry = ToolRegistry()
+        self.tool_registry = ToolRegistry(default_timeout=tool_timeout)
         if tools:
             for t in tools:
                 if isinstance(t, str):
@@ -239,6 +240,7 @@ class Agent:
             if config.memory is not None
             else 50,
             parallel_tool_execution=config.parallel_tool_execution,
+            tool_timeout=config.tool_timeout,
         )
 
         if config.permission is not None:

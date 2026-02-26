@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import sys
 import textwrap
@@ -463,3 +464,69 @@ class TestGitCategory:
         from sage.tools.registry import CATEGORY_ARG_MAP
 
         assert CATEGORY_ARG_MAP["git"] is None
+
+
+class TestToolTimeout:
+    """Tests for per-tool and registry-default timeouts."""
+
+    async def test_tool_times_out(self) -> None:
+        """Tool that runs too long raises ToolError."""
+
+        @tool
+        async def slow_tool(x: str) -> str:
+            """Slow tool."""
+            await asyncio.sleep(10)
+            return x
+
+        registry = ToolRegistry(default_timeout=0.05)
+        registry.register(slow_tool)
+        with pytest.raises(ToolError, match="timed out"):
+            await registry.execute("slow_tool", {"x": "hi"})
+
+    async def test_per_tool_timeout_overrides_default(self) -> None:
+        """Per-tool timeout takes precedence over registry default."""
+
+        @tool(timeout=0.05)
+        async def fast_timeout_tool(x: str) -> str:
+            """Fast timeout tool."""
+            await asyncio.sleep(10)
+            return x
+
+        registry = ToolRegistry(default_timeout=60.0)  # high default
+        registry.register(fast_timeout_tool)
+        with pytest.raises(ToolError, match="timed out"):
+            await registry.execute("fast_timeout_tool", {"x": "hi"})
+
+    async def test_no_timeout_when_not_set(self) -> None:
+        """Tool completes normally when no timeout."""
+
+        @tool
+        async def quick_tool(x: str) -> str:
+            """Quick tool."""
+            return f"done:{x}"
+
+        registry = ToolRegistry()
+        registry.register(quick_tool)
+        result = await registry.execute("quick_tool", {"x": "test"})
+        assert result == "done:test"
+
+    async def test_tool_decorator_stores_timeout(self) -> None:
+        """@tool(timeout=30) stores __tool_timeout__ on the function."""
+
+        @tool(timeout=30.0)
+        def my_tool(x: str) -> str:
+            """A tool."""
+            return x
+
+        assert hasattr(my_tool, "__tool_timeout__")
+        assert my_tool.__tool_timeout__ == 30.0
+
+    async def test_plain_tool_decorator_no_timeout(self) -> None:
+        """@tool (no args) does not set __tool_timeout__."""
+
+        @tool
+        def my_tool(x: str) -> str:
+            """A tool."""
+            return x
+
+        assert not hasattr(my_tool, "__tool_timeout__")

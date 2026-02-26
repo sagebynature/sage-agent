@@ -155,6 +155,7 @@ class AgentConfig(BaseModel):
     git: GitConfig | None = None
     sandbox: SandboxConfig | None = None
     parallel_tool_execution: bool = True
+    tool_timeout: float | None = None
 
     @field_validator("subagents", mode="before")
     @classmethod
