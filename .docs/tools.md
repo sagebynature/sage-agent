@@ -14,6 +14,7 @@ MCP integration, and how to create your own tools.
 - [Quick Start](#quick-start)
 - [Built-in Tools](#built-in-tools)
   - [Shell](#shell)
+  - [Shell Sandbox](#shell-sandbox)
   - [File Read](#file-read)
   - [File Write](#file-write)
   - [File Edit](#file-edit)
@@ -94,12 +95,47 @@ Runs a shell command and returns combined stdout and stderr.
 **Returns:** Command output. Stderr is included under a `[stderr]` header.
 
 **Security:** A regex blocklist prevents destructive commands. See
-[Security](#security) for the full list.
+[Security](#security) for the full list. For stronger process isolation, enable
+the optional [Shell Sandbox](#shell-sandbox).
 
 ```
 Agent calls: shell(command="ls -la src/")
 → "total 24\ndrwxr-xr-x 3 user user 4096 ..."
 ```
+
+---
+
+### Shell Sandbox
+
+For stricter isolation, Sage can run shell commands inside a **sandbox** in
+addition to the blocklist. Enable it via the `sandbox:` field in `AGENTS.md`
+frontmatter:
+
+```yaml
+sandbox:
+  backend: native       # "native" (default) or "bubblewrap"
+  allowed_env:          # extra env vars to pass through
+    - MY_TOKEN
+  network: true         # allow network access (bubblewrap backend only)
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `backend` | `"native"` or `"bubblewrap"` | `"native"` | Sandbox implementation |
+| `allowed_env` | `list[str]` | `[]` | Extra environment variables to pass through |
+| `network` | `bool` | `true` | Allow network (bubblewrap only) |
+
+**Native sandbox** strips the child process environment to a trusted minimum
+(`PATH`, `HOME`, `USER`, `LANG`, `TERM`) plus any variables explicitly listed in
+`allowed_env`. This blocks common bypass vectors such as `$SHELL` and injected
+`$BASH_FUNC_*` variables.
+
+**Bubblewrap sandbox** provides Linux kernel namespace isolation via the `bwrap`
+binary (must be installed separately). It mounts only safe read-only filesystem
+views and can disable network access (`network: false`).
+
+When `sandbox:` is not set, commands run in the current process environment with
+only the blocklist as protection.
 
 ---
 
@@ -180,8 +216,10 @@ Fetches a URL and returns the content as markdown.
 [markdownify](https://github.com/matthewwithanm/python-markdownify),
 truncated to 10,000 characters.
 
-**Security:** SSRF protection blocks private IPs, loopback, link-local,
-and cloud metadata endpoints. Only `http`/`https` schemes allowed.
+**Security:** Full SSRF protection with DNS rebinding (TOCTOU) prevention: the
+hostname is resolved exactly once, the resulting IP is validated, and that pinned
+IP is used for the actual connection. Only `http`/`https` schemes allowed. See
+[URL Validation](#url-validation-ssrf-protection) for details.
 
 #### web_search
 
@@ -694,8 +732,13 @@ symlinks are rejected.
 
 ### URL Validation (SSRF Protection)
 
-`http_request`, `web_fetch`, and `web_search` validate URLs before making
-requests. Blocked targets:
+`http_request` and `web_fetch` validate URLs and resolve the hostname **exactly
+once** before connecting. The resolved IP is pinned and used for the actual TCP
+connection while the original hostname is sent as the `Host` header and TLS SNI
+value — this prevents DNS rebinding (TOCTOU) attacks where an attacker causes a
+hostname to resolve differently between the validation check and the connection.
+
+Blocked targets:
 
 - Non-HTTP schemes (only `http` and `https` allowed)
 - Cloud metadata endpoints (`metadata.google.internal`, `169.254.169.254`)
@@ -752,7 +795,8 @@ Agent
 | `sage.tools.builtins` | Core tools: shell, file_read, file_write, http_request, memory_store, memory_recall |
 | `sage.tools.file_tools` | File manipulation: file_edit |
 | `sage.tools.web_tools` | Web access: web_fetch, web_search |
-| `sage.tools._security` | URL validation and SSRF protection |
+| `sage.tools._security` | URL validation, DNS-pinned SSRF protection (`ResolvedURL`, `validate_and_resolve_url`) |
+| `sage.tools._sandbox` | Shell sandbox backends (`NativeSandbox`, `BubblewrapSandbox`) and `make_sandboxed_shell` factory |
 | `sage.permissions.policy` | Config-driven permission rules with pattern matching |
 | `sage.permissions.interactive` | Interactive permission handler (prompts user on `ask`) |
 | `sage.mcp.client` | MCP client — connects to servers, discovers and calls tools |

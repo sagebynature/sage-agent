@@ -2,6 +2,26 @@
 
 <!-- version list -->
 
+## v1.1.2 (2026-02-26)
+
+### Features
+
+- **security**: Prevent DNS rebinding (TOCTOU) in SSRF protection — hostname now
+  resolved exactly once via `validate_and_resolve_url`; pinned IP used for actual
+  connection with original hostname preserved for `Host` header and TLS SNI
+  (`sage.tools._security.ResolvedURL`)
+
+- **security**: Add optional shell sandbox (`sandbox:` frontmatter field) with
+  `NativeSandbox` (environment stripping) and `BubblewrapSandbox` (Linux
+  namespace isolation via `bwrap`); per-agent closure pattern prevents
+  concurrency issues between agents with different sandbox configs
+  (`sage.tools._sandbox`)
+
+- **security**: Replace blocking `urllib.request.urlopen` with async
+  `httpx.AsyncClient` in `http_request` built-in tool; connections use pinned IP
+  with IP-pinning transport for SSRF consistency
+
+
 ## v1.1.1 (2026-02-26)
 
 ### Bug Fixes
