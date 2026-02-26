@@ -35,7 +35,7 @@ max_turns = 10
 # ── Model Parameters ──────────────────────────────────────────────────────────
 # Only set fields are forwarded to the provider; omitted fields use provider defaults.
 [defaults.model_params]
-temperature = 0.7
+temperature = 0.0
 max_tokens = 4096
 # top_p = 1.0
 # top_k = 40
@@ -50,6 +50,7 @@ max_tokens = 4096
 # Controls what actions agents can take without asking.
 [defaults.permission]
 shell = "ask"
+memory_store = "allow"
 
 # ── Context Management ────────────────────────────────────────────────────────
 # Token-aware context window management.
