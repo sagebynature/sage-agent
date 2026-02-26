@@ -291,7 +291,7 @@ class Agent:
         """
         logger.info("Agent '%s' run started: %s", self.name, input[:80])
 
-        messages, _ = await self._pre_loop_setup(input)
+        messages = await self._pre_loop_setup(input)
 
         for turn in range(self.max_turns):
             logger.debug("Turn %d/%d", turn + 1, self.max_turns)
@@ -331,7 +331,7 @@ class Agent:
         """
         logger.info("Agent '%s' stream started: %s", self.name, input[:80])
 
-        messages, _ = await self._pre_loop_setup(input)
+        messages = await self._pre_loop_setup(input)
 
         for turn in range(self.max_turns):
             logger.debug("Stream turn %d/%d", turn + 1, self.max_turns)
@@ -438,7 +438,7 @@ class Agent:
 
     # ── Private helpers ───────────────────────────────────────────────
 
-    async def _pre_loop_setup(self, input: str) -> tuple[list[Message], str | None]:
+    async def _pre_loop_setup(self, input: str) -> list[Message]:
         """MCP init, memory init, context window detection, memory recall, build initial messages list."""
         # Connect MCP servers and register their tools on first run.
         await self._ensure_mcp_initialized()
@@ -453,7 +453,7 @@ class Agent:
 
         await self._maybe_auto_snapshot()
 
-        return messages, memory_context
+        return messages
 
     async def _execute_tool_calls(
         self, tool_calls: list[ToolCall], messages: list[Message]
@@ -507,9 +507,11 @@ class Agent:
                 *(_safe_execute(tc) for tc in tool_calls),
                 return_exceptions=True,
             )
-            # Re-raise any SagePermissionError (fatal; must not be swallowed).
+            # Re-raise any BaseException (e.g. SagePermissionError, CancelledError).
+            # _safe_execute converts Exception-typed failures to error strings, so
+            # anything that lands here as an exception is genuinely fatal.
             for item in raw:
-                if isinstance(item, SagePermissionError):
+                if isinstance(item, BaseException):
                     raise item
             pairs = cast(list[tuple[str, str]], raw)
         else:
@@ -744,10 +746,6 @@ class Agent:
                 logger.error("Failed to initialize MCP server: %s", exc)
 
         self._mcp_initialized = True
-
-    async def _execute_tool(self, tc: ToolCall) -> str:
-        """Dispatch a tool call through the registry."""
-        return await self.tool_registry.execute(tc.name, tc.arguments)
 
     async def _recall_memory(self, query: str) -> str | None:
         """Recall relevant memories for the given query, formatted as text."""

@@ -2190,3 +2190,20 @@ class TestParallelToolExecution:
         assert messages[1].content == "done-medium"
         assert messages[2].tool_call_id == "id_fast"
         assert messages[2].content == "done-fast"
+
+    @pytest.mark.asyncio
+    async def test_permission_error_propagates_in_sequential_mode(self) -> None:
+        """SagePermissionError must propagate in sequential (parallel=False) mode too."""
+        from unittest.mock import patch
+
+        from sage.exceptions import PermissionError as SagePermissionError
+
+        async def deny_all(name: str, arguments: dict) -> str:
+            raise SagePermissionError("denied")
+
+        agent = self._make_agent(parallel=False)
+        tool_calls = [ToolCall(id="tc_1", name="some_tool", arguments={})]
+        messages: list[Message] = []
+        with patch.object(agent.tool_registry, "execute", side_effect=deny_all):
+            with pytest.raises(SagePermissionError, match="denied"):
+                await agent._execute_tool_calls(tool_calls, messages)
