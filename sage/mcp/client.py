@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import AsyncExitStack
 from typing import Any
+
+import anyio
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -110,7 +113,10 @@ class MCPClient:
     async def disconnect(self) -> None:
         """Disconnect from the MCP server."""
         logger.debug("MCP disconnecting")
-        await self._exit_stack.aclose()
+        try:
+            await self._exit_stack.aclose()
+        except (asyncio.CancelledError, anyio.get_cancelled_exc_class()):
+            logger.debug("MCP disconnect: subprocess cleanup cancelled (safe to ignore)")
         self._session = None
 
     @property

@@ -65,6 +65,18 @@ tool_output_max_chars = 5000  # max chars per tool output before truncation
 # transport = "sse"
 # url = "http://localhost:8080/sse"
 
+[[defaults.mcp_servers]]
+name = "context7"
+transport = "stdio"
+command = "npx"
+args = ["-y", "@upstash/context7-mcp@latest"]
+
+[[defaults.mcp_servers]]
+name = "sequentialthinking"
+transport = "stdio"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-sequential-thinking@latest"]
+
 
 # ─── Per-Agent Overrides ──────────────────────────────────────────────────────
 # Each [agents.<name>] section overrides [defaults] for a specific agent.

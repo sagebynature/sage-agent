@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -677,7 +678,10 @@ class Agent:
             except Exception as exc:
                 logger.debug("MCP disconnect error: %s", exc)
         if self.memory is not None and hasattr(self.memory, "close"):
-            await self.memory.close()
+            try:
+                await self.memory.close()
+            except (Exception, asyncio.CancelledError) as exc:
+                logger.debug("Memory close error: %s", exc)
             self._memory_initialized = False
 
     async def _ensure_memory_initialized(self) -> None:
