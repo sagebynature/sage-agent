@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "sage-agent"
-version = "1.4.0"
+version = "1.5.0"
 description = "Sage - Simplified AI agent definition and deployment via configuration"
 authors = [
     {name = "Sage Choi", email = "iamsagebynature@gmail.com"}
@@ -31,6 +31,10 @@ dependencies = [
 
 [project.optional-dependencies]
 vec = ["sqlite-vec>=0.1"]
+tracing = [
+    "opentelemetry-api>=1.20",
+    "opentelemetry-sdk>=1.20",
+]
 
 [dependency-groups]
 dev = [

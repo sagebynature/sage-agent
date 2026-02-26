@@ -172,6 +172,7 @@ The parser splits on `---` delimiters, extracts the YAML block via `yaml.safe_lo
 | `sandbox` | `SandboxConfig` | `None` | Shell sandbox configuration (native env-strip or bubblewrap namespace isolation) |
 | `parallel_tool_execution` | `bool` | `true` | Run independent tool calls concurrently via `asyncio.gather` |
 | `tool_timeout` | `float \| null` | `null` | Default timeout (seconds) for all tool calls; per-tool `@tool(timeout=N)` takes precedence |
+| `tracing` | `TracingConfig` | `None` | OpenTelemetry tracing configuration (requires `pip install sage-agent[tracing]`) |
 
 *`model` can be inherited from main config defaults.
 
@@ -304,6 +305,30 @@ context:
   prune_tool_outputs: true     # Truncate large tool outputs
   tool_output_max_chars: 5000  # Max chars per tool output
 ```
+
+### Tracing Configuration
+
+Requires `pip install sage-agent[tracing]` (opentelemetry-api + sdk).
+
+```yaml
+tracing:
+  enabled: true
+  service_name: my-agent         # Appears as service.name in spans
+  exporter: console              # "none" | "console" | "otlp"
+                                 # otlp requires opentelemetry-exporter-otlp-proto-grpc
+```
+
+When enabled, sage emits nested spans:
+
+```
+agent.run
+  ├── llm.complete        (model, message_count, prompt_tokens, completion_tokens)
+  ├── tool.execute        (tool.name, tool.args)
+  └── memory.recall       (query_length, limit, result_count)
+      memory.store        (content_length)
+```
+
+All instrumentation is zero-cost when `tracing:` is not configured or `opentelemetry-api` is not installed.
 
 ---
 

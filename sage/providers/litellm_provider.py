@@ -10,6 +10,7 @@ from typing import Any
 import litellm
 
 from sage.exceptions import ProviderError
+from sage.tracing import span
 from sage.models import (
     CompletionResult,
     Message,
@@ -117,44 +118,50 @@ class LiteLLMProvider:
             len(messages),
             len(tools) if tools else 0,
         )
-        request_kwargs = self._build_request_kwargs(messages, tools, **kwargs)
+        async with span(
+            "llm.complete", {"model": self.model, "message_count": len(messages)}
+        ) as llm_span:
+            request_kwargs = self._build_request_kwargs(messages, tools, **kwargs)
 
-        try:
-            response = await litellm.acompletion(**request_kwargs)
-        except Exception as exc:
-            logger.error("LiteLLM completion failed: %s", exc)
-            raise ProviderError(f"LiteLLM completion failed: {exc}") from exc
+            try:
+                response = await litellm.acompletion(**request_kwargs)
+            except Exception as exc:
+                logger.error("LiteLLM completion failed: %s", exc)
+                raise ProviderError(f"LiteLLM completion failed: {exc}") from exc
 
-        choice = response.choices[0]
-        resp_message = choice.message
+            choice = response.choices[0]
+            resp_message = choice.message
 
-        tool_calls = self._parse_tool_calls(getattr(resp_message, "tool_calls", None))
+            tool_calls = self._parse_tool_calls(getattr(resp_message, "tool_calls", None))
 
-        message = Message(
-            role="assistant",
-            content=getattr(resp_message, "content", None),
-            tool_calls=tool_calls,
-        )
+            message = Message(
+                role="assistant",
+                content=getattr(resp_message, "content", None),
+                tool_calls=tool_calls,
+            )
 
-        raw_usage = getattr(response, "usage", None)
-        usage = Usage(
-            prompt_tokens=getattr(raw_usage, "prompt_tokens", 0) or 0,
-            completion_tokens=getattr(raw_usage, "completion_tokens", 0) or 0,
-            total_tokens=getattr(raw_usage, "total_tokens", 0) or 0,
-        )
+            raw_usage = getattr(response, "usage", None)
+            usage = Usage(
+                prompt_tokens=getattr(raw_usage, "prompt_tokens", 0) or 0,
+                completion_tokens=getattr(raw_usage, "completion_tokens", 0) or 0,
+                total_tokens=getattr(raw_usage, "total_tokens", 0) or 0,
+            )
 
-        logger.debug(
-            "Completion response: finish_reason=%s, tokens=%d/%d",
-            getattr(choice, "finish_reason", "unknown"),
-            usage.prompt_tokens,
-            usage.completion_tokens,
-        )
+            logger.debug(
+                "Completion response: finish_reason=%s, tokens=%d/%d",
+                getattr(choice, "finish_reason", "unknown"),
+                usage.prompt_tokens,
+                usage.completion_tokens,
+            )
 
-        return CompletionResult(
-            message=message,
-            usage=usage,
-            raw_response=response,
-        )
+            llm_span.set_attribute("prompt_tokens", usage.prompt_tokens)
+            llm_span.set_attribute("completion_tokens", usage.completion_tokens)
+
+            return CompletionResult(
+                message=message,
+                usage=usage,
+                raw_response=response,
+            )
 
     async def stream(
         self,
@@ -169,78 +176,79 @@ class LiteLLMProvider:
         calls (``finish_reason == "tool_calls"``), the final chunk carries
         the fully-assembled ``tool_calls`` list.
         """
-        request_kwargs = self._build_request_kwargs(messages, tools, stream=True, **kwargs)
+        async with span("llm.stream", {"model": self.model, "message_count": len(messages)}):
+            request_kwargs = self._build_request_kwargs(messages, tools, stream=True, **kwargs)
 
-        try:
-            response = await litellm.acompletion(**request_kwargs)
-        except Exception as exc:
-            raise ProviderError(f"LiteLLM streaming failed: {exc}") from exc
+            try:
+                response = await litellm.acompletion(**request_kwargs)
+            except Exception as exc:
+                raise ProviderError(f"LiteLLM streaming failed: {exc}") from exc
 
-        # Accumulators for incremental tool-call deltas.
-        # OpenAI/litellm streams tool calls as partial fragments across
-        # multiple chunks, keyed by ``index``.  We reassemble them here.
-        tc_ids: dict[int, str] = {}  # index -> tool call id
-        tc_names: dict[int, str] = {}  # index -> function name
-        tc_args: dict[int, str] = {}  # index -> partial JSON arguments
+            # Accumulators for incremental tool-call deltas.
+            # OpenAI/litellm streams tool calls as partial fragments across
+            # multiple chunks, keyed by ``index``.  We reassemble them here.
+            tc_ids: dict[int, str] = {}  # index -> tool call id
+            tc_names: dict[int, str] = {}  # index -> function name
+            tc_args: dict[int, str] = {}  # index -> partial JSON arguments
 
-        try:
-            async for chunk in response:
-                delta = chunk.choices[0].delta if chunk.choices else None
-                content = getattr(delta, "content", None) if delta else None
-                finish_reason = chunk.choices[0].finish_reason if chunk.choices else None
+            try:
+                async for chunk in response:
+                    delta = chunk.choices[0].delta if chunk.choices else None
+                    content = getattr(delta, "content", None) if delta else None
+                    finish_reason = chunk.choices[0].finish_reason if chunk.choices else None
 
-                # Accumulate incremental tool-call fragments.
-                raw_tc_deltas = getattr(delta, "tool_calls", None) if delta else None
-                if raw_tc_deltas:
-                    for tc_delta in raw_tc_deltas:
-                        idx = getattr(tc_delta, "index", 0)
-                        tc_id = getattr(tc_delta, "id", None)
-                        func = getattr(tc_delta, "function", None)
-                        if tc_id:
-                            tc_ids[idx] = tc_id
-                        if func:
-                            name = getattr(func, "name", None)
-                            args = getattr(func, "arguments", None)
-                            if name:
-                                tc_names[idx] = name
-                            if args:
-                                tc_args[idx] = tc_args.get(idx, "") + args
+                    # Accumulate incremental tool-call fragments.
+                    raw_tc_deltas = getattr(delta, "tool_calls", None) if delta else None
+                    if raw_tc_deltas:
+                        for tc_delta in raw_tc_deltas:
+                            idx = getattr(tc_delta, "index", 0)
+                            tc_id = getattr(tc_delta, "id", None)
+                            func = getattr(tc_delta, "function", None)
+                            if tc_id:
+                                tc_ids[idx] = tc_id
+                            if func:
+                                name = getattr(func, "name", None)
+                                args = getattr(func, "arguments", None)
+                                if name:
+                                    tc_names[idx] = name
+                                if args:
+                                    tc_args[idx] = tc_args.get(idx, "") + args
 
-                # On the final chunk, assemble accumulated tool calls.
-                assembled_tool_calls: list[ToolCall] | None = None
-                if finish_reason == "tool_calls" and tc_ids:
-                    assembled_tool_calls = []
-                    for idx in sorted(tc_ids):
-                        raw_args = tc_args.get(idx, "{}")
-                        try:
-                            arguments = json.loads(raw_args)
-                        except (json.JSONDecodeError, TypeError):
-                            arguments = {}
-                        assembled_tool_calls.append(
-                            ToolCall(
-                                id=tc_ids[idx],
-                                name=tc_names.get(idx, ""),
-                                arguments=arguments,
+                    # On the final chunk, assemble accumulated tool calls.
+                    assembled_tool_calls: list[ToolCall] | None = None
+                    if finish_reason == "tool_calls" and tc_ids:
+                        assembled_tool_calls = []
+                        for idx in sorted(tc_ids):
+                            raw_args = tc_args.get(idx, "{}")
+                            try:
+                                arguments = json.loads(raw_args)
+                            except (json.JSONDecodeError, TypeError):
+                                arguments = {}
+                            assembled_tool_calls.append(
+                                ToolCall(
+                                    id=tc_ids[idx],
+                                    name=tc_names.get(idx, ""),
+                                    arguments=arguments,
+                                )
                             )
-                        )
 
-                # Extract usage from the final chunk when available.
-                raw_usage = getattr(chunk, "usage", None)
-                chunk_usage: Usage | None = None
-                if raw_usage is not None:
-                    chunk_usage = Usage(
-                        prompt_tokens=getattr(raw_usage, "prompt_tokens", 0) or 0,
-                        completion_tokens=getattr(raw_usage, "completion_tokens", 0) or 0,
-                        total_tokens=getattr(raw_usage, "total_tokens", 0) or 0,
+                    # Extract usage from the final chunk when available.
+                    raw_usage = getattr(chunk, "usage", None)
+                    chunk_usage: Usage | None = None
+                    if raw_usage is not None:
+                        chunk_usage = Usage(
+                            prompt_tokens=getattr(raw_usage, "prompt_tokens", 0) or 0,
+                            completion_tokens=getattr(raw_usage, "completion_tokens", 0) or 0,
+                            total_tokens=getattr(raw_usage, "total_tokens", 0) or 0,
+                        )
+                    yield StreamChunk(
+                        delta=content,
+                        finish_reason=finish_reason,
+                        tool_calls=assembled_tool_calls,
+                        usage=chunk_usage,
                     )
-                yield StreamChunk(
-                    delta=content,
-                    finish_reason=finish_reason,
-                    tool_calls=assembled_tool_calls,
-                    usage=chunk_usage,
-                )
-        except Exception as exc:
-            raise ProviderError(f"LiteLLM stream iteration failed: {exc}") from exc
+            except Exception as exc:
+                raise ProviderError(f"LiteLLM stream iteration failed: {exc}") from exc
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings via litellm."""
