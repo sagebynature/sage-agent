@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -296,6 +297,12 @@ async def memory_store(key: str, value: str) -> str:
     Returns:
         Confirmation message.
     """
+    warnings.warn(
+        "The JSON memory_store tool is deprecated. Configure a 'memory:' backend "
+        "in your agent frontmatter to use semantic memory instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     logger.debug("memory_store: key=%s", key)
     data = _load_memory()
     data[key] = value
@@ -315,6 +322,12 @@ async def memory_recall(query: str) -> str:
     Returns:
         JSON object of matching entries, or a message if nothing matches.
     """
+    warnings.warn(
+        "The JSON memory_recall tool is deprecated. Configure a 'memory:' backend "
+        "in your agent frontmatter to use semantic memory instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     logger.debug("memory_recall: %s", query[:100])
     data = _load_memory()
     if not data:

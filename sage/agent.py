@@ -252,6 +252,30 @@ class Agent:
             for extension_path in config.extensions:
                 agent.tool_registry.load_from_module(extension_path)
 
+        # When a semantic memory backend is configured, replace the JSON
+        # memory_store / memory_recall tools with closures that delegate to it.
+        # This registration happens AFTER register_from_permissions so the
+        # semantic versions overwrite any previously registered JSON tools.
+        if memory is not None:
+            from sage.tools.decorator import tool as _tool
+
+            @_tool
+            async def memory_store(key: str, value: str) -> str:
+                """Store a key-value pair in the agent's semantic memory backend."""
+                await memory.store(f"{key}: {value}", metadata={"key": key})
+                return f"Stored: {key}"
+
+            @_tool
+            async def memory_recall(query: str) -> str:
+                """Recall entries from the agent's semantic memory backend."""
+                entries = await memory.recall(query)
+                if not entries:
+                    return f"No matches for: {query}"
+                return "\n".join(f"- {e.content}" for e in entries)
+
+            agent.tool_registry.register(memory_store)
+            agent.tool_registry.register(memory_recall)
+
         # Wire permission handler into tool registry.
         if permission_handler is not None:
             agent.tool_registry.set_permission_handler(permission_handler)
