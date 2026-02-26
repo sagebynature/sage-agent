@@ -49,8 +49,8 @@ clean:
 validate-examples:
 	uv run sage agent validate examples/simple_agent/AGENTS.md
 	uv run sage agent validate examples/parallel_agents/AGENTS.md
-	uv run sage agent validate examples/parallel_agents/researcher.md
-	uv run sage agent validate examples/parallel_agents/summarizer.md
+	uv run sage agent validate examples/parallel_agents/research_agent
+	uv run sage agent validate examples/parallel_agents/summarize_agent
 	uv run sage agent validate examples/custom_tools/AGENTS.md
 	uv run sage agent validate examples/mcp_agent/AGENTS.md
 	uv run sage agent validate examples/claude_agent/AGENTS.md
