@@ -92,11 +92,18 @@ class SQLiteMemory:
             # Older aiosqlite versions may not proxy this method.
             import asyncio
 
-            await asyncio.get_event_loop().run_in_executor(
+            await asyncio.get_running_loop().run_in_executor(
                 None,
                 self._db._conn.enable_load_extension,  # type: ignore[union-attr]
                 True,
             )
+        except Exception:
+            # SQLite compiled without SQLITE_ENABLE_LOAD_EXTENSION raises
+            # OperationalError("not authorized") — fall through to numpy.
+            logger.debug(
+                "sqlite-vec unavailable (enable_load_extension not permitted), using numpy fallback"
+            )
+            return
 
         try:
             import sqlite_vec
@@ -158,7 +165,10 @@ class SQLiteMemory:
                     [rowid, embedding_bytes],
                 )
             except Exception as exc:
-                logger.debug("sqlite-vec insert failed (%s), vec index may be stale", exc)
+                logger.warning(
+                    "sqlite-vec insert failed (%s) — vec index may be stale; recall will use numpy",
+                    exc,
+                )
 
         await self._db.commit()  # type: ignore[union-attr]
         logger.debug("Stored memory id=%s, content_preview=%.80s", memory_id, content)
@@ -221,9 +231,7 @@ class SQLiteMemory:
             SELECT m.id, m.content, m.metadata, m.created_at,
                    vec_distance_cosine(mv.embedding, ?) AS distance
             FROM memory_vec mv
-            JOIN memories m ON m.id = (
-                SELECT id FROM memories WHERE rowid = mv.rowid
-            )
+            JOIN memories m ON m.rowid = mv.rowid
             ORDER BY distance ASC
             LIMIT ?
             """,

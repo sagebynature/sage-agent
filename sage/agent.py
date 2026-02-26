@@ -173,7 +173,9 @@ class Agent:
                 config.memory.path,
             )
             embedding = LiteLLMEmbedding(config.memory.embedding)
-            memory = SQLiteMemory(path=config.memory.path, embedding=embedding)
+            memory = SQLiteMemory(
+                path=config.memory.path, embedding=embedding, config=config.memory
+            )
 
         # Build permission handler from config.
         permission_handler = None

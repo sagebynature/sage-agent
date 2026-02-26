@@ -257,3 +257,36 @@ class TestVectorSearchConfig:
         for valid in ("auto", "sqlite_vec", "numpy"):
             cfg = MemoryConfig(backend="sqlite", embedding="test", vector_search=valid)
             assert cfg.vector_search == valid
+
+    @pytest.mark.asyncio
+    async def test_operational_error_from_enable_load_extension_falls_back(
+        self, tmp_path: Any
+    ) -> None:
+        """OperationalError (SQLite compiled without SQLITE_ENABLE_LOAD_EXTENSION) must
+        not crash initialize() — _vec_available stays False and numpy path is used."""
+        import sqlite3
+        from unittest.mock import AsyncMock, patch
+
+        from sage.config import MemoryConfig
+
+        config = MemoryConfig(backend="sqlite", embedding="test", vector_search="auto")
+        mem = SQLiteMemory(
+            path=str(tmp_path / "op_error.db"),
+            embedding=DeterministicEmbedding(),
+            config=config,
+        )
+
+        with patch(
+            "aiosqlite.Connection.enable_load_extension",
+            new=AsyncMock(side_effect=sqlite3.OperationalError("not authorized")),
+        ):
+            await mem.initialize()  # must not raise
+
+        try:
+            assert mem._vec_available is False
+            # numpy path must still work
+            await mem.store("fallback test")
+            results = await mem.recall("fallback test", limit=1)
+            assert len(results) == 1
+        finally:
+            await mem.close()

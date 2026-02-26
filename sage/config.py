@@ -280,11 +280,12 @@ def load_config(path: str | Path, central: MainConfig | None = None) -> AgentCon
         )
     if config.memory:
         logger.info(
-            "  memory: backend=%s, path=%s, embedding=%s, compaction_threshold=%d",
+            "  memory: backend=%s, path=%s, embedding=%s, compaction_threshold=%d, vector_search=%s",
             config.memory.backend,
             config.memory.path,
             config.memory.embedding,
             config.memory.compaction_threshold,
+            config.memory.vector_search,
         )
     if config.mcp_servers:
         logger.info("  mcp_servers: %d configured", len(config.mcp_servers))
