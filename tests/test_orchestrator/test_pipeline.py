@@ -146,3 +146,67 @@ class TestRshiftOperator:
         assert isinstance(extended, Pipeline)
         assert len(extended.agents) == 3
         assert [a.name for a in extended.agents] == ["a1", "a2", "a3"]
+
+
+# ── Tests: Pipeline.stream() ──────────────────────────────────────────
+
+
+class TestPipelineStream:
+    """Tests for Pipeline.stream() — intermediate agents run(), final agent streams."""
+
+    @pytest.mark.asyncio
+    async def test_stream_yields_chunks_from_final_agent(self) -> None:
+        """stream() yields all chunks produced by the final agent's stream()."""
+        agent1 = _make_agent("step1", "step1-output")
+        agent2 = _make_agent("step2", "step2-output")
+
+        # Replace the final agent's stream with an async generator mock.
+        async def mock_stream(input: str) -> AsyncIterator[str]:
+            yield "chunk1"
+            yield "chunk2"
+            yield "chunk3"
+
+        agent2.stream = mock_stream  # type: ignore[method-assign]
+
+        pipeline = Pipeline([agent1, agent2])
+        chunks = [chunk async for chunk in pipeline.stream("initial input")]
+
+        assert chunks == ["chunk1", "chunk2", "chunk3"]
+
+    @pytest.mark.asyncio
+    async def test_stream_chains_intermediate_output(self) -> None:
+        """stream() passes each intermediate agent's run() output to the next agent."""
+        stream_calls: list[str] = []
+
+        agent1 = _make_agent("step1", "step1-output")
+
+        # Capture what input the final agent's stream() receives.
+        async def mock_stream(input: str) -> AsyncIterator[str]:
+            stream_calls.append(input)
+            yield "final-chunk"
+
+        agent2 = _make_agent("step2", "step2-output")
+        agent2.stream = mock_stream  # type: ignore[method-assign]
+
+        pipeline = Pipeline([agent1, agent2])
+        chunks = [chunk async for chunk in pipeline.stream("initial input")]
+
+        assert chunks == ["final-chunk"]
+        # The final agent's stream() must receive agent1's run() output.
+        assert stream_calls == ["step1-output"]
+
+    @pytest.mark.asyncio
+    async def test_stream_single_agent_pipeline(self) -> None:
+        """A single-agent pipeline calls the agent's stream() directly."""
+        agent = _make_agent("only", "only-output")
+
+        async def mock_stream(input: str) -> AsyncIterator[str]:
+            yield "solo-chunk1"
+            yield "solo-chunk2"
+
+        agent.stream = mock_stream  # type: ignore[method-assign]
+
+        pipeline = Pipeline([agent])
+        chunks = [chunk async for chunk in pipeline.stream("my input")]
+
+        assert chunks == ["solo-chunk1", "solo-chunk2"]
