@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 
 from sage.exceptions import ToolError
+from sage.git.utils import run_git
 from sage.tools.base import ToolBase
 from sage.tools.decorator import tool
 
@@ -25,18 +25,8 @@ class GitSnapshot(ToolBase):
         super().__init__()
 
     async def _git(self, args: list[str]) -> tuple[str, int]:
-        """Run a git command and return (output, returncode)."""
-        cmd = ["git", "-C", self.repo_path] + args
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await proc.communicate()
-        output = stdout.decode(errors="replace").strip()
-        err = stderr.decode(errors="replace").strip()
-        combined = output or err
-        return combined, proc.returncode or 0
+        """Delegate to the shared ``run_git`` helper."""
+        return await run_git(args, repo_path=self.repo_path)
 
     async def setup(self) -> None:
         """Verify we're inside a git repository."""

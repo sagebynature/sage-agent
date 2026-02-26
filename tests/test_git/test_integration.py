@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -15,38 +14,12 @@ from sage.permissions.base import PermissionAction, PermissionDecision
 from sage.tools.registry import ToolRegistry
 
 
-async def _init_git_repo(path: Path) -> None:
-    for cmd in [
-        ["git", "init"],
-        ["git", "config", "user.email", "test@test.com"],
-        ["git", "config", "user.name", "Test"],
-    ]:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            cwd=str(path),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        await proc.communicate()
-    (path / "README.md").write_text("# Test\n")
-    for cmd in [["git", "add", "."], ["git", "commit", "-m", "initial"]]:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            cwd=str(path),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        await proc.communicate()
-
-
 class TestGitIntegration:
     """End-to-end: register tools, execute via registry, verify results."""
 
-    async def test_full_workflow_via_registry(self, tmp_path: Path) -> None:
-        await _init_git_repo(tmp_path)
-
-        git_tools = GitTools(repo_root=tmp_path)
-        snapshot = GitSnapshot(repo_path=str(tmp_path))
+    async def test_full_workflow_via_registry(self, git_repo: Path) -> None:
+        git_tools = GitTools(repo_root=git_repo)
+        snapshot = GitSnapshot(repo_path=str(git_repo))
         await git_tools.setup()
         await snapshot.setup()
 
@@ -68,7 +41,7 @@ class TestGitIntegration:
         assert isinstance(status, str)
 
         # Create a file, commit, check log.
-        (tmp_path / "feature.txt").write_text("new feature")
+        (git_repo / "feature.txt").write_text("new feature")
         commit_result = await registry.execute(
             "git_commit", {"message": "add feature", "files": ["feature.txt"]}
         )
@@ -82,14 +55,13 @@ class TestGitIntegration:
         assert "undone" in undo_result.lower()
 
         # Snapshot workflow.
-        (tmp_path / "README.md").write_text("# Changed\n")
+        (git_repo / "README.md").write_text("# Changed\n")
         snap_result = await registry.execute("snapshot_create", {"label": "test"})
         assert "sage:" in snap_result.lower() or "snapshot" in snap_result.lower()
 
-    async def test_permission_controlled_execution(self, tmp_path: Path) -> None:
+    async def test_permission_controlled_execution(self, git_repo: Path) -> None:
         """Git tools respect permission handler."""
-        await _init_git_repo(tmp_path)
-        git_tools = GitTools(repo_root=tmp_path)
+        git_tools = GitTools(repo_root=git_repo)
         await git_tools.setup()
 
         registry = ToolRegistry()
@@ -104,10 +76,9 @@ class TestGitIntegration:
         with pytest.raises(SagePermissionError, match="Permission denied"):
             await registry.execute("git_status", {})
 
-    async def test_branch_and_worktree_flow(self, tmp_path: Path) -> None:
+    async def test_branch_and_worktree_flow(self, git_repo: Path) -> None:
         """Create a branch, create a worktree, remove it."""
-        await _init_git_repo(tmp_path)
-        git_tools = GitTools(repo_root=tmp_path)
+        git_tools = GitTools(repo_root=git_repo)
         await git_tools.setup()
 
         registry = ToolRegistry()
@@ -124,7 +95,7 @@ class TestGitIntegration:
         # Create worktree
         wt_result = await registry.execute("git_worktree_create", {"name": "test-wt"})
         assert "test-wt" in wt_result
-        assert (tmp_path / ".sage" / "worktrees" / "test-wt").exists()
+        assert (git_repo / ".sage" / "worktrees" / "test-wt").exists()
 
         # Remove worktree
         rm_result = await registry.execute("git_worktree_remove", {"name": "test-wt"})

@@ -268,7 +268,12 @@ class GitTools(ToolBase):
             ToolError: If the underlying git command fails.
         """
         logger.debug("git_worktree_create: name=%s, branch=%s", name, branch)
-        wt_dir = Path(self._repo_root) / ".sage" / "worktrees" / name
+        wt_dir = (Path(self._repo_root) / ".sage" / "worktrees" / name).resolve()
+        repo_resolved = Path(self._repo_root).resolve()
+        try:
+            wt_dir.relative_to(repo_resolved)
+        except ValueError:
+            raise ToolError(f"Invalid worktree name: {name!r} — path escapes repository root")
         wt_dir.parent.mkdir(parents=True, exist_ok=True)
 
         if branch:
@@ -303,7 +308,12 @@ class GitTools(ToolBase):
             ToolError: If the underlying git command fails.
         """
         logger.debug("git_worktree_remove: name=%s", name)
-        wt_dir = Path(self._repo_root) / ".sage" / "worktrees" / name
+        wt_dir = (Path(self._repo_root) / ".sage" / "worktrees" / name).resolve()
+        repo_resolved = Path(self._repo_root).resolve()
+        try:
+            wt_dir.relative_to(repo_resolved)
+        except ValueError:
+            raise ToolError(f"Invalid worktree name: {name!r} — path escapes repository root")
 
         if not wt_dir.exists():
             return f"Worktree not found: {name}"

@@ -79,7 +79,7 @@ async def shell(command: str) -> str:
     """
     logger.debug("shell: %s", command[:100])
     for pattern in _DANGEROUS_PATTERNS:
-        if re.search(pattern, command):
+        if re.search(pattern, command, re.IGNORECASE):
             raise ToolError(f"Command rejected \u2014 matches dangerous pattern: {pattern}")
 
     proc = await asyncio.create_subprocess_shell(
