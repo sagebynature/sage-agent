@@ -5,6 +5,11 @@ Provides a TOML-based main config with a three-tier override system::
     agent .md frontmatter     (highest priority)
     [agents.<name>] in TOML   (agent-specific overrides)
     [defaults] in TOML         (global defaults)
+
+Environment variables are resolved from the ``[env]`` section using
+``${VAR}`` syntax, with values sourced from ``os.environ`` (populated
+by ``load_dotenv()``).  Resolved values are injected back into
+``os.environ`` so downstream libraries (e.g. litellm) pick them up.
 """
 
 from __future__ import annotations
