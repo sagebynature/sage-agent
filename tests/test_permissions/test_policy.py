@@ -44,10 +44,12 @@ class TestPolicyPermissionHandler:
         decision = await handler.check("shell", {"command": "ls"})
         assert decision.action == PermissionAction.DENY
 
-    async def test_tool_not_in_any_category_uses_default(self) -> None:
+    async def test_tool_not_in_any_category_is_allowed(self) -> None:
+        # Tools with no category (e.g. MCP tools) always pass through — the user
+        # explicitly configured the MCP server, so non-interactive ALLOW is correct.
         handler = self._handler(default=PermissionAction.DENY)
         decision = await handler.check("unknown_tool", {})
-        assert decision.action == PermissionAction.DENY
+        assert decision.action == PermissionAction.ALLOW
 
     async def test_last_match_wins(self) -> None:
         handler = self._handler(

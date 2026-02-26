@@ -10,7 +10,8 @@ import httpx
 from markdownify import markdownify as md
 
 from sage.exceptions import ToolError
-from sage.tools._security import validate_url
+from sage.tools._security import validate_and_resolve_url
+from sage.tools.builtins import _build_pinned_url
 from sage.tools.decorator import tool
 
 logger = logging.getLogger(__name__)
@@ -25,14 +26,24 @@ async def web_fetch(url: str) -> str:
     HTML is automatically converted to markdown.
     Content is truncated to 10000 characters.
 
-    SSRF protection: blocks private IPs, loopback, link-local,
-    cloud metadata endpoints, and non-HTTP schemes.
+    SSRF protection: resolves the hostname exactly once, validates the
+    resulting IP, then connects to that pinned IP address to prevent
+    DNS rebinding (TOCTOU).
     """
     logger.debug("web_fetch: %s", url)
-    validate_url(url)
+    resolved = validate_and_resolve_url(url)
+
+    pinned_url = _build_pinned_url(resolved)
+    req_headers = {
+        "User-Agent": "Sage/1.0",
+        "Host": resolved.hostname,
+    }
+
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
-            response = await client.get(url, headers={"User-Agent": "Sage/1.0"})
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0, verify=True) as client:
+            request = client.build_request("GET", pinned_url, headers=req_headers)
+            request.extensions["sni_hostname"] = resolved.hostname.encode()
+            response = await client.send(request, follow_redirects=True)
             response.raise_for_status()
     except httpx.HTTPStatusError as exc:
         raise ToolError(f"HTTP {exc.response.status_code}: {url}") from exc

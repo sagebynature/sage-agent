@@ -64,12 +64,13 @@ class ToolRegistry:
     subclass instances, and bulk-loading from module paths.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, default_timeout: float | None = None) -> None:
         self._tools: dict[str, Callable[..., Any]] = {}
         self._schemas: dict[str, ToolSchema] = {}
         self._instances: list[ToolBase] = []
         self._mcp_tools: dict[str, MCPClient] = {}
         self._permission_handler: Any | None = None
+        self._default_timeout: float | None = default_timeout
 
     def register(self, fn_or_instance: Callable[..., Any] | ToolBase) -> None:
         """Register a ``@tool``-decorated function or a ``ToolBase`` instance."""
@@ -150,9 +151,21 @@ class ToolRegistry:
                 return await mcp_client.call_tool(name, arguments)
             assert fn is not None
             if inspect.iscoroutinefunction(fn):
-                result = await fn(**arguments)
+                coro = fn(**arguments)
             else:
-                result = await asyncio.to_thread(fn, **arguments)
+                coro = asyncio.to_thread(fn, **arguments)
+
+            # Per-tool timeout takes precedence over registry default.
+            per_tool = getattr(fn, "__tool_timeout__", None)
+            effective_timeout = per_tool if per_tool is not None else self._default_timeout
+
+            if effective_timeout is not None:
+                try:
+                    result = await asyncio.wait_for(coro, timeout=effective_timeout)
+                except asyncio.TimeoutError:
+                    raise ToolError(f"Tool {name!r} timed out after {effective_timeout}s")
+            else:
+                result = await coro
         except (ToolError, SagePermissionError):
             raise
         except Exception as exc:

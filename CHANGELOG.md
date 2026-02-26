@@ -2,6 +2,43 @@
 
 <!-- version list -->
 
+## v1.2.0 (2026-02-26)
+
+### Features
+
+- **agent**: Extract common agentic loop into `_pre_loop_setup`, `_execute_tool_calls`,
+  `_post_loop_cleanup`, `_extract_final_output` — eliminates ~200 lines of duplication
+  between `run()` and `stream()`
+
+- **agent**: Parallel tool execution via `asyncio.gather(return_exceptions=True)` — independent
+  tool calls in the same turn now run concurrently; order of results is preserved; opt out
+  with `parallel_tool_execution: false` in agent frontmatter
+
+- **tools**: Per-tool and registry-level timeouts — `@tool(timeout=30)` or `tool_timeout:`
+  in agent frontmatter wraps execution with `asyncio.wait_for`; raises `ToolError` on
+  expiry; per-tool override takes precedence over registry default
+
+
+## v1.1.2 (2026-02-26)
+
+### Features
+
+- **security**: Prevent DNS rebinding (TOCTOU) in SSRF protection — hostname now
+  resolved exactly once via `validate_and_resolve_url`; pinned IP used for actual
+  connection with original hostname preserved for `Host` header and TLS SNI
+  (`sage.tools._security.ResolvedURL`)
+
+- **security**: Add optional shell sandbox (`sandbox:` frontmatter field) with
+  `NativeSandbox` (environment stripping) and `BubblewrapSandbox` (Linux
+  namespace isolation via `bwrap`); per-agent closure pattern prevents
+  concurrency issues between agents with different sandbox configs
+  (`sage.tools._sandbox`)
+
+- **security**: Replace blocking `urllib.request.urlopen` with async
+  `httpx.AsyncClient` in `http_request` built-in tool; connections use pinned IP
+  with IP-pinning transport for SSRF consistency
+
+
 ## v1.1.1 (2026-02-26)
 
 ### Bug Fixes

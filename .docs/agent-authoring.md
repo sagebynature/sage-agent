@@ -55,7 +55,9 @@ sage/
 |   |-- registry.py          # ToolRegistry dispatch
 |   |-- builtins.py          # shell, file_read, file_write, http_request, memory_store, memory_recall
 |   |-- file_tools.py        # file_edit
-|   +-- web_tools.py         # web_search, web_fetch
+|   |-- web_tools.py         # web_search, web_fetch
+|   |-- _security.py         # ResolvedURL, validate_and_resolve_url (SSRF + DNS-pinning)
+|   +-- _sandbox.py          # NativeSandbox, BubblewrapSandbox, make_sandboxed_shell
 |-- skills/
 |   +-- loader.py            # Skill file loader
 |-- orchestrator/
@@ -167,6 +169,9 @@ The parser splits on `---` delimiters, extracts the YAML block via `yaml.safe_lo
 | `model_params` | `ModelParams` | `{}` | LLM generation parameters |
 | `context` | `ContextConfig` | `None` | Token budget management |
 | `skills_dir` | `str` | `None` | Skills directory path |
+| `sandbox` | `SandboxConfig` | `None` | Shell sandbox configuration (native env-strip or bubblewrap namespace isolation) |
+| `parallel_tool_execution` | `bool` | `true` | Run independent tool calls concurrently via `asyncio.gather` |
+| `tool_timeout` | `float \| null` | `null` | Default timeout (seconds) for all tool calls; per-tool `@tool(timeout=N)` takes precedence |
 
 *`model` can be inherited from main config defaults.
 

@@ -74,13 +74,8 @@ def _annotation_to_json_schema(annotation: Any) -> dict[str, Any]:
     return {"type": "string"}
 
 
-def tool(fn: Callable[..., Any]) -> Callable[..., Any]:
-    """Decorate a function to generate and attach a ToolSchema.
-
-    The decorator inspects the function's signature, type hints, and docstring
-    to produce a ``ToolSchema`` stored as ``fn.__tool_schema__``.  The function
-    itself is returned unchanged — it is **not** wrapped or made async.
-    """
+def _build_schema(fn: Callable[..., Any]) -> ToolSchema:
+    """Inspect *fn* and return a ``ToolSchema`` describing its parameters."""
     sig = inspect.signature(fn)
     description = inspect.getdoc(fn) or ""
 
@@ -113,11 +108,39 @@ def tool(fn: Callable[..., Any]) -> Callable[..., Any]:
     if required:
         parameters["required"] = required
 
-    schema = ToolSchema(
+    return ToolSchema(
         name=fn.__name__,
         description=description,
         parameters=parameters,
     )
 
-    fn.__tool_schema__ = schema  # type: ignore[attr-defined]
-    return fn
+
+def tool(
+    fn: Callable[..., Any] | None = None,
+    *,
+    timeout: float | None = None,
+) -> Any:
+    """Decorate a function to generate and attach a ToolSchema.
+
+    Can be used as ``@tool`` (no arguments) or ``@tool(timeout=30.0)``.
+
+    The decorator inspects the function's signature, type hints, and docstring
+    to produce a ``ToolSchema`` stored as ``fn.__tool_schema__``.  The function
+    itself is returned unchanged — it is **not** wrapped or made async.
+
+    When *timeout* is supplied the value is stored as ``fn.__tool_timeout__``
+    and the registry will enforce it via ``asyncio.wait_for``.
+    """
+
+    def decorator(f: Callable[..., Any]) -> Callable[..., Any]:
+        schema = _build_schema(f)
+        f.__tool_schema__ = schema  # type: ignore[attr-defined]
+        if timeout is not None:
+            f.__tool_timeout__ = timeout  # type: ignore[attr-defined]
+        return f
+
+    if fn is not None:
+        # Called as @tool (no arguments) — fn is the decorated function.
+        return decorator(fn)
+    # Called as @tool(timeout=30) — return the decorator.
+    return decorator

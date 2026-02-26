@@ -6,13 +6,13 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from sage.config import AgentConfig, load_config
 
 if TYPE_CHECKING:
     from sage.main_config import MainConfig
-from sage.exceptions import MaxTurnsExceeded, ToolError
+from sage.exceptions import MaxTurnsExceeded, PermissionError as SagePermissionError, ToolError
 from sage.models import CompletionResult, Message, ToolCall, ToolSchema
 from sage.providers.litellm_provider import LiteLLMProvider
 from sage.skills.loader import Skill, load_skills_from_directory
@@ -70,6 +70,8 @@ class Agent:
         skills: list[Skill] | None = None,
         mcp_clients: list[MCPClient] | None = None,
         compaction_threshold: int = 50,
+        parallel_tool_execution: bool = True,
+        tool_timeout: float | None = None,
     ) -> None:
         self.name = name
         self.model = model
@@ -92,12 +94,13 @@ class Agent:
         self._compacted_last_turn: bool = False
         self._token_budget: Any | None = None
         self._git_config: Any | None = None
+        self.parallel_tool_execution: bool = parallel_tool_execution
 
         # Default to LiteLLM provider if none supplied.
         self.provider: ProviderProtocol = provider or LiteLLMProvider(model, **(model_params or {}))  # type: ignore[assignment]
 
         # Build tool registry from the supplied tool list.
-        self.tool_registry = ToolRegistry()
+        self.tool_registry = ToolRegistry(default_timeout=tool_timeout)
         if tools:
             for t in tools:
                 if isinstance(t, str):
@@ -236,6 +239,8 @@ class Agent:
             compaction_threshold=config.memory.compaction_threshold
             if config.memory is not None
             else 50,
+            parallel_tool_execution=config.parallel_tool_execution,
+            tool_timeout=config.tool_timeout,
         )
 
         if config.permission is not None:
@@ -250,6 +255,16 @@ class Agent:
         # Wire permission handler into tool registry.
         if permission_handler is not None:
             agent.tool_registry.set_permission_handler(permission_handler)
+
+        # Wire sandbox: replace the module-level shell tool with a per-agent
+        # sandboxed version when sandbox config is present.
+        if config.sandbox is not None:
+            from sage.tools._sandbox import build_sandbox
+            from sage.tools.builtins import make_sandboxed_shell
+
+            sandbox = build_sandbox(config.sandbox)
+            sandboxed_shell = make_sandboxed_shell(sandbox)
+            agent.tool_registry.register(sandboxed_shell)
 
         # Store token budget for later use.
         agent._token_budget = token_budget
@@ -276,20 +291,7 @@ class Agent:
         """
         logger.info("Agent '%s' run started: %s", self.name, input[:80])
 
-        # Connect MCP servers and register their tools on first run.
-        await self._ensure_mcp_initialized()
-        await self._ensure_memory_initialized()
-        if not self._context_window_detected:
-            self._detect_context_window_limit()
-
-        # Recall relevant memories and prepend as context.
-        memory_context = await self._recall_memory(input)
-
-        messages = self._build_messages(input, memory_context=memory_context)
-
-        await self._maybe_auto_snapshot()
-
-        final_output = ""
+        messages = await self._pre_loop_setup(input)
 
         for turn in range(self.max_turns):
             logger.debug("Turn %d/%d", turn + 1, self.max_turns)
@@ -302,66 +304,14 @@ class Agent:
             if not result.message.tool_calls:
                 logger.info("Agent '%s' run complete after %d turn(s)", self.name, turn + 1)
                 final_output = result.message.content or ""
-                # Persist the user + assistant exchange to conversation history.
-                self._conversation_history.append(Message(role="user", content=input))
-                self._conversation_history.append(Message(role="assistant", content=final_output))
-                compacted = await self._maybe_compact_history()
-                _ = compacted
-                self._update_token_usage(
-                    [message.model_dump() for message in self._build_messages("")]
-                )
-                await self._store_memory(input, final_output)
+                await self._post_loop_cleanup(input, final_output)
                 return final_output
 
-            # Execute each tool call and append results.
-            tool_names = [tc.name for tc in result.message.tool_calls]
-            logger.debug("Dispatching tools: %s", tool_names)
-
-            # Build a quick lookup for skill-name matching.
-            skill_names = {s.name for s in self.skills}
-
-            for tc in result.message.tool_calls:
-                # Log whether this tool dispatch is skill-driven.
-                if tc.name == "delegate":
-                    # Delegation is logged inside delegate(); skip here.
-                    pass
-                elif tc.name == "shell" and skill_names:
-                    cmd = (tc.arguments or {}).get("command", "")
-                    matched = [sn for sn in skill_names if sn in cmd]
-                    if matched:
-                        logger.debug(
-                            "Delegating to skill '%s' via shell: %s",
-                            matched[0],
-                            cmd[:120],
-                        )
-                    else:
-                        logger.debug("Executing tool '%s': %s", tc.name, str(tc.arguments)[:120])
-                else:
-                    logger.debug("Executing tool '%s': %s", tc.name, str(tc.arguments)[:120])
-
-                try:
-                    tool_result = await self._execute_tool(tc)
-                except ToolError as e:
-                    # ToolError is a recoverable tool-execution failure; feed the
-                    # error back to the model so it can retry or self-correct.
-                    logger.error("Tool '%s' failed: %s", tc.name, e)
-                    tool_result = f"Error executing tool '{tc.name}': {e}"
-
-                messages.append(
-                    Message(
-                        role="tool",
-                        content=str(tool_result),
-                        tool_call_id=tc.id,
-                    )
-                )
+            await self._execute_tool_calls(result.message.tool_calls, messages)
 
         # Max turns exceeded — persist partial progress, then raise.
         logger.warning("Agent '%s' reached max_turns (%d)", self.name, self.max_turns)
-        last_content = ""
-        for msg in reversed(messages):
-            if msg.role == "assistant" and msg.content:
-                last_content = msg.content
-                break
+        last_content = self._extract_final_output(messages)
         if last_content:
             await self._store_memory(input, last_content)
         raise MaxTurnsExceeded(turns=self.max_turns, last_content=last_content)
@@ -381,15 +331,7 @@ class Agent:
         """
         logger.info("Agent '%s' stream started: %s", self.name, input[:80])
 
-        await self._ensure_mcp_initialized()
-        await self._ensure_memory_initialized()
-        if not self._context_window_detected:
-            self._detect_context_window_limit()
-
-        memory_context = await self._recall_memory(input)
-        messages = self._build_messages(input, memory_context=memory_context)
-
-        await self._maybe_auto_snapshot()
+        messages = await self._pre_loop_setup(input)
 
         for turn in range(self.max_turns):
             logger.debug("Stream turn %d/%d", turn + 1, self.max_turns)
@@ -421,44 +363,14 @@ class Agent:
                     self.name,
                     turn + 1,
                 )
-                self._conversation_history.append(Message(role="user", content=input))
-                self._conversation_history.append(Message(role="assistant", content=turn_content))
-                compacted = await self._maybe_compact_history()
-                _ = compacted
-                self._update_token_usage(
-                    [message.model_dump() for message in self._build_messages("")]
-                )
-                await self._store_memory(input, turn_content)
+                await self._post_loop_cleanup(input, turn_content)
                 return
 
-            # Execute each tool call and append results.
-            tool_names = [tc.name for tc in turn_tool_calls]
-            logger.debug("Dispatching tools: %s", tool_names)
-
-            for tc in turn_tool_calls:
-                try:
-                    tool_result = await self._execute_tool(tc)
-                except ToolError as e:
-                    # ToolError is a recoverable tool-execution failure; feed the
-                    # error back to the model so it can retry or self-correct.
-                    logger.error("Tool '%s' failed: %s", tc.name, e)
-                    tool_result = f"Error executing tool '{tc.name}': {e}"
-
-                messages.append(
-                    Message(
-                        role="tool",
-                        content=str(tool_result),
-                        tool_call_id=tc.id,
-                    )
-                )
+            await self._execute_tool_calls(turn_tool_calls, messages)
 
         # Max turns exceeded — persist partial progress, then raise.
         logger.warning("Agent '%s' reached max_turns (%d) during stream", self.name, self.max_turns)
-        last_content = ""
-        for msg in reversed(messages):
-            if msg.role == "assistant" and msg.content:
-                last_content = msg.content
-                break
+        last_content = self._extract_final_output(messages)
         if last_content:
             await self._store_memory(input, last_content)
         raise MaxTurnsExceeded(turns=self.max_turns, last_content=last_content)
@@ -525,6 +437,104 @@ class Agent:
         return Pipeline([self, other])
 
     # ── Private helpers ───────────────────────────────────────────────
+
+    async def _pre_loop_setup(self, input: str) -> list[Message]:
+        """MCP init, memory init, context window detection, memory recall, build initial messages list."""
+        # Connect MCP servers and register their tools on first run.
+        await self._ensure_mcp_initialized()
+        await self._ensure_memory_initialized()
+        if not self._context_window_detected:
+            self._detect_context_window_limit()
+
+        # Recall relevant memories and prepend as context.
+        memory_context = await self._recall_memory(input)
+
+        messages = self._build_messages(input, memory_context=memory_context)
+
+        await self._maybe_auto_snapshot()
+
+        return messages
+
+    async def _execute_tool_calls(
+        self, tool_calls: list[ToolCall], messages: list[Message]
+    ) -> None:
+        """Execute tool calls and append result messages.
+
+        When parallel_tool_execution is enabled (default), all calls run
+        concurrently via asyncio.gather, preserving the original call order in
+        the results. Errors in individual tools are captured as error messages
+        so other tools in the same turn can still succeed.
+        """
+        tool_names = [tc.name for tc in tool_calls]
+        logger.debug("Dispatching tools: %s", tool_names)
+
+        # Build a quick lookup for skill-name matching.
+        skill_names = {s.name for s in self.skills}
+
+        async def _safe_execute(tc: ToolCall) -> tuple[str, str]:
+            # Log whether this tool dispatch is skill-driven.
+            if tc.name == "delegate":
+                # Delegation is logged inside delegate(); skip here.
+                pass
+            elif tc.name == "shell" and skill_names:
+                cmd = (tc.arguments or {}).get("command", "")
+                matched = [sn for sn in skill_names if sn in cmd]
+                if matched:
+                    logger.debug(
+                        "Delegating to skill '%s' via shell: %s",
+                        matched[0],
+                        cmd[:120],
+                    )
+                else:
+                    logger.debug("Executing tool '%s': %s", tc.name, str(tc.arguments)[:120])
+            else:
+                logger.debug("Executing tool '%s': %s", tc.name, str(tc.arguments)[:120])
+
+            try:
+                result = await self.tool_registry.execute(tc.name, tc.arguments or {})
+                return tc.id, str(result)
+            except SagePermissionError:
+                raise  # Never swallow permission errors — re-raise so the agent loop can handle them
+            except ToolError as exc:
+                logger.error("Tool '%s' failed: %s", tc.name, exc)
+                return tc.id, f"Error executing tool '{tc.name}': {exc}"
+            except Exception as exc:
+                logger.error("Tool '%s' raised unexpected error: %s", tc.name, exc)
+                return tc.id, f"Error executing tool '{tc.name}': {exc}"
+
+        if self.parallel_tool_execution:
+            raw = await asyncio.gather(
+                *(_safe_execute(tc) for tc in tool_calls),
+                return_exceptions=True,
+            )
+            # Re-raise any BaseException (e.g. SagePermissionError, CancelledError).
+            # _safe_execute converts Exception-typed failures to error strings, so
+            # anything that lands here as an exception is genuinely fatal.
+            for item in raw:
+                if isinstance(item, BaseException):
+                    raise item
+            pairs = cast(list[tuple[str, str]], raw)
+        else:
+            pairs = [await _safe_execute(tc) for tc in tool_calls]
+
+        for tc, (call_id, result_text) in zip(tool_calls, pairs):
+            messages.append(Message(role="tool", content=result_text, tool_call_id=call_id))
+
+    async def _post_loop_cleanup(self, input: str, final_output: str) -> None:
+        """Append to history, compact history, update token usage, store memory."""
+        # Persist the user + assistant exchange to conversation history.
+        self._conversation_history.append(Message(role="user", content=input))
+        self._conversation_history.append(Message(role="assistant", content=final_output))
+        await self._maybe_compact_history()
+        self._update_token_usage([message.model_dump() for message in self._build_messages("")])
+        await self._store_memory(input, final_output)
+
+    def _extract_final_output(self, messages: list[Message]) -> str:
+        """Find and return the last assistant text content (used for max-turns fallback)."""
+        for msg in reversed(messages):
+            if msg.role == "assistant" and msg.content:
+                return msg.content
+        return ""
 
     async def _maybe_auto_snapshot(self) -> None:
         """Create a pre-run git snapshot if configured."""
@@ -736,10 +746,6 @@ class Agent:
                 logger.error("Failed to initialize MCP server: %s", exc)
 
         self._mcp_initialized = True
-
-    async def _execute_tool(self, tc: ToolCall) -> str:
-        """Dispatch a tool call through the registry."""
-        return await self.tool_registry.execute(tc.name, tc.arguments)
 
     async def _recall_memory(self, query: str) -> str | None:
         """Recall relevant memories for the given query, formatted as text."""
