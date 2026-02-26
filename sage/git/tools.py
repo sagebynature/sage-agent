@@ -211,3 +211,110 @@ class GitTools(ToolBase):
         self._sage_commit_hashes.discard(head_hash)
         logger.info("Undone sage commit: %s", head_hash[:8])
         return f"Undone commit {head_hash[:8]} — changes preserved in working tree."
+
+    @tool
+    async def git_branch(self, name: str | None = None, list_branches: bool = False) -> str:
+        """Create a new branch or list existing branches.
+
+        When called with no arguments, or with *list_branches* set to ``True``,
+        returns the output of ``git branch --list -a``.  When *name* is
+        supplied, a new local branch is created at the current HEAD.
+
+        Args:
+            name: Name of the new branch to create.  If ``None`` (default),
+                the method lists branches instead.
+            list_branches: When ``True``, always list branches regardless of
+                whether *name* is provided.
+
+        Returns:
+            Branch listing output, or a confirmation string after creation.
+
+        Raises:
+            ToolError: If the underlying git command fails.
+        """
+        logger.debug("git_branch: name=%s, list=%s", name, list_branches)
+
+        if list_branches or name is None:
+            output, rc = await self._git(["branch", "--list", "-a"])
+            if rc != 0:
+                raise ToolError(f"git branch failed: {output}")
+            return output if output else "No branches found."
+
+        output, rc = await self._git(["branch", name])
+        if rc != 0:
+            raise ToolError(f"Failed to create branch '{name}': {output}")
+        return f"Created branch: {name}"
+
+    @tool
+    async def git_worktree_create(self, name: str, branch: str | None = None) -> str:
+        """Create an isolated git worktree at .sage/worktrees/<name>.
+
+        Uses detached HEAD by default to avoid branch pollution.  When *branch*
+        is given, a new branch with that name is created inside the worktree
+        via ``git worktree add -b <branch>``.
+
+        Args:
+            name: Short identifier for the worktree; used as the directory name
+                under ``.sage/worktrees/``.
+            branch: Optional name for a new branch to create at the worktree.
+                If ``None`` (default), the worktree is checked out in detached
+                HEAD state.
+
+        Returns:
+            A confirmation string including the absolute path of the new
+            worktree directory.
+
+        Raises:
+            ToolError: If the underlying git command fails.
+        """
+        logger.debug("git_worktree_create: name=%s, branch=%s", name, branch)
+        wt_dir = Path(self._repo_root) / ".sage" / "worktrees" / name
+        wt_dir.parent.mkdir(parents=True, exist_ok=True)
+
+        if branch:
+            args = ["worktree", "add", str(wt_dir), "-b", branch]
+        else:
+            args = ["worktree", "add", "--detach", str(wt_dir)]
+
+        output, rc = await self._git(args)
+        if rc != 0:
+            raise ToolError(f"Failed to create worktree '{name}': {output}")
+        logger.info("Created worktree: %s at %s", name, wt_dir)
+        return f"Worktree created: {wt_dir}"
+
+    @tool
+    async def git_worktree_remove(self, name: str) -> str:
+        """Remove a worktree. Warns if uncommitted changes exist.
+
+        Looks up the worktree at ``.sage/worktrees/<name>``.  If the directory
+        does not exist, returns a descriptive message rather than raising.
+        Dirty worktrees are logged as a warning but removed anyway via
+        ``--force``.
+
+        Args:
+            name: Short identifier of the worktree to remove (must match the
+                name used during ``git_worktree_create``).
+
+        Returns:
+            A confirmation string, or a ``"not found"`` message when the
+            worktree directory does not exist.
+
+        Raises:
+            ToolError: If the underlying git command fails.
+        """
+        logger.debug("git_worktree_remove: name=%s", name)
+        wt_dir = Path(self._repo_root) / ".sage" / "worktrees" / name
+
+        if not wt_dir.exists():
+            return f"Worktree not found: {name}"
+
+        # Check for uncommitted changes in the worktree.
+        dirty_check, _ = await run_git(["status", "--porcelain"], repo_path=str(wt_dir))
+        if dirty_check.strip():
+            logger.warning("Worktree '%s' has uncommitted changes", name)
+
+        output, rc = await self._git(["worktree", "remove", str(wt_dir), "--force"])
+        if rc != 0:
+            raise ToolError(f"Failed to remove worktree '{name}': {output}")
+        logger.info("Removed worktree: %s", name)
+        return f"Worktree removed: {name}"

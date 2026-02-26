@@ -176,3 +176,65 @@ class TestGitCommit:
         await tools.setup()
         result = await tools.git_commit(message="empty")
         assert "nothing" in result.lower() or "no changes" in result.lower()
+
+
+class TestGitBranch:
+    async def test_list_branches(self, tmp_path: Path) -> None:
+        await _init_git_repo(tmp_path)
+        tools = GitTools(repo_root=tmp_path)
+        await tools.setup()
+        result = await tools.git_branch(list_branches=True)
+        assert "master" in result or "main" in result
+
+    async def test_create_branch(self, tmp_path: Path) -> None:
+        await _init_git_repo(tmp_path)
+        tools = GitTools(repo_root=tmp_path)
+        await tools.setup()
+        result = await tools.git_branch(name="feature-test")
+        assert "feature-test" in result
+        listing = await tools.git_branch(list_branches=True)
+        assert "feature-test" in listing
+
+    async def test_create_branch_no_name_lists(self, tmp_path: Path) -> None:
+        await _init_git_repo(tmp_path)
+        tools = GitTools(repo_root=tmp_path)
+        await tools.setup()
+        result = await tools.git_branch()
+        # With no name and list_branches=False (default), should list branches
+        assert isinstance(result, str)
+        assert "master" in result or "main" in result
+
+
+class TestGitWorktree:
+    async def test_create_worktree(self, tmp_path: Path) -> None:
+        await _init_git_repo(tmp_path)
+        tools = GitTools(repo_root=tmp_path)
+        await tools.setup()
+        result = await tools.git_worktree_create(name="test-wt")
+        assert "test-wt" in result
+        wt_path = tmp_path / ".sage" / "worktrees" / "test-wt"
+        assert wt_path.exists()
+
+    async def test_create_worktree_with_branch(self, tmp_path: Path) -> None:
+        await _init_git_repo(tmp_path)
+        tools = GitTools(repo_root=tmp_path)
+        await tools.setup()
+        result = await tools.git_worktree_create(name="branched-wt", branch="feat-branch")
+        assert "branched-wt" in result
+        wt_path = tmp_path / ".sage" / "worktrees" / "branched-wt"
+        assert wt_path.exists()
+
+    async def test_remove_worktree(self, tmp_path: Path) -> None:
+        await _init_git_repo(tmp_path)
+        tools = GitTools(repo_root=tmp_path)
+        await tools.setup()
+        await tools.git_worktree_create(name="to-remove")
+        result = await tools.git_worktree_remove(name="to-remove")
+        assert "removed" in result.lower()
+
+    async def test_remove_nonexistent_worktree(self, tmp_path: Path) -> None:
+        await _init_git_repo(tmp_path)
+        tools = GitTools(repo_root=tmp_path)
+        await tools.setup()
+        result = await tools.git_worktree_remove(name="nope")
+        assert "not found" in result.lower()
