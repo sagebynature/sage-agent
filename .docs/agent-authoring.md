@@ -248,6 +248,10 @@ memory:
   path: memory.db                        # Database file path
   embedding: text-embedding-3-large      # Embedding model (litellm format)
   compaction_threshold: 50               # Messages before compaction triggers
+  vector_search: auto                    # "auto" | "sqlite_vec" | "numpy"
+                                         # auto: use sqlite-vec if available, numpy fallback
+                                         # sqlite_vec: require extension (pip install sage-agent[vec])
+                                         # numpy: force O(n) numpy path
 ```
 
 ### MCP Server Configuration
@@ -279,6 +283,8 @@ model_params:
   stop: ["END"]
   timeout: 120.0
   response_format: { type: json_object }
+  num_retries: 3       # Automatic retries on transient provider errors (forwarded to litellm)
+  retry_after: 1.0     # Base back-off interval in seconds between retries
 ```
 
 Only fields that are set are forwarded; omitted fields use provider defaults.

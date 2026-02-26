@@ -2,6 +2,25 @@
 
 <!-- version list -->
 
+## v1.3.0 (2026-02-26)
+
+### Features
+
+- **config**: Configurable retry/backoff via `ModelParams` — `num_retries` and `retry_after`
+  fields are forwarded to litellm, enabling automatic retry with exponential back-off on
+  transient provider errors; set via `model_params:` in agent frontmatter
+
+- **memory**: Optional sqlite-vec ANN search — `SQLiteMemory` now attempts to load the
+  `sqlite-vec` extension at startup (`vector_search: auto` by default); falls back to
+  O(n) numpy cosine similarity if unavailable; force numpy with `vector_search: numpy`
+  or require sqlite-vec with `vector_search: sqlite_vec`; install optional dep with
+  `pip install sage-agent[vec]`
+
+- **memory**: Unified memory tools — when a `memory:` backend is configured, the semantic
+  `memory_store`/`memory_recall` closures are registered in place of the JSON-file stubs;
+  JSON stubs now emit `DeprecationWarning` when called without a configured backend
+
+
 ## v1.2.0 (2026-02-26)
 
 ### Features
