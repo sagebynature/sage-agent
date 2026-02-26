@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ from sage.main_config import (
     ConfigOverrides,
     load_main_config,
     merge_agent_config,
+    resolve_and_apply_env,
     resolve_main_config_path,
 )
 from sage.config import load_config
@@ -514,3 +516,72 @@ class TestLoadConfigWithCentral:
         central = MainConfig(defaults=ConfigOverrides(model="gpt-4o"))
         with pytest.raises(ConfigError, match="Inline subagent.*must specify 'model'"):
             load_config(cfg_path, central=central)
+
+
+# ---------------------------------------------------------------------------
+# resolve_and_apply_env tests
+# ---------------------------------------------------------------------------
+
+
+class TestResolveAndApplyEnv:
+    def test_literal_values_set_in_environ(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("MY_VAR", raising=False)
+        cfg = MainConfig(env={"MY_VAR": "hello"})
+        resolve_and_apply_env(cfg)
+        assert os.environ["MY_VAR"] == "hello"
+
+    def test_reference_resolved_from_environ(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SOURCE_VAR", "secret123")
+        monkeypatch.delenv("TARGET_VAR", raising=False)
+        cfg = MainConfig(env={"TARGET_VAR": "${SOURCE_VAR}"})
+        resolve_and_apply_env(cfg)
+        assert os.environ["TARGET_VAR"] == "secret123"
+
+    def test_mixed_literal_and_reference(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("HOST", "example.com")
+        cfg = MainConfig(env={"URL": "https://${HOST}/api"})
+        resolve_and_apply_env(cfg)
+        assert os.environ["URL"] == "https://example.com/api"
+
+    def test_multiple_references_in_one_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("USER", "admin")
+        monkeypatch.setenv("PASS", "s3cret")
+        cfg = MainConfig(env={"CREDS": "${USER}:${PASS}"})
+        resolve_and_apply_env(cfg)
+        assert os.environ["CREDS"] == "admin:s3cret"
+
+    def test_missing_reference_raises_config_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("MISSING_VAR", raising=False)
+        cfg = MainConfig(env={"KEY": "${MISSING_VAR}"})
+        with pytest.raises(ConfigError, match="MISSING_VAR"):
+            resolve_and_apply_env(cfg)
+
+    def test_multiple_missing_all_reported(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("A", raising=False)
+        monkeypatch.delenv("B", raising=False)
+        cfg = MainConfig(env={"X": "${A}", "Y": "${B}"})
+        with pytest.raises(ConfigError, match="A") as exc_info:
+            resolve_and_apply_env(cfg)
+        assert "B" in str(exc_info.value)
+
+    def test_config_toml_overwrites_existing_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MY_VAR", "old_value")
+        cfg = MainConfig(env={"MY_VAR": "new_value"})
+        resolve_and_apply_env(cfg)
+        assert os.environ["MY_VAR"] == "new_value"
+
+    def test_none_config_is_noop(self) -> None:
+        resolve_and_apply_env(None)  # should not raise
+
+    def test_empty_env_is_noop(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        cfg = MainConfig()
+        resolve_and_apply_env(cfg)  # should not raise
+
+    def test_self_reference_resolved_from_existing_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """${VAR} in env.VAR resolves from os.environ (set by .env)."""
+        monkeypatch.setenv("API_KEY", "from_dotenv")
+        cfg = MainConfig(env={"API_KEY": "${API_KEY}"})
+        resolve_and_apply_env(cfg)
+        assert os.environ["API_KEY"] == "from_dotenv"

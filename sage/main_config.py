@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -129,6 +130,47 @@ def load_main_config(path: Path | None) -> MainConfig | None:
 
     logger.info("Loaded main config from %s", path.resolve())
     return config
+
+
+_ENV_VAR_RE = re.compile(r"\$\{([^}]+)\}")
+
+
+def resolve_and_apply_env(config: MainConfig | None) -> None:
+    """Resolve ``${VAR}`` references in ``config.env`` and set ``os.environ``.
+
+    Resolution order:
+      1. ``[env]`` values in config.toml (may contain ``${VAR}`` references)
+      2. ``os.environ`` (already populated by ``load_dotenv()``)
+
+    Raises :class:`~sage.exceptions.ConfigError` listing all unresolved
+    variable references.
+    """
+    if config is None or not config.env:
+        return
+
+    missing: list[str] = []
+    resolved: dict[str, str] = {}
+
+    for key, value in config.env.items():
+        unresolved_in_value: list[str] = []
+
+        def _replace(match: re.Match[str]) -> str:
+            var_name = match.group(1)
+            env_val = os.environ.get(var_name)
+            if env_val is None:
+                unresolved_in_value.append(var_name)
+                return match.group(0)  # keep placeholder for error msg
+            return env_val
+
+        resolved[key] = _ENV_VAR_RE.sub(_replace, value)
+        missing.extend(unresolved_in_value)
+
+    if missing:
+        unique = sorted(set(missing))
+        raise ConfigError(f"Unresolved env var references in [env]: {', '.join(unique)}")
+
+    for key, value in resolved.items():
+        os.environ[key] = value
 
 
 def merge_agent_config(
