@@ -74,6 +74,7 @@ class Permission(BaseModel):
     web: PermissionValue | None = None
     memory: PermissionValue | None = None
     task: PermissionValue | None = None
+    git: PermissionValue | None = None
 
 
 class ContextConfig(BaseModel):
@@ -83,6 +84,14 @@ class ContextConfig(BaseModel):
     reserve_tokens: int = 4096
     prune_tool_outputs: bool = True
     tool_output_max_chars: int = 5000
+
+
+class GitConfig(BaseModel):
+    """Git integration configuration."""
+
+    auto_snapshot: bool = True
+    auto_commit_dirty: bool = False
+    auto_commit_edits: bool = False
 
 
 class AgentConfig(BaseModel):
@@ -125,6 +134,7 @@ class AgentConfig(BaseModel):
     model_params: ModelParams = Field(default_factory=ModelParams)
     skills_dir: str | None = None
     context: ContextConfig | None = None
+    git: GitConfig | None = None
 
     @field_validator("subagents", mode="before")
     @classmethod

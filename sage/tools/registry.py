@@ -25,6 +25,19 @@ CATEGORY_TOOLS: dict[str, list[str]] = {
     "web": ["web_fetch", "web_search", "http_request"],
     "memory": ["memory_store", "memory_recall"],
     "task": [],
+    "git": [
+        "git_status",
+        "git_diff",
+        "git_log",
+        "git_commit",
+        "git_branch",
+        "git_undo",
+        "git_worktree_create",
+        "git_worktree_remove",
+        "snapshot_create",
+        "snapshot_restore",
+        "snapshot_list",
+    ],
 }
 
 CATEGORY_ARG_MAP: dict[str, str | None] = {
@@ -34,6 +47,7 @@ CATEGORY_ARG_MAP: dict[str, str | None] = {
     "web": "url",
     "memory": None,
     "task": None,
+    "git": None,
 }
 
 
@@ -181,7 +195,10 @@ class ToolRegistry:
             if effective == "deny":
                 continue
             for tool_name in tool_names:
-                self.load_from_module(tool_name)
+                try:
+                    self.load_from_module(tool_name)
+                except (ToolError, ImportError, ModuleNotFoundError):
+                    pass  # tool not yet available
 
         for module_path in extensions or []:
             self.load_from_module(module_path)

@@ -122,3 +122,17 @@ class TestPolicyPermissionHandler:
         )
         decision = await handler.check("file_read", {"path": "README.md"})
         assert decision.action == PermissionAction.ALLOW
+
+    async def test_git_category_tool_resolved(self) -> None:
+        handler = self._handler(
+            rules=[CategoryPermissionRule(category="git", action=PermissionAction.ALLOW)]
+        )
+        decision = await handler.check("git_status", {})
+        assert decision.action == PermissionAction.ALLOW
+
+    async def test_git_snapshot_tool_in_git_category(self) -> None:
+        handler = self._handler(
+            rules=[CategoryPermissionRule(category="git", action=PermissionAction.DENY)]
+        )
+        decision = await handler.check("snapshot_create", {})
+        assert decision.action == PermissionAction.DENY

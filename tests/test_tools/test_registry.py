@@ -437,3 +437,29 @@ class TestToolModuleMap:
     def test_tool_module_map_no_glob_grep(self) -> None:
         assert "glob_find" not in ToolRegistry._TOOL_MODULE_MAP
         assert "grep_search" not in ToolRegistry._TOOL_MODULE_MAP
+
+
+class TestGitCategory:
+    def test_git_category_exists(self) -> None:
+        from sage.tools.registry import CATEGORY_TOOLS
+
+        assert "git" in CATEGORY_TOOLS
+
+    def test_git_category_tools_listed(self) -> None:
+        from sage.tools.registry import CATEGORY_TOOLS
+
+        git_tools = CATEGORY_TOOLS["git"]
+        assert "git_status" in git_tools
+        assert "git_diff" in git_tools
+        assert "git_log" in git_tools
+        assert "git_commit" in git_tools
+        assert "git_branch" in git_tools
+        assert "git_undo" in git_tools
+        assert "snapshot_create" in git_tools
+        assert "snapshot_restore" in git_tools
+        assert "snapshot_list" in git_tools
+
+    def test_git_category_arg_map_is_none(self) -> None:
+        from sage.tools.registry import CATEGORY_ARG_MAP
+
+        assert CATEGORY_ARG_MAP["git"] is None
