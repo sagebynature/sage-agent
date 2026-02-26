@@ -2,35 +2,14 @@
 name: safe-coder
 model: azure_ai/Kimi-K2.5
 description: A coding assistant with permissions and token budget management
-tools:
-  - file_read
-  - file_edit
-  - glob_find
-  - grep_search
-  - git_status
-  - git_diff
-  - git_log
-max_turns: 20
-model_params:
-  temperature: 0
-  max_tokens: 4096
-permissions:
-  default: deny
-  rules:
-    - tool: file_read
-      action: allow
-    - tool: glob_find
-      action: allow
-    - tool: grep_search
-      action: allow
-    - tool: git_status
-      action: allow
-    - tool: git_diff
-      action: allow
-    - tool: git_log
-      action: allow
-    - tool: file_edit
-      action: ask
+permission:
+  read: allow
+  edit: allow
+  shell:
+    "*": ask
+    "git status": allow
+    "git diff*": allow
+    "git log*": allow
 context:
   compaction_threshold: 0.8
   reserve_tokens: 8192

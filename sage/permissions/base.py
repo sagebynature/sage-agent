@@ -23,7 +23,6 @@ class PermissionDecision(BaseModel):
 
     action: PermissionAction
     reason: str | None = None
-    destructive: bool = False
 
 
 @runtime_checkable

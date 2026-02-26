@@ -2,18 +2,11 @@
 name: devtools
 model: azure_ai/Kimi-K2.5
 description: Full-featured development assistant with file editing, git, and web tools
-tools:
-  - file_read
-  - file_edit
-  - glob_find
-  - grep_search
-  - git_status
-  - git_diff
-  - git_commit
-  - git_log
-  - web_search
-  - web_fetch
-  - shell
+permission:
+  read: allow
+  edit: allow
+  shell: allow
+  web: allow
 max_turns: 20
 model_params:
   temperature: 0

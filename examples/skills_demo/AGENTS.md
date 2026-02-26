@@ -2,9 +2,9 @@
 name: devops-assistant
 model: azure_ai/Kimi-K2.5
 description: A DevOps assistant augmented with skills that give it real-world capabilities no LLM has natively
-tools:
-  - shell
-  - file_read
+permission:
+  shell: allow
+  read: allow
 max_turns: 15
 model_params:
   temperature: 0

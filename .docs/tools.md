@@ -17,9 +17,6 @@ MCP integration, and how to create your own tools.
   - [File Read](#file-read)
   - [File Write](#file-write)
   - [File Edit](#file-edit)
-  - [Glob Find](#glob-find)
-  - [Grep Search](#grep-search)
-  - [Git Tools](#git-tools)
   - [Web Tools](#web-tools)
   - [Memory Tools](#memory-tools)
 - [Configuring Tools](#configuring-tools)
@@ -28,9 +25,11 @@ MCP integration, and how to create your own tools.
   - [Tool Name Resolution](#tool-name-resolution)
 - [Permissions](#permissions)
   - [Permission Actions](#permission-actions)
-  - [Rule Matching](#rule-matching)
+  - [Category-Based Rules](#category-based-rules)
   - [Pattern Matching](#pattern-matching)
   - [Examples](#permission-examples)
+- [Extensions](#extensions)
+  - [Loading Custom Tool Modules](#loading-custom-tool-modules)
 - [MCP Integration](#mcp-integration)
 - [Creating Custom Tools](#creating-custom-tools)
   - [The @tool Decorator](#the-tool-decorator)
@@ -51,22 +50,24 @@ Give an agent the built-in shell and file tools:
 ---
 name: my-agent
 model: azure_ai/gpt-4o
-tools:
-  - shell
-  - file_read
-  - file_edit
-  - glob_find
-  - grep_search
+permission:
+  read: allow
+  edit: allow
+  shell: allow
 ---
 
 You are a helpful coding assistant.
 ```
 
-Or load every built-in tool at once:
+Or allow all built-in tools via a broad permission:
 
 ```yaml
-tools:
-  - sage.tools.builtins
+permission:
+  read: allow
+  edit: allow
+  shell: allow
+  web: allow
+  memory: allow
 ```
 
 Run it:
@@ -163,106 +164,6 @@ substring.
 
 ---
 
-### Glob Find
-
-**Name:** `glob_find`
-**Module:** `sage.tools.file_tools`
-
-Finds files matching a glob pattern. Uses
-[`fd`](https://github.com/sharkdp/fd) when available, otherwise falls back
-to Python `pathlib.glob`.
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `pattern` | `str` | yes | | Glob pattern (e.g. `*.py`, `**/*.ts`) |
-| `path` | `str` | no | `"."` | Directory to search in |
-| `max_results` | `int` | no | `200` | Maximum number of results |
-
-**Returns:** Matching file paths, one per line.
-
----
-
-### Grep Search
-
-**Name:** `grep_search`
-**Module:** `sage.tools.file_tools`
-
-Searches file contents for a regex pattern. Uses
-[ripgrep](https://github.com/BurntSushi/ripgrep) when available, otherwise
-falls back to a pure-Python implementation.
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `pattern` | `str` | yes | | Regex pattern to search for |
-| `path` | `str` | no | `"."` | Directory or file to search in |
-| `glob` | `str` | no | `None` | File type filter (e.g. `*.py`) |
-| `context_lines` | `int` | no | `0` | Lines of context around each match |
-| `max_results` | `int` | no | `50` | Maximum matching lines |
-
-**Returns:** Matches formatted as `path:line_number: content`.
-
----
-
-### Git Tools
-
-All git tools live in `sage.tools.git_tools`. Each wraps a git command and
-returns its output.
-
-#### git_status
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `repo_path` | `str` | no | `"."` | Repository path |
-
-#### git_diff
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `staged` | `bool` | no | `false` | Show staged changes (`--cached`) |
-| `target` | `str` | no | `None` | Diff against a branch or commit |
-| `repo_path` | `str` | no | `"."` | Repository path |
-
-#### git_commit
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `message` | `str` | yes | | Commit message |
-| `files` | `list[str]` | no | `None` | Files to stage before committing |
-| `repo_path` | `str` | no | `"."` | Repository path |
-
-If `files` is provided, they are staged with `git add` before committing.
-Otherwise, whatever is already staged is committed.
-
-#### git_log
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `count` | `int` | no | `10` | Number of commits |
-| `oneline` | `bool` | no | `true` | Use `--oneline` format |
-| `repo_path` | `str` | no | `"."` | Repository path |
-
-#### git_checkout
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `branch` | `str` | yes | | Branch name |
-| `create` | `bool` | no | `false` | Create the branch (`-b`) |
-| `repo_path` | `str` | no | `"."` | Repository path |
-
-#### git_pr_create
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `title` | `str` | yes | | PR title |
-| `body` | `str` | yes | | PR description |
-| `base` | `str` | no | `"main"` | Base branch |
-| `repo_path` | `str` | no | `"."` | Repository path |
-
-Requires the [GitHub CLI](https://cli.github.com/) (`gh`) to be installed and
-authenticated.
-
----
-
 ### Web Tools
 
 Both web tools live in `sage.tools.web_tools`.
@@ -330,76 +231,82 @@ Returns a JSON object of matches.
 
 ### In Agent Frontmatter
 
-The `tools:` list in your `AGENTS.md` frontmatter controls which tools the
-agent has access to:
+The `permission:` and `extensions:` fields in your `AGENTS.md` frontmatter
+control which tools the agent has access to.
+
+**Permission format** grants access to built-in tools by category:
 
 ```yaml
 ---
 name: my-agent
 model: azure_ai/gpt-4o
-tools:
-  - shell
-  - file_read
-  - file_edit
-  - glob_find
-  - grep_search
-  - git_status
-  - git_diff
-  - git_commit
-  - git_log
-  - web_search
-  - web_fetch
+permission:
+  read: allow      # registers file_read
+  edit: allow      # registers file_write, file_edit
+  shell: allow     # registers shell
+  web: allow       # registers web_fetch, web_search, http_request
+  memory: allow    # registers memory_store, memory_recall
 ---
+```
+
+Permission values can be `"allow"`, `"deny"`, `"ask"`, or a dict of patterns
+(see [Permissions](#permissions) below).
+
+**Extensions format** loads custom tools from Python modules:
+
+```yaml
+extensions:
+  - myapp.tools           # loads all @tool functions in myapp.tools
+  - myapp.tools:my_tool   # loads only my_tool from myapp.tools
 ```
 
 ### In config.toml
 
-Set default tools for all agents in the `[defaults]` section of
-`config.toml`. Individual agents can override this in their frontmatter or
-in `[agents.<name>]` sections.
+Set default permissions and extensions for all agents in the `[defaults]`
+section of `config.toml`. Individual agents can override this in their
+frontmatter or in `[agents.<name>]` sections.
 
 ```toml
 [defaults]
-tools = ["sage.tools.builtins"]
+permission.read = "allow"
+permission.edit = "allow"
+permission.shell = "ask"
 
 [agents.researcher]
-tools = ["file_read", "glob_find", "grep_search", "web_search", "web_fetch"]
+permission.web = "allow"
+extensions = ["myapp.tools"]
 ```
 
 The override is a full replacement — not a merge. If an agent specifies
-`tools:` in its frontmatter, the default list is replaced entirely.
+`permission:` in its frontmatter, the default is replaced entirely.
 
 ### Tool Name Resolution
 
-The registry resolves tool names in this order:
+When you reference a tool name (in `extensions:` or via the registry),
+it is resolved in this order:
 
 | Format | Example | Resolution |
 |--------|---------|------------|
-| Bare built-in name | `shell` | `sage.tools.builtins` → registers `shell` |
-| Bare extended name | `file_edit` | Looked up in internal map → `sage.tools.file_tools` → registers `file_edit` |
-| `builtin` keyword | `builtin` | Registers **all** built-in tools from `sage.tools.builtins` |
-| `builtin:<name>` | `builtin:shell` | Registers one built-in by name |
-| Dotted module path | `sage.tools.git_tools` | Imports module → registers all `@tool` functions found |
+| Built-in name | `shell` | Registered when `permission.shell: allow` |
+| Built-in name | `file_read` | Registered when `permission.read: allow` |
+| Dotted module path | `myapp.tools` | Imports module → registers all `@tool` functions found |
 | Module with selector | `myapp.tools:search` | Imports module → registers only `search` |
-| Custom module path | `examples.custom_tools.tools` | Imports module → registers all `@tool` functions found |
 
-**Built-in tool names** (resolved from `sage.tools.builtins`):
-`shell`, `file_read`, `file_write`, `http_request`, `memory_store`,
-`memory_recall`
+**Built-in tools** (auto-registered by category):
 
-**Extended tool names** (resolved from their respective modules):
+| Category | Tools |
+|----------|-------|
+| `read` | `file_read` |
+| `edit` | `file_write`, `file_edit` |
+| `shell` | `shell` |
+| `web` | `web_fetch`, `web_search`, `http_request` |
+| `memory` | `memory_store`, `memory_recall` |
+
+**Extended tool lookup** (non-builtin, auto-resolved to modules):
 
 | Name | Module |
 |------|--------|
 | `file_edit` | `sage.tools.file_tools` |
-| `glob_find` | `sage.tools.file_tools` |
-| `grep_search` | `sage.tools.file_tools` |
-| `git_status` | `sage.tools.git_tools` |
-| `git_diff` | `sage.tools.git_tools` |
-| `git_commit` | `sage.tools.git_tools` |
-| `git_log` | `sage.tools.git_tools` |
-| `git_checkout` | `sage.tools.git_tools` |
-| `git_pr_create` | `sage.tools.git_tools` |
 | `web_search` | `sage.tools.web_tools` |
 | `web_fetch` | `sage.tools.web_tools` |
 
@@ -408,7 +315,7 @@ The registry resolves tool names in this order:
 ## Permissions
 
 Permissions control whether a tool call is allowed, denied, or requires user
-approval. They are configured in the `permissions:` section of an agent's
+approval. They are configured in the `permission:` section of an agent's
 frontmatter or `config.toml`.
 
 ### Permission Actions
@@ -419,84 +326,129 @@ frontmatter or `config.toml`.
 | `deny` | Tool call is blocked; agent receives an error |
 | `ask` | User is prompted for approval (default) |
 
-### Rule Matching
+### Category-Based Rules
 
-Rules are evaluated in order. **The last matching rule wins.** This allows
-you to set broad defaults first and add specific overrides after.
+Permissions are organized by **category**, not individual tool names.
+Each category groups related tools:
 
 ```yaml
-permissions:
-  default: deny          # deny everything by default
-  rules:
-    - tool: file_read    # then allow specific tools
-      action: allow
-    - tool: glob_find
-      action: allow
-    - tool: file_edit
-      action: ask        # edits need approval
+permission:
+  read: allow      # allow file_read
+  edit: deny       # deny file_write, file_edit
+  shell: ask       # ask for approval on shell commands
+  web: allow       # allow web_fetch, web_search, http_request
+  memory: deny     # deny memory_store, memory_recall
 ```
+
+This grants category-level control. For fine-grained control over specific
+commands or paths, use **patterns** (see below).
 
 ### Pattern Matching
 
-Rules for the `shell` tool (or any tool that accepts a `command` argument)
-can include `patterns:` for fine-grained control. Patterns use
+For the `shell` category (or any tool with a `command` parameter), you can
+define patterns for fine-grained control. Patterns use
 [fnmatch](https://docs.python.org/3/library/fnmatch.html) glob syntax.
-Again, **last match wins**.
+**Last match wins** — so define broad rules first and add specific overrides.
 
 ```yaml
-rules:
-  - tool: shell
-    action: deny
-    destructive: true
-    patterns:
-      "git log *": allow
-      "git diff *": allow
-      "git status": allow
-      "rm *": deny
-      "rm -rf *": deny
-      "*": deny
+permission:
+  shell:
+    "*": deny              # deny all commands by default
+    "git log *": allow     # allow git log
+    "git diff *": allow    # allow git diff
+    "git status": allow    # allow git status
+    "ls *": allow          # allow ls
+```
+
+For the `read` and `edit` categories, patterns match against file paths:
+
+```yaml
+permission:
+  read:
+    "*": allow             # allow all reads
+    "*.env": deny          # except .env files
+    ".secret/*": deny      # and files in .secret/
+  edit:
+    "*": ask               # ask for approval on edits
+    "test_*.py": allow     # auto-allow test file edits
+    "src/**": ask          # edits to src/ require approval
+```
+
+For `web`, patterns match against URLs:
+
+```yaml
+permission:
+  web:
+    "*": deny                      # deny web by default
+    "https://api.github.com/*": allow   # allow GitHub API
 ```
 
 ### Permission Examples
 
-**Read-only reviewer** — can read files and git history but cannot modify anything:
+**Read-only reviewer** — can read files and search but cannot modify anything:
 
 ```yaml
-permissions:
-  default: deny
-  rules:
-    - tool: file_read
-      action: allow
-    - tool: glob_find
-      action: allow
-    - tool: grep_search
-      action: allow
-    - tool: git_status
-      action: allow
-    - tool: git_diff
-      action: allow
-    - tool: git_log
-      action: allow
+permission:
+  read: allow
+  edit: deny
+  shell: deny
+  web: allow
+  memory: deny
+```
+
+**Supervised coder** — reads are free, edits need approval, shell is denied:
+
+```yaml
+permission:
+  read: allow
+  edit: ask
+  shell: deny
+  web: allow
+  memory: deny
+```
+
+**Safe shell explorer** — allow git and safe inspection commands:
+
+```yaml
+permission:
+  read: allow
+  edit: deny
+  shell:
+    "*": deny
+    "git status": allow
+    "git log *": allow
+    "git diff *": allow
+    "ls *": allow
+    "find *": allow
+  web: allow
+  memory: deny
 ```
 
 See [`examples/permissions_agent/`](../examples/permissions_agent/) and
 [`examples/safe_coder/`](../examples/safe_coder/) for full working examples.
 
-**Supervised coder** — reads are free, edits need approval, shell is denied:
+---
+
+## Extensions
+
+### Loading Custom Tool Modules
+
+The `extensions:` list in your agent frontmatter allows you to load custom
+tools from Python modules.
 
 ```yaml
-permissions:
-  default: deny
-  rules:
-    - tool: file_read
-      action: allow
-    - tool: glob_find
-      action: allow
-    - tool: grep_search
-      action: allow
-    - tool: file_edit
-      action: ask
+---
+name: my-agent
+model: azure_ai/gpt-4o
+extensions:
+  - myapp.tools
+  - myapp.tools:specific_tool
+---
 ```
+
+The registry imports each module and registers every `@tool`-decorated
+function and every `ToolBase` subclass it finds. You can specify a single
+function using the `module:name` syntax.
 
 ---
 
@@ -519,9 +471,9 @@ mcp_servers:
   - transport: stdio
     command: npx
     args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
-tools:
-  - file_read
-  - shell
+permission:
+  read: allow
+  shell: allow
 ---
 ```
 
@@ -653,9 +605,9 @@ lifecycle methods are managed.
 
 ### Registering Custom Tools
 
-**Option 1: Module path in frontmatter** (recommended)
+**Option 1: Module path in extensions** (recommended)
 
-Put your tools in a Python module and reference it by dotted path:
+Put your tools in a Python module and reference it in the `extensions:` list:
 
 ```python
 # myproject/tools.py
@@ -669,8 +621,11 @@ def my_tool(input: str) -> str:
 
 ```yaml
 # AGENTS.md
-tools:
+---
+name: my-agent
+extensions:
   - myproject.tools
+---
 ```
 
 The registry imports the module and registers every `@tool`-decorated
@@ -679,7 +634,7 @@ function and every `ToolBase` subclass it finds.
 To register a single function from a module:
 
 ```yaml
-tools:
+extensions:
   - myproject.tools:my_tool
 ```
 
@@ -760,18 +715,17 @@ destructive operations.
 ```
 Agent
  └── ToolRegistry
-      ├── Native tools (registered via @tool decorator)
-      │    ├── sage.tools.builtins    (shell, file_read, file_write, ...)
-      │    ├── sage.tools.file_tools  (file_edit, glob_find, grep_search)
-      │    ├── sage.tools.git_tools   (git_status, git_diff, ...)
-      │    ├── sage.tools.web_tools   (web_fetch, web_search)
-      │    └── custom modules         (your own tools)
+      ├── Native tools (registered via @tool decorator or permission:)
+      │    ├── sage.tools.builtins      (shell, file_read, file_write, http_request, memory_store, memory_recall)
+      │    ├── sage.tools.file_tools    (file_edit)
+      │    ├── sage.tools.web_tools     (web_fetch, web_search)
+      │    └── custom modules via       (your own tools via extensions:)
       │
       ├── MCP tools (discovered from MCP servers)
       │    └── MCPClient → external MCP server
       │
       └── Permission handler (optional)
-           └── PolicyPermissionHandler → rules + patterns
+           └── PolicyPermissionHandler → category rules + patterns
 ```
 
 **Execution flow:**
@@ -795,9 +749,8 @@ Agent
 | `sage.tools.decorator` | `@tool` decorator — generates `ToolSchema` from function signatures |
 | `sage.tools.base` | `ToolBase` abstract class for stateful tools with setup/teardown |
 | `sage.tools.registry` | `ToolRegistry` — central dispatch, permission checks, MCP routing |
-| `sage.tools.builtins` | Core tools: shell, file_read, file_write, http_request, memory |
-| `sage.tools.file_tools` | File manipulation: file_edit, glob_find, grep_search |
-| `sage.tools.git_tools` | Git operations: status, diff, commit, log, checkout, PR |
+| `sage.tools.builtins` | Core tools: shell, file_read, file_write, http_request, memory_store, memory_recall |
+| `sage.tools.file_tools` | File manipulation: file_edit |
 | `sage.tools.web_tools` | Web access: web_fetch, web_search |
 | `sage.tools._security` | URL validation and SSRF protection |
 | `sage.permissions.policy` | Config-driven permission rules with pattern matching |

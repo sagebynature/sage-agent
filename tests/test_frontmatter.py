@@ -162,7 +162,7 @@ This is a horizontal rule in the body, not a delimiter."""
 name: test
 model: gpt-4o
 ---
-Body text   
+Body text
 """
         meta, body = parse_frontmatter(raw)
         # Lines with just whitespace might not match "---" exactly
@@ -246,3 +246,105 @@ Agent description goes here."""
         assert meta["system_prompt"] == "Extra instructions here"
         assert meta["max_turns"] == 20
         assert body == "Agent description goes here."
+
+    def test_permission_bool_coercion_simple(self):
+        """Test that YAML booleans in permission block are coerced to allow/deny strings."""
+        raw = """---
+name: test
+model: gpt-4o
+permission:
+  read: true
+  edit: false
+---
+Body text"""
+        meta, body = parse_frontmatter(raw)
+        # true -> "allow", false -> "deny"
+        assert meta["permission"]["read"] == "allow"
+        assert meta["permission"]["edit"] == "deny"
+        assert body == "Body text"
+
+    def test_permission_bool_coercion_nested_dict(self):
+        """Test bool coercion in nested permission pattern maps."""
+        raw = """---
+name: test
+model: gpt-4o
+permission:
+  shell:
+    "*": true
+    "git log*": false
+---
+Body text"""
+        meta, body = parse_frontmatter(raw)
+        assert isinstance(meta["permission"]["shell"], dict)
+        assert meta["permission"]["shell"]["*"] == "allow"
+        assert meta["permission"]["shell"]["git log*"] == "deny"
+        assert body == "Body text"
+
+    def test_permission_bool_coercion_all_bool_forms(self):
+        """Test YAML boolean syntax variations (true/false/yes/no/on/off)."""
+        raw = """---
+name: test
+model: gpt-4o
+permission:
+  read: yes
+  edit: no
+  shell: on
+  web: off
+---
+Body text"""
+        meta, body = parse_frontmatter(raw)
+        assert meta["permission"]["read"] == "allow"
+        assert meta["permission"]["edit"] == "deny"
+        assert meta["permission"]["shell"] == "allow"
+        assert meta["permission"]["web"] == "deny"
+
+    def test_permission_bool_coercion_string_values_unchanged(self):
+        """Test that string values in permission block are NOT coerced."""
+        raw = """---
+name: test
+model: gpt-4o
+permission:
+  read: allow
+  edit: ask
+  shell: deny
+---
+Body text"""
+        meta, body = parse_frontmatter(raw)
+        assert meta["permission"]["read"] == "allow"
+        assert meta["permission"]["edit"] == "ask"
+        assert meta["permission"]["shell"] == "deny"
+
+    def test_bools_outside_permission_unchanged(self):
+        """Test that boolean values OUTSIDE permission block are NOT coerced."""
+        raw = """---
+name: test
+model: gpt-4o
+memory:
+  enabled: true
+permission:
+  read: true
+---
+Body text"""
+        meta, body = parse_frontmatter(raw)
+        # memory.enabled should still be bool
+        assert meta["memory"]["enabled"] is True
+        # permission.read should be coerced to string
+        assert meta["permission"]["read"] == "allow"
+
+    def test_permission_bool_coercion_deeply_nested(self):
+        """Test nested permission patterns with multiple levels."""
+        raw = """---
+name: test
+model: gpt-4o
+permission:
+  shell:
+    "git*":
+      "git push*": true
+      "git rm*": false
+---
+Body text"""
+        meta, body = parse_frontmatter(raw)
+        shell_perm = meta["permission"]["shell"]
+        assert isinstance(shell_perm["git*"], dict)
+        assert shell_perm["git*"]["git push*"] == "allow"
+        assert shell_perm["git*"]["git rm*"] == "deny"

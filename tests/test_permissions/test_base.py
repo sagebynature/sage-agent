@@ -33,14 +33,6 @@ class TestPermissionDecision:
         d = PermissionDecision(action=PermissionAction.DENY, reason="blocked by policy")
         assert d.reason == "blocked by policy"
 
-    def test_destructive_flag_default(self) -> None:
-        d = PermissionDecision(action=PermissionAction.ALLOW)
-        assert d.destructive is False
-
-    def test_destructive_flag_set(self) -> None:
-        d = PermissionDecision(action=PermissionAction.ALLOW, destructive=True)
-        assert d.destructive is True
-
 
 class TestPermissionProtocol:
     async def test_protocol_runtime_checkable(self) -> None:

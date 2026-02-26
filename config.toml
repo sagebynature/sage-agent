@@ -21,8 +21,8 @@ model = "azure_ai/Kimi-K2.5"
 # Maximum agentic turns before stopping
 max_turns = 10
 
-# Tools available to agents (list of Python module paths)
-# tools = ["sage.tools.builtins"]
+# Custom tool extensions (list of Python module paths)
+# extensions = ["myapp.tools"]
 
 # ── Model Parameters ──────────────────────────────────────────────────────────
 # Only set fields are forwarded to the provider; omitted fields use provider defaults.
@@ -38,17 +38,10 @@ max_tokens = 4096
 # timeout = 120.0
 # response_format = { type = "json_object" }
 
-# ── Permissions ───────────────────────────────────────────────────────────────
+# ── Permission ────────────────────────────────────────────────────────────────
 # Controls what actions agents can take without asking.
-# default: "allow" | "deny" | "ask"
-[defaults.permissions]
-default = "ask"
-
-[[defaults.permissions.rules]]
-tool = "run_command"
-action = "ask"
-destructive = true
-# patterns = { command = "rm -rf.*" }
+[defaults.permission]
+shell = "ask"
 
 # ── Context Management ────────────────────────────────────────────────────────
 # Token-aware context window management.
@@ -62,15 +55,25 @@ tool_output_max_chars = 5000  # max chars per tool output before truncation
 # Model Context Protocol server connections.
 # Each server uses either stdio (command) or sse (url) transport.
 #
-# [[defaults.mcp_servers]]
+# [defaults.mcp_servers.filesystem]
 # transport = "stdio"
 # command = "npx"
 # args = ["-y", "@modelcontextprotocol/server-filesystem"]
 # env = { ROOT_DIR = "/workspace" }
 #
-# [[defaults.mcp_servers]]
+# [defaults.mcp_servers.my-sse-server]
 # transport = "sse"
 # url = "http://localhost:8080/sse"
+
+[defaults.mcp_servers.context7]
+transport = "stdio"
+command = "npx"
+args = ["-y", "@upstash/context7-mcp@latest"]
+
+[defaults.mcp_servers.sequentialthinking]
+transport = "stdio"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-sequential-thinking@latest"]
 
 
 # ─── Per-Agent Overrides ──────────────────────────────────────────────────────

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Dict, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
 
@@ -58,20 +58,22 @@ class ModelParams(BaseModel):
         return self.model_dump(exclude_none=True)
 
 
-class PermissionRuleConfig(BaseModel):
-    """A single permission rule in agent config."""
-
-    tool: str
-    action: str = "ask"
-    patterns: dict[str, str] | None = None
-    destructive: bool = False
+# Type aliases for permission configuration
+PermissionAction = Literal["allow", "deny", "ask"]
+PermissionValue = Union[PermissionAction, Dict[str, PermissionAction]]
 
 
-class PermissionsConfig(BaseModel):
-    """Permission configuration for an agent."""
+class Permission(BaseModel):
+    """Granular permission configuration for specific tools/categories."""
 
-    default: str = "ask"
-    rules: list[PermissionRuleConfig] = Field(default_factory=list)
+    model_config = ConfigDict(extra="allow")
+
+    read: PermissionValue | None = None
+    edit: PermissionValue | None = None
+    shell: PermissionValue | None = None
+    web: PermissionValue | None = None
+    memory: PermissionValue | None = None
+    task: PermissionValue | None = None
 
 
 class ContextConfig(BaseModel):
@@ -114,14 +116,14 @@ class AgentConfig(BaseModel):
     model: str = ""
     description: str = ""  # display/discovery ONLY - NOT sent to model
     _body: str = PrivateAttr(default="")  # markdown body = system prompt
-    tools: list[str] = Field(default_factory=list)
+    permission: Permission | None = None
+    extensions: list[str] = Field(default_factory=list)
     memory: MemoryConfig | None = None
     subagents: list[AgentConfig] = Field(default_factory=list)
-    mcp_servers: list[MCPServerConfig] = Field(default_factory=list)
+    mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
     max_turns: int = 10
     model_params: ModelParams = Field(default_factory=ModelParams)
     skills_dir: str | None = None
-    permissions: PermissionsConfig | None = None
     context: ContextConfig | None = None
 
     @field_validator("subagents", mode="before")
@@ -228,19 +230,14 @@ def load_config(path: str | Path, central: MainConfig | None = None) -> AgentCon
     # Log the effective (post-merge) agent configuration.
     logger.info("Agent '%s' loaded from %s", config.name, config_path)
     logger.info(
-        "  model=%s, max_turns=%d, tools=%s",
+        "  model=%s, max_turns=%d, permission=%s, extensions=%s",
         config.model,
         config.max_turns,
-        config.tools or [],
+        config.permission,
+        config.extensions,
     )
     if config.model_params and config.model_params.to_kwargs():
         logger.info("  model_params=%s", config.model_params.to_kwargs())
-    if config.permissions:
-        logger.info(
-            "  permissions.default=%s, rules=%d",
-            config.permissions.default,
-            len(config.permissions.rules),
-        )
     if config.context:
         logger.info(
             "  context: compaction_threshold=%.2f, reserve_tokens=%d",

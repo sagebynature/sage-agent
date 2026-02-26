@@ -46,7 +46,7 @@ skills_demo/
 
 ```bash
 # From the project root
-pip install sage          # or: make install
+pip install sage-agent    # or: make install
 
 # Set your LLM provider key
 export OPENAI_API_KEY=sk-...      # or AZURE_OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.
@@ -135,6 +135,6 @@ Example prompts:
    tool to execute the corresponding script (`crypto.sh`, `diagnose.sh`, etc.).
 4. The script output is returned to the LLM, which formats it for the user.
 
-See [ADR-009](../../docs/adrs/009-markdown-agent-definitions.md) and
-[ADR-010](../../docs/adrs/010-directory-subagents-and-delegate-tool.md) for the
+See [ADR-009](../../.docs/adrs/009-markdown-agent-definitions.md) and
+[ADR-010](../../.docs/adrs/010-directory-subagents-and-delegate-tool.md) for the
 design rationale behind skills and agent definitions.

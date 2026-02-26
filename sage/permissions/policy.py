@@ -3,23 +3,40 @@
 from __future__ import annotations
 
 import fnmatch
-import logging
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, Field, model_validator
 
 from sage.permissions.base import PermissionAction, PermissionDecision
+from sage.tools.registry import CATEGORY_ARG_MAP, CATEGORY_TOOLS
 
-logger = logging.getLogger(__name__)
+
+def _build_tool_category_map() -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    for category, tools in CATEGORY_TOOLS.items():
+        for tool in tools:
+            mapping[tool] = category
+    return mapping
 
 
-class PermissionRule(BaseModel):
-    """A single permission rule for a tool."""
+TOOL_TO_CATEGORY = _build_tool_category_map()
 
-    tool: str
+
+class CategoryPermissionRule(BaseModel):
+    """A single permission rule for a tool category."""
+
+    category: str = Field(validation_alias=AliasChoices("category", "tool"))
     action: PermissionAction = PermissionAction.ASK
-    patterns: dict[str, str] | None = None
-    destructive: bool = False
+    patterns: dict[str, PermissionAction] | None = None
+
+    @model_validator(mode="after")
+    def normalize_category(self) -> CategoryPermissionRule:
+        if self.category in TOOL_TO_CATEGORY:
+            self.category = TOOL_TO_CATEGORY[self.category]
+        return self
+
+
+PermissionRule = CategoryPermissionRule
 
 
 class PolicyPermissionHandler:
@@ -53,43 +70,42 @@ class PolicyPermissionHandler:
 
     def __init__(
         self,
-        rules: list[PermissionRule],
+        rules: list[CategoryPermissionRule],
         default: PermissionAction = PermissionAction.ASK,
     ) -> None:
         self.rules = rules
         self.default = default
 
     async def check(self, tool_name: str, arguments: dict[str, Any]) -> PermissionDecision:
-        # Find all matching rules (last wins).
-        matched_rule: PermissionRule | None = None
+        category = TOOL_TO_CATEGORY.get(tool_name)
+        if category is None:
+            return PermissionDecision(action=self.default)
+
+        matched_rule: CategoryPermissionRule | None = None
         for rule in self.rules:
-            if rule.tool == tool_name:
+            if rule.category == category:
                 matched_rule = rule
 
         if matched_rule is None:
             return PermissionDecision(action=self.default)
 
-        # If the rule has patterns, match against the command argument.
-        if matched_rule.patterns:
-            command = arguments.get("command", "")
-            if not command:
-                return PermissionDecision(
-                    action=matched_rule.action,
-                    destructive=matched_rule.destructive,
-                )
+        if not matched_rule.patterns:
+            return PermissionDecision(action=matched_rule.action)
 
-            # Evaluate patterns — last match wins.
-            resolved_action = matched_rule.action
-            for pattern, action_str in matched_rule.patterns.items():
-                if fnmatch.fnmatch(command, pattern):
-                    resolved_action = PermissionAction(action_str)
+        arg_value: Any = None
+        if category == "edit":
+            arg_value = arguments.get("path") or arguments.get("file_path")
+        else:
+            arg_name = CATEGORY_ARG_MAP.get(category)
+            if arg_name is not None:
+                arg_value = arguments.get(arg_name)
 
-            return PermissionDecision(
-                action=resolved_action,
-                destructive=matched_rule.destructive,
-            )
+        if not arg_value:
+            return PermissionDecision(action=matched_rule.action)
 
-        return PermissionDecision(
-            action=matched_rule.action,
-            destructive=matched_rule.destructive,
-        )
+        resolved_action = matched_rule.action
+        for pattern, action in matched_rule.patterns.items():
+            if fnmatch.fnmatch(str(arg_value), pattern):
+                resolved_action = PermissionAction(action)
+
+        return PermissionDecision(action=resolved_action)

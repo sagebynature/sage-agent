@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -143,7 +144,7 @@ class Agent:
         if config.mcp_servers:
             from sage.mcp.client import MCPClient
 
-            for mcp_cfg in config.mcp_servers:
+            for mcp_cfg in config.mcp_servers.values():
                 mcp_clients.append(
                     MCPClient(
                         transport=mcp_cfg.transport,
@@ -172,22 +173,38 @@ class Agent:
 
         # Build permission handler from config.
         permission_handler = None
-        if config.permissions is not None:
+        if config.permission is not None:
             from sage.permissions.base import PermissionAction
-            from sage.permissions.policy import PolicyPermissionHandler, PermissionRule
+            from sage.permissions.policy import CategoryPermissionRule, PolicyPermissionHandler
+            from sage.tools.registry import CATEGORY_TOOLS
 
-            rules = [
-                PermissionRule(
-                    tool=r.tool,
-                    action=PermissionAction(r.action),
-                    patterns=r.patterns,
-                    destructive=r.destructive,
+            rules: list[CategoryPermissionRule] = []
+            for category in CATEGORY_TOOLS:
+                category_permission = getattr(config.permission, category, None)
+                if category_permission is None:
+                    continue
+                if isinstance(category_permission, dict):
+                    rules.append(
+                        CategoryPermissionRule(
+                            category=category,
+                            action=PermissionAction.ASK,
+                            patterns={
+                                pattern: PermissionAction(action)
+                                for pattern, action in category_permission.items()
+                            },
+                        )
+                    )
+                    continue
+                rules.append(
+                    CategoryPermissionRule(
+                        category=category,
+                        action=PermissionAction(category_permission),
+                    )
                 )
-                for r in config.permissions.rules
-            ]
+
             permission_handler = PolicyPermissionHandler(
                 rules=rules,
-                default=PermissionAction(config.permissions.default),
+                default=PermissionAction.ASK,
             )
 
         # Build token budget from config.
@@ -208,7 +225,6 @@ class Agent:
             name=config.name,
             model=config.model,
             description=config.description,
-            tools=config.tools or None,
             max_turns=config.max_turns,
             subagents=subagents,
             body=config._body,
@@ -220,6 +236,15 @@ class Agent:
             if config.memory is not None
             else 50,
         )
+
+        if config.permission is not None:
+            agent.tool_registry.register_from_permissions(
+                config.permission,
+                extensions=config.extensions or None,
+            )
+        elif config.extensions:
+            for extension_path in config.extensions:
+                agent.tool_registry.load_from_module(extension_path)
 
         # Wire permission handler into tool registry.
         if permission_handler is not None:
@@ -640,31 +665,6 @@ class Agent:
         """Reset the conversation history for a fresh session."""
         self._conversation_history.clear()
 
-    def _build_initial_messages(
-        self, input: str, memory_context: str | None = None
-    ) -> list[Message]:
-        """Build the initial message list with system prompt and user input."""
-        messages: list[Message] = []
-
-        # System message from description/body + skills.
-        system_parts: list[str] = []
-        if self._body:
-            system_parts.append(self._body)
-        for skill in self.skills:
-            header = f"## Skill: {skill.name}"
-            if skill.description:
-                header += f"\n_{skill.description}_"
-            system_parts.append(f"{header}\n\n{skill.content}")
-        if system_parts:
-            messages.append(Message(role="system", content="\n\n".join(system_parts)))
-
-        # Prepend recalled memory as a system-level context block.
-        if memory_context:
-            messages.append(Message(role="system", content=f"[Relevant memory]\n{memory_context}"))
-
-        messages.append(Message(role="user", content=input))
-        return messages
-
     async def close(self) -> None:
         """Release resources held by the agent (MCP connections, memory DB, etc.).
 
@@ -678,7 +678,10 @@ class Agent:
             except Exception as exc:
                 logger.debug("MCP disconnect error: %s", exc)
         if self.memory is not None and hasattr(self.memory, "close"):
-            await self.memory.close()
+            try:
+                await self.memory.close()
+            except (Exception, asyncio.CancelledError) as exc:
+                logger.debug("Memory close error: %s", exc)
             self._memory_initialized = False
 
     async def _ensure_memory_initialized(self) -> None:
