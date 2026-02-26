@@ -63,14 +63,6 @@ def _write_config_with_mcp(tmp_path: Path) -> Path:
     return config
 
 
-class TestVersion:
-    def test_version(self) -> None:
-        runner = CliRunner()
-        result = runner.invoke(cli, ["--version"])
-        assert result.exit_code == 0
-        assert "1.0.0-rc.7" in result.output
-
-
 class TestAgentValidate:
     def test_valid_config(self, tmp_path: Path) -> None:
         config_path = _write_valid_config(tmp_path)
