@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import re
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, TypeVar, cast, overload
 
 from sage.config import AgentConfig, load_config
 
@@ -25,6 +27,8 @@ if TYPE_CHECKING:
     from sage.providers.base import ProviderProtocol
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 
 class Agent:
@@ -94,6 +98,7 @@ class Agent:
         self._compacted_last_turn: bool = False
         self._token_budget: Any | None = None
         self._git_config: Any | None = None
+        self._memory_config: Any | None = None
         self.parallel_tool_execution: bool = parallel_tool_execution
 
         # Default to LiteLLM provider if none supplied.
@@ -295,12 +300,19 @@ class Agent:
         # Store token budget for later use.
         agent._token_budget = token_budget
         agent._git_config = config.git
+        agent._memory_config = config.memory
 
         return agent
 
     # ── Execution methods ─────────────────────────────────────────────
 
-    async def run(self, input: str) -> str:
+    @overload
+    async def run(self, input: str) -> str: ...
+
+    @overload
+    async def run(self, input: str, *, response_model: type[T]) -> T: ...
+
+    async def run(self, input: str, *, response_model: type[T] | None = None) -> str | T:
         """Main execution loop: LLM call -> tool execution -> repeat until done.
 
         The loop runs for at most ``max_turns`` iterations.  Each iteration
@@ -314,10 +326,28 @@ class Agent:
         MCP servers are connected on first call and their tools are registered
         into the tool registry.  Memory is recalled before the first turn and
         persisted after the final response.
+
+        When ``response_model`` is provided (a Pydantic model class), a system
+        message is injected instructing the LLM to respond with JSON matching
+        the model's schema.  The final output is then parsed and returned as an
+        instance of that model instead of a raw string.
         """
         logger.info("Agent '%s' run started: %s", self.name, input[:80])
 
         messages = await self._pre_loop_setup(input)
+
+        if response_model is not None:
+            schema = response_model.model_json_schema()  # type: ignore[attr-defined]
+            schema_instruction = Message(
+                role="system",
+                content=f"Respond with valid JSON matching this schema:\n{json.dumps(schema, indent=2)}",
+            )
+            # Insert after any existing system messages, before the first non-system message.
+            insert_idx = next(
+                (i for i, m in enumerate(messages) if m.role != "system"),
+                len(messages),
+            )
+            messages.insert(insert_idx, schema_instruction)
 
         for turn in range(self.max_turns):
             logger.debug("Turn %d/%d", turn + 1, self.max_turns)
@@ -331,6 +361,12 @@ class Agent:
                 logger.info("Agent '%s' run complete after %d turn(s)", self.name, turn + 1)
                 final_output = result.message.content or ""
                 await self._post_loop_cleanup(input, final_output)
+                if response_model is not None:
+                    # Strip markdown code fences that some LLMs wrap around JSON.
+                    cleaned = re.sub(
+                        r"^```(?:json)?\n?|```$", "", final_output.strip(), flags=re.MULTILINE
+                    ).strip()
+                    return response_model.model_validate_json(cleaned)  # type: ignore[attr-defined]
                 return final_output
 
             await self._execute_tool_calls(result.message.tool_calls, messages)
@@ -797,10 +833,41 @@ class Agent:
         return "\n".join(lines)
 
     async def _store_memory(self, input: str, output: str) -> None:
-        """Persist the exchange to memory."""
+        """Persist the exchange to memory, applying configured relevance filters."""
         if self.memory is None:
             return
         content = f"User: {input}\nAssistant: {output}"
+
+        # Apply relevance filter.  When no memory config is present (agent
+        # was constructed directly without a config file), fall back to
+        # "none" so that the old store-everything behaviour is preserved.
+        mem_config = self._memory_config
+        relevance_filter = getattr(mem_config, "relevance_filter", "none") if mem_config else "none"
+        min_exchange_length = getattr(mem_config, "min_exchange_length", 100) if mem_config else 100
+        relevance_threshold = getattr(mem_config, "relevance_threshold", 0.5) if mem_config else 0.5
+
+        if relevance_filter == "length":
+            if len(content) < min_exchange_length:
+                logger.debug(
+                    "Memory store skipped for agent '%s': content too short (%d < %d chars)",
+                    self.name,
+                    len(content),
+                    min_exchange_length,
+                )
+                return
+        elif relevance_filter == "llm":
+            score = await self._score_memory_relevance(content)
+            storing = score >= relevance_threshold
+            logger.debug(
+                "Memory relevance score: %.2f (threshold=%.2f, storing=%s)",
+                score,
+                relevance_threshold,
+                storing,
+            )
+            if not storing:
+                return
+        # "none": store everything
+
         try:
             memory_id = await self.memory.store(content)
             logger.debug(
@@ -811,3 +878,19 @@ class Agent:
             )
         except Exception as exc:
             logger.warning("Memory store failed: %s", exc)
+
+    async def _score_memory_relevance(self, content: str) -> float:
+        """Ask the provider to score exchange relevance from 0.0 to 1.0."""
+        prompt = (
+            "Rate the following exchange on a scale from 0.0 to 1.0 based on how "
+            "useful it would be to remember for future conversations. "
+            "Only output the number, nothing else.\n\n"
+            f"{content}"
+        )
+        try:
+            messages = [Message(role="user", content=prompt)]
+            result = await self.provider.complete(messages)
+            response_text = result.message.content or ""
+            return float(response_text.strip())
+        except Exception:
+            return 1.0  # On any failure, default to storing

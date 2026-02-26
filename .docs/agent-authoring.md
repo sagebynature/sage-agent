@@ -252,6 +252,12 @@ memory:
                                          # auto: use sqlite-vec if available, numpy fallback
                                          # sqlite_vec: require extension (pip install sage-agent[vec])
                                          # numpy: force O(n) numpy path
+  relevance_filter: none                 # "none" | "length" | "llm"
+                                         # none: store every exchange (default)
+                                         # length: skip if exchange < min_exchange_length chars
+                                         # llm: ask provider to score; skip below relevance_threshold
+  min_exchange_length: 100               # Minimum chars to store (length filter only)
+  relevance_threshold: 0.5              # Min LLM score to store (llm filter only, 0.0–1.0)
 ```
 
 ### MCP Server Configuration

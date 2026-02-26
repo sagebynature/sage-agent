@@ -2305,3 +2305,328 @@ class TestMemoryToolUnification:
                 with patch.dict(os.environ, {"SAGE_MEMORY_PATH": mem_path}):
                     await agent.tool_registry.execute("memory_store", {"key": "k", "value": "v"})
             assert any(issubclass(warning.category, DeprecationWarning) for warning in w)
+
+
+# ── Memory Relevance Filter Tests ─────────────────────────────────────────────
+
+
+class TestMemoryRelevanceFilter:
+    """Tests for relevance filtering in _store_memory()."""
+
+    def _make_agent_with_memory_config(
+        self,
+        mock_memory: Any,
+        relevance_filter: str = "length",
+        min_exchange_length: int = 100,
+        relevance_threshold: float = 0.5,
+        provider: Any = None,
+    ) -> Agent:
+        """Build an Agent with a mock memory backend and a custom _memory_config."""
+
+        from sage.config import MemoryConfig
+
+        mem_config = MemoryConfig(
+            relevance_filter=relevance_filter,  # type: ignore[arg-type]
+            min_exchange_length=min_exchange_length,
+            relevance_threshold=relevance_threshold,
+        )
+        if provider is None:
+            provider = MockProvider([])
+        agent = Agent(
+            name="filter-test",
+            model="test-model",
+            memory=mock_memory,
+            provider=provider,
+        )
+        agent._memory_config = mem_config
+        return agent
+
+    @pytest.mark.asyncio
+    async def test_length_filter_skips_short_exchanges(self) -> None:
+        """Length filter: short exchange (< min_exchange_length) is NOT stored."""
+        from unittest.mock import AsyncMock
+
+        mock_memory = AsyncMock()
+        mock_memory.initialize = AsyncMock()
+        mock_memory.recall = AsyncMock(return_value=[])
+        mock_memory.store = AsyncMock(return_value="mem-1")
+
+        agent = self._make_agent_with_memory_config(
+            mock_memory,
+            relevance_filter="length",
+            min_exchange_length=100,
+        )
+
+        # Build a short input/output pair that results in content < 100 chars
+        short_input = "Hi"
+        short_output = "Hello"
+        # "User: Hi\nAssistant: Hello" = 25 chars, well below 100
+        await agent._store_memory(short_input, short_output)
+
+        mock_memory.store.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_length_filter_stores_long_exchanges(self) -> None:
+        """Length filter: long exchange (>= min_exchange_length) IS stored."""
+        from unittest.mock import AsyncMock
+
+        mock_memory = AsyncMock()
+        mock_memory.initialize = AsyncMock()
+        mock_memory.recall = AsyncMock(return_value=[])
+        mock_memory.store = AsyncMock(return_value="mem-2")
+
+        agent = self._make_agent_with_memory_config(
+            mock_memory,
+            relevance_filter="length",
+            min_exchange_length=100,
+        )
+
+        # Build input/output that together exceed 100 chars
+        long_input = "What is the best way to learn Python programming for beginners?"
+        long_output = "Start with the official Python tutorial and practice with small projects."
+        # "User: <long_input>\nAssistant: <long_output>" far exceeds 100 chars
+        await agent._store_memory(long_input, long_output)
+
+        mock_memory.store.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_none_filter_stores_everything(self) -> None:
+        """None filter: even very short exchanges are stored."""
+        from unittest.mock import AsyncMock
+
+        mock_memory = AsyncMock()
+        mock_memory.initialize = AsyncMock()
+        mock_memory.recall = AsyncMock(return_value=[])
+        mock_memory.store = AsyncMock(return_value="mem-3")
+
+        agent = self._make_agent_with_memory_config(
+            mock_memory,
+            relevance_filter="none",
+            min_exchange_length=100,
+        )
+
+        # Short exchange that would be skipped by "length" filter
+        await agent._store_memory("OK", "Sure")
+
+        mock_memory.store.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_llm_filter_skips_low_score(self) -> None:
+        """LLM filter: provider returns a low score -> exchange is NOT stored."""
+        from unittest.mock import AsyncMock
+
+        mock_memory = AsyncMock()
+        mock_memory.initialize = AsyncMock()
+        mock_memory.recall = AsyncMock(return_value=[])
+        mock_memory.store = AsyncMock(return_value="mem-4")
+
+        # Provider returns "0.2" for the scoring call
+        scoring_provider = MockProvider([_text_result("0.2")])
+
+        agent = self._make_agent_with_memory_config(
+            mock_memory,
+            relevance_filter="llm",
+            relevance_threshold=0.5,
+            provider=scoring_provider,
+        )
+
+        await agent._store_memory("Hello", "Hi there")
+
+        mock_memory.store.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_llm_filter_stores_high_score(self) -> None:
+        """LLM filter: provider returns a high score -> exchange IS stored."""
+        from unittest.mock import AsyncMock
+
+        mock_memory = AsyncMock()
+        mock_memory.initialize = AsyncMock()
+        mock_memory.recall = AsyncMock(return_value=[])
+        mock_memory.store = AsyncMock(return_value="mem-5")
+
+        # Provider returns "0.8" for the scoring call
+        scoring_provider = MockProvider([_text_result("0.8")])
+
+        agent = self._make_agent_with_memory_config(
+            mock_memory,
+            relevance_filter="llm",
+            relevance_threshold=0.5,
+            provider=scoring_provider,
+        )
+
+        await agent._store_memory(
+            "What is the capital of France?",
+            "The capital of France is Paris.",
+        )
+
+        mock_memory.store.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_llm_filter_defaults_to_store_on_parse_failure(self) -> None:
+        """LLM filter: when provider returns unparseable text, exchange is stored (fail-safe)."""
+        from unittest.mock import AsyncMock
+
+        mock_memory = AsyncMock()
+        mock_memory.initialize = AsyncMock()
+        mock_memory.recall = AsyncMock(return_value=[])
+        mock_memory.store = AsyncMock(return_value="mem-6")
+
+        # Provider returns a non-numeric response
+        scoring_provider = MockProvider([_text_result("not a number")])
+
+        agent = self._make_agent_with_memory_config(
+            mock_memory,
+            relevance_filter="llm",
+            relevance_threshold=0.5,
+            provider=scoring_provider,
+        )
+
+        await agent._store_memory(
+            "What is the answer?",
+            "The answer is 42.",
+        )
+
+        # Fail-safe: parse failure defaults to score=1.0, which is >= 0.5, so stored
+        mock_memory.store.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_store_memory_no_memory_config_stores_everything(self) -> None:
+        """When _memory_config is None (direct Agent() construction), all exchanges are stored."""
+        from unittest.mock import AsyncMock
+
+        mock_memory: Any = AsyncMock()
+        mock_memory.store = AsyncMock(return_value="id-1")
+
+        # Construct the agent directly — _memory_config stays None
+        agent = Agent(
+            name="direct",
+            model="test-model",
+            memory=mock_memory,
+            provider=MockProvider([]),
+        )
+        assert agent._memory_config is None
+
+        # Short exchange that length-filter would skip
+        short_input = "Hi"
+        short_output = "Hello"
+        await agent._store_memory(short_input, short_output)
+
+        # Must be stored regardless — backward compat fallback is "none"
+        mock_memory.store.assert_awaited_once()
+
+
+# ── Structured Output Tests ────────────────────────────────────────────────
+
+
+class TestStructuredOutput:
+    """Tests for Agent.run() with response_model for structured Pydantic output."""
+
+    class _UserInfo:
+        pass  # defined below as a proper Pydantic model
+
+    # We define the model here so it's accessible in all test methods.
+    from pydantic import BaseModel as _BaseModel
+
+    class _UserInfo(_BaseModel):
+        name: str
+        age: int
+
+    @pytest.mark.asyncio
+    async def test_run_without_response_model_returns_str(self) -> None:
+        """run() without response_model returns a plain str as before."""
+        provider = MockProvider([_text_result("Hello, world!")])
+        agent = Agent(name="test", model="test-model", provider=provider)
+
+        result = await agent.run("Say hello")
+
+        assert isinstance(result, str)
+        assert result == "Hello, world!"
+
+    @pytest.mark.asyncio
+    async def test_run_with_response_model_returns_parsed_object(self) -> None:
+        """run() with response_model parses JSON and returns the model instance."""
+        provider = MockProvider([_text_result('{"name": "Alice", "age": 30}')])
+        agent = Agent(name="test", model="test-model", provider=provider)
+
+        result = await agent.run("Give me user info", response_model=TestStructuredOutput._UserInfo)
+
+        assert isinstance(result, TestStructuredOutput._UserInfo)
+        assert result.name == "Alice"
+        assert result.age == 30
+
+    @pytest.mark.asyncio
+    async def test_run_schema_injected_in_system_message(self) -> None:
+        """When response_model is set, a schema system message is injected."""
+        provider = MockProvider([_text_result('{"name": "Bob", "age": 25}')])
+        agent = Agent(name="test", model="test-model", provider=provider)
+
+        await agent.run("Give me user info", response_model=TestStructuredOutput._UserInfo)
+
+        # Inspect the messages sent to the provider on the first (only) call.
+        call_messages: list[Message] = provider.call_args[0]["messages"]
+        system_messages = [m for m in call_messages if m.role == "system"]
+
+        # At least one system message should mention JSON schema.
+        schema_messages = [m for m in system_messages if "JSON" in (m.content or "")]
+        assert len(schema_messages) >= 1
+
+        # The schema message should contain the field names from _UserInfo.
+        schema_content = schema_messages[0].content or ""
+        assert "name" in schema_content
+        assert "age" in schema_content
+
+    @pytest.mark.asyncio
+    async def test_run_invalid_json_raises_validation_error(self) -> None:
+        """If provider returns invalid JSON, model_validate_json raises ValidationError."""
+        from pydantic import ValidationError
+
+        provider = MockProvider([_text_result("not valid json at all")])
+        agent = Agent(name="test", model="test-model", provider=provider)
+
+        with pytest.raises(ValidationError):
+            await agent.run("Give me user info", response_model=TestStructuredOutput._UserInfo)
+
+    @pytest.mark.asyncio
+    async def test_run_with_markdown_fenced_json(self) -> None:
+        """Markdown code fences around JSON are stripped before parsing."""
+        fenced = '```json\n{"name": "Charlie", "age": 42}\n```'
+        provider = MockProvider([_text_result(fenced)])
+        agent = Agent(name="test", model="test-model", provider=provider)
+
+        result = await agent.run("Give me user info", response_model=TestStructuredOutput._UserInfo)
+
+        assert result.name == "Charlie"
+        assert result.age == 42
+
+    @pytest.mark.asyncio
+    async def test_run_schema_inserted_before_user_message(self) -> None:
+        """The schema system message appears before the user message in the list."""
+        provider = MockProvider([_text_result('{"name": "Dana", "age": 28}')])
+        # Give agent a body so it generates a system message naturally.
+        agent = Agent(
+            name="test",
+            model="test-model",
+            provider=provider,
+            body="You are a helpful assistant.",
+        )
+
+        await agent.run("Give me user info", response_model=TestStructuredOutput._UserInfo)
+
+        call_messages: list[Message] = provider.call_args[0]["messages"]
+        # Find the index of the schema system message and the user message.
+        schema_idx = next(
+            (
+                i
+                for i, m in enumerate(call_messages)
+                if m.role == "system" and "JSON" in (m.content or "")
+            ),
+            None,
+        )
+        user_idx = next(
+            (i for i, m in enumerate(call_messages) if m.role == "user"),
+            None,
+        )
+
+        assert schema_idx is not None, "Schema system message not found"
+        assert user_idx is not None, "User message not found"
+        assert schema_idx < user_idx, "Schema message must appear before user message"

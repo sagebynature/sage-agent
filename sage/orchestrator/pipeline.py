@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -36,6 +37,20 @@ class Pipeline:
             logger.debug("Pipeline step %d/%d: agent='%s'", i + 1, len(self.agents), agent.name)
             current = await agent.run(current)
         return current
+
+    async def stream(self, input: str) -> AsyncIterator[str]:
+        """Stream the pipeline — intermediate agents run(), final agent streams."""
+        if not self.agents:
+            return
+        logger.debug("Pipeline stream: %d steps", len(self.agents))
+        current = input
+        for i, agent in enumerate(self.agents[:-1]):
+            logger.debug(
+                "Pipeline stream step %d/%d: agent='%s'", i + 1, len(self.agents), agent.name
+            )
+            current = await agent.run(current)
+        async for chunk in self.agents[-1].stream(current):
+            yield chunk
 
     def __rshift__(self, other: Agent | Pipeline) -> Pipeline:
         """Support ``pipeline >> agent`` and ``pipeline >> pipeline`` syntax."""

@@ -225,6 +225,78 @@ class TestRunRace:
         with pytest.raises(SageError, match="All agents failed"):
             await Orchestrator.run_race(agents, "go")
 
+    @pytest.mark.asyncio
+    async def test_race_cancelled_tasks_are_awaited(self) -> None:
+        """Losing tasks have their cancellation properly awaited (finally blocks run)."""
+        import asyncio
+
+        finally_ran: list[str] = []
+
+        async def _fast_run(_input: str) -> str:
+            return "winner"
+
+        async def _slow_run(name: str, _input: str) -> str:
+            try:
+                await asyncio.sleep(10)
+                return "should never get here"
+            finally:
+                finally_ran.append(name)
+
+        class _DirectProvider:
+            """Provider whose complete() delegates to a supplied coroutine factory."""
+
+            def __init__(self, coro_factory: Any) -> None:
+                self._factory = coro_factory
+
+            async def complete(
+                self,
+                messages: list[Message],
+                tools: list[ToolSchema] | None = None,
+                **kwargs: Any,
+            ) -> CompletionResult:
+                content = await self._factory(messages[-1].content if messages else "")
+                return CompletionResult(
+                    message=Message(role="assistant", content=content),
+                    usage=Usage(),
+                )
+
+            async def stream(
+                self,
+                messages: list[Message],
+                tools: list[ToolSchema] | None = None,
+                **kwargs: Any,
+            ) -> AsyncIterator[StreamChunk]:
+                raise NotImplementedError  # pragma: no cover
+                yield  # make it a generator  # pragma: no cover
+
+            async def embed(self, texts: list[str]) -> list[list[float]]:
+                raise NotImplementedError  # pragma: no cover
+
+        winner_agent = Agent(
+            name="winner",
+            model="test-model",
+            provider=_DirectProvider(_fast_run),
+        )
+        loser1_agent = Agent(
+            name="loser1",
+            model="test-model",
+            provider=_DirectProvider(lambda inp: _slow_run("loser1", inp)),
+        )
+        loser2_agent = Agent(
+            name="loser2",
+            model="test-model",
+            provider=_DirectProvider(lambda inp: _slow_run("loser2", inp)),
+        )
+
+        result = await Orchestrator.run_race([winner_agent, loser1_agent, loser2_agent], "go")
+
+        assert result.success is True
+        assert result.output == "winner"
+        # Both losing tasks must have had their finally blocks executed,
+        # proving that cancellation was awaited rather than fire-and-forget.
+        assert "loser1" in finally_ran, "loser1 finally block did not run"
+        assert "loser2" in finally_ran, "loser2 finally block did not run"
+
 
 class TestOrchestratorLogging:
     @pytest.mark.asyncio
