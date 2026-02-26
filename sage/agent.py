@@ -500,8 +500,7 @@ class Agent:
         # Persist the user + assistant exchange to conversation history.
         self._conversation_history.append(Message(role="user", content=input))
         self._conversation_history.append(Message(role="assistant", content=final_output))
-        compacted = await self._maybe_compact_history()
-        _ = compacted
+        await self._maybe_compact_history()
         self._update_token_usage([message.model_dump() for message in self._build_messages("")])
         await self._store_memory(input, final_output)
 
