@@ -106,7 +106,7 @@ class SQLiteMemory:
             return
 
         try:
-            import sqlite_vec
+            import sqlite_vec  # type: ignore[import-not-found]
 
             await self._db.load_extension(sqlite_vec.loadable_path())  # type: ignore[union-attr]
 
