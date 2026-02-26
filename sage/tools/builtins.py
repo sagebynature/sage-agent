@@ -56,6 +56,16 @@ _DANGEROUS_PATTERNS: list[str] = [
     # Data exfiltration patterns
     r"\bcurl\b.*(-d\s+@|-T\s+|--data-binary\s+@|--upload-file\s+)",
     r"\bwget\b.*--post-file",
+    # Git-specific dangerous commands
+    r"\bgit\s+push\s+.*--force\b",
+    r"\bgit\s+push\s+.*-f\b",
+    r"\bgit\s+reset\s+--hard\b",
+    r"\bgit\s+clean\s+-[fd]",
+    r"\bgit\s+checkout\s+\.\s*$",
+    r"\bgit\s+branch\s+-D\b",
+    r"\bgit\s+rebase\b",
+    r"\bgit\s+push\s+.*\bmain\b",
+    r"\bgit\s+push\s+.*\bmaster\b",
 ]
 
 
