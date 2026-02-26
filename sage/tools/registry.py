@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from sage.exceptions import PermissionError as SagePermissionError, ToolError
 from sage.models import ToolSchema
 from sage.tools.base import ToolBase
+from sage.tracing import span
 
 if TYPE_CHECKING:
     from sage.config import Permission
@@ -146,30 +147,32 @@ class ToolRegistry:
                 raise SagePermissionError(reason)
 
         logger.debug("Executing tool: %s, args=%s", name, list(arguments.keys()))
-        try:
-            if mcp_client is not None:
-                return await mcp_client.call_tool(name, arguments)
-            assert fn is not None
-            if inspect.iscoroutinefunction(fn):
-                coro = fn(**arguments)
-            else:
-                coro = asyncio.to_thread(fn, **arguments)
+        async with span("tool.execute", {"tool.name": name}) as tool_span:
+            tool_span.set_attribute("tool.args", str(list(arguments.keys())))
+            try:
+                if mcp_client is not None:
+                    return await mcp_client.call_tool(name, arguments)
+                assert fn is not None
+                if inspect.iscoroutinefunction(fn):
+                    coro = fn(**arguments)
+                else:
+                    coro = asyncio.to_thread(fn, **arguments)
 
-            # Per-tool timeout takes precedence over registry default.
-            per_tool = getattr(fn, "__tool_timeout__", None)
-            effective_timeout = per_tool if per_tool is not None else self._default_timeout
+                # Per-tool timeout takes precedence over registry default.
+                per_tool = getattr(fn, "__tool_timeout__", None)
+                effective_timeout = per_tool if per_tool is not None else self._default_timeout
 
-            if effective_timeout is not None:
-                try:
-                    result = await asyncio.wait_for(coro, timeout=effective_timeout)
-                except asyncio.TimeoutError:
-                    raise ToolError(f"Tool {name!r} timed out after {effective_timeout}s")
-            else:
-                result = await coro
-        except (ToolError, SagePermissionError):
-            raise
-        except Exception as exc:
-            raise ToolError(f"Tool {name!r} failed: {exc}") from exc
+                if effective_timeout is not None:
+                    try:
+                        result = await asyncio.wait_for(coro, timeout=effective_timeout)
+                    except asyncio.TimeoutError:
+                        raise ToolError(f"Tool {name!r} timed out after {effective_timeout}s")
+                else:
+                    result = await coro
+            except (ToolError, SagePermissionError):
+                raise
+            except Exception as exc:
+                raise ToolError(f"Tool {name!r} failed: {exc}") from exc
 
         return str(result)
 

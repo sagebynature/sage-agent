@@ -118,6 +118,14 @@ class GitConfig(BaseModel):
     auto_commit_edits: bool = False
 
 
+class TracingConfig(BaseModel):
+    """OpenTelemetry tracing configuration."""
+
+    enabled: bool = False
+    service_name: str = "sage-agent"
+    exporter: Literal["none", "console", "otlp"] = "none"
+
+
 class AgentConfig(BaseModel):
     """Top-level configuration for a Sage agent.
 
@@ -160,6 +168,7 @@ class AgentConfig(BaseModel):
     context: ContextConfig | None = None
     git: GitConfig | None = None
     sandbox: SandboxConfig | None = None
+    tracing: TracingConfig | None = None
     parallel_tool_execution: bool = True
     tool_timeout: float | None = None
 

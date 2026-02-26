@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar, cast, overload
 
 from sage.config import AgentConfig, load_config
+from sage.tracing import setup_tracing, span
 
 if TYPE_CHECKING:
     from sage.main_config import MainConfig
@@ -302,6 +303,9 @@ class Agent:
         agent._git_config = config.git
         agent._memory_config = config.memory
 
+        if config.tracing is not None:
+            setup_tracing(config.tracing)
+
         return agent
 
     # ── Execution methods ─────────────────────────────────────────────
@@ -336,47 +340,52 @@ class Agent:
 
         messages = await self._pre_loop_setup(input)
 
-        if response_model is not None:
-            schema = response_model.model_json_schema()  # type: ignore[attr-defined]
-            schema_instruction = Message(
-                role="system",
-                content=f"Respond with valid JSON matching this schema:\n{json.dumps(schema, indent=2)}",
-            )
-            # Insert after any existing system messages, before the first non-system message.
-            insert_idx = next(
-                (i for i, m in enumerate(messages) if m.role != "system"),
-                len(messages),
-            )
-            messages.insert(insert_idx, schema_instruction)
+        async with span("agent.run", {"agent.name": self.name, "model": self.model}) as agent_span:
+            if response_model is not None:
+                schema = response_model.model_json_schema()  # type: ignore[attr-defined]
+                schema_instruction = Message(
+                    role="system",
+                    content=f"Respond with valid JSON matching this schema:\n{json.dumps(schema, indent=2)}",
+                )
+                # Insert after any existing system messages, before the first non-system message.
+                insert_idx = next(
+                    (i for i, m in enumerate(messages) if m.role != "system"),
+                    len(messages),
+                )
+                messages.insert(insert_idx, schema_instruction)
 
-        for turn in range(self.max_turns):
-            logger.debug("Turn %d/%d", turn + 1, self.max_turns)
-            tool_schemas = self.tool_registry.get_schemas() or None
-            result: CompletionResult = await self.provider.complete(messages, tools=tool_schemas)
+            for turn in range(self.max_turns):
+                logger.debug("Turn %d/%d", turn + 1, self.max_turns)
+                tool_schemas = self.tool_registry.get_schemas() or None
+                result: CompletionResult = await self.provider.complete(
+                    messages, tools=tool_schemas
+                )
 
-            messages.append(result.message)
+                messages.append(result.message)
 
-            # No tool calls means the model is done.
-            if not result.message.tool_calls:
-                logger.info("Agent '%s' run complete after %d turn(s)", self.name, turn + 1)
-                final_output = result.message.content or ""
-                await self._post_loop_cleanup(input, final_output)
-                if response_model is not None:
-                    # Strip markdown code fences that some LLMs wrap around JSON.
-                    cleaned = re.sub(
-                        r"^```(?:json)?\n?|```$", "", final_output.strip(), flags=re.MULTILINE
-                    ).strip()
-                    return response_model.model_validate_json(cleaned)  # type: ignore[attr-defined, no-any-return]
-                return final_output
+                # No tool calls means the model is done.
+                if not result.message.tool_calls:
+                    logger.info("Agent '%s' run complete after %d turn(s)", self.name, turn + 1)
+                    final_output = result.message.content or ""
+                    agent_span.set_attribute("turn_count", turn + 1)
+                    await self._post_loop_cleanup(input, final_output)
+                    if response_model is not None:
+                        # Strip markdown code fences that some LLMs wrap around JSON.
+                        cleaned = re.sub(
+                            r"^```(?:json)?\n?|```$", "", final_output.strip(), flags=re.MULTILINE
+                        ).strip()
+                        return response_model.model_validate_json(cleaned)  # type: ignore[attr-defined, no-any-return]
+                    return final_output
 
-            await self._execute_tool_calls(result.message.tool_calls, messages)
+                await self._execute_tool_calls(result.message.tool_calls, messages)
 
-        # Max turns exceeded — persist partial progress, then raise.
-        logger.warning("Agent '%s' reached max_turns (%d)", self.name, self.max_turns)
-        last_content = self._extract_final_output(messages)
-        if last_content:
-            await self._store_memory(input, last_content)
-        raise MaxTurnsExceeded(turns=self.max_turns, last_content=last_content)
+            # Max turns exceeded — persist partial progress, then raise.
+            logger.warning("Agent '%s' reached max_turns (%d)", self.name, self.max_turns)
+            agent_span.set_attribute("turn_count", self.max_turns)
+            last_content = self._extract_final_output(messages)
+            if last_content:
+                await self._store_memory(input, last_content)
+            raise MaxTurnsExceeded(turns=self.max_turns, last_content=last_content)
 
     async def stream(self, input: str) -> AsyncIterator[str]:
         """Streaming variant of :meth:`run` — yields text chunks as they arrive.
@@ -395,47 +404,54 @@ class Agent:
 
         messages = await self._pre_loop_setup(input)
 
-        for turn in range(self.max_turns):
-            logger.debug("Stream turn %d/%d", turn + 1, self.max_turns)
-            tool_schemas = self.tool_registry.get_schemas() or None
+        async with span(
+            "agent.stream", {"agent.name": self.name, "model": self.model}
+        ) as agent_span:
+            for turn in range(self.max_turns):
+                logger.debug("Stream turn %d/%d", turn + 1, self.max_turns)
+                tool_schemas = self.tool_registry.get_schemas() or None
 
-            # Accumulate the full assistant content and tool calls for this turn.
-            turn_content = ""
-            turn_tool_calls: list[ToolCall] | None = None
+                # Accumulate the full assistant content and tool calls for this turn.
+                turn_content = ""
+                turn_tool_calls: list[ToolCall] | None = None
 
-            async for chunk in self.provider.stream(messages, tools=tool_schemas):  # type: ignore[attr-defined]
-                if chunk.delta:
-                    turn_content += chunk.delta
-                    yield chunk.delta
-                if chunk.tool_calls:
-                    turn_tool_calls = chunk.tool_calls
+                async for chunk in self.provider.stream(messages, tools=tool_schemas):  # type: ignore[attr-defined]
+                    if chunk.delta:
+                        turn_content += chunk.delta
+                        yield chunk.delta
+                    if chunk.tool_calls:
+                        turn_tool_calls = chunk.tool_calls
 
-            # Build the assistant message for the conversation history.
-            assistant_msg = Message(
-                role="assistant",
-                content=turn_content or None,
-                tool_calls=turn_tool_calls,
-            )
-            messages.append(assistant_msg)
-
-            # No tool calls means the model is done.
-            if not turn_tool_calls:
-                logger.info(
-                    "Agent '%s' stream complete after %d turn(s)",
-                    self.name,
-                    turn + 1,
+                # Build the assistant message for the conversation history.
+                assistant_msg = Message(
+                    role="assistant",
+                    content=turn_content or None,
+                    tool_calls=turn_tool_calls,
                 )
-                await self._post_loop_cleanup(input, turn_content)
-                return
+                messages.append(assistant_msg)
 
-            await self._execute_tool_calls(turn_tool_calls, messages)
+                # No tool calls means the model is done.
+                if not turn_tool_calls:
+                    logger.info(
+                        "Agent '%s' stream complete after %d turn(s)",
+                        self.name,
+                        turn + 1,
+                    )
+                    agent_span.set_attribute("turn_count", turn + 1)
+                    await self._post_loop_cleanup(input, turn_content)
+                    return
 
-        # Max turns exceeded — persist partial progress, then raise.
-        logger.warning("Agent '%s' reached max_turns (%d) during stream", self.name, self.max_turns)
-        last_content = self._extract_final_output(messages)
-        if last_content:
-            await self._store_memory(input, last_content)
-        raise MaxTurnsExceeded(turns=self.max_turns, last_content=last_content)
+                await self._execute_tool_calls(turn_tool_calls, messages)
+
+            # Max turns exceeded — persist partial progress, then raise.
+            logger.warning(
+                "Agent '%s' reached max_turns (%d) during stream", self.name, self.max_turns
+            )
+            agent_span.set_attribute("turn_count", self.max_turns)
+            last_content = self._extract_final_output(messages)
+            if last_content:
+                await self._store_memory(input, last_content)
+            raise MaxTurnsExceeded(turns=self.max_turns, last_content=last_content)
 
     def _detect_context_window_limit(self) -> None:
         if self._context_window_detected:

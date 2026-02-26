@@ -16,6 +16,7 @@ from sage.exceptions import SageMemoryError
 from sage.memory.base import MemoryEntry
 from sage.memory.embedding import EmbeddingProtocol
 from sage.models import Message
+from sage.tracing import span
 
 if TYPE_CHECKING:
     from sage.config import MemoryConfig
@@ -142,49 +143,55 @@ class SQLiteMemory:
         """Store *content* with an embedding and return the memory ID."""
         self._ensure_open()
 
-        memory_id = uuid.uuid4().hex
-        vectors = await self._embedding.embed([content])
-        embedding_array = np.array(vectors[0], dtype=np.float32)
-        embedding_blob = embedding_array.tobytes()
-        meta_json = json.dumps(metadata or {})
-        created_at = datetime.now(timezone.utc).isoformat()
+        async with span("memory.store", {"content_length": len(content)}):
+            memory_id = uuid.uuid4().hex
+            vectors = await self._embedding.embed([content])
+            embedding_array = np.array(vectors[0], dtype=np.float32)
+            embedding_blob = embedding_array.tobytes()
+            meta_json = json.dumps(metadata or {})
+            created_at = datetime.now(timezone.utc).isoformat()
 
-        cursor = await self._db.execute(  # type: ignore[union-attr]
-            "INSERT INTO memories (id, content, embedding, metadata, created_at) VALUES (?, ?, ?, ?, ?)",
-            (memory_id, content, embedding_blob, meta_json, created_at),
-        )
+            cursor = await self._db.execute(  # type: ignore[union-attr]
+                "INSERT INTO memories (id, content, embedding, metadata, created_at) VALUES (?, ?, ?, ?, ?)",
+                (memory_id, content, embedding_blob, meta_json, created_at),
+            )
 
-        if self._vec_available:
-            try:
-                import sqlite_vec
+            if self._vec_available:
+                try:
+                    import sqlite_vec
 
-                rowid = cursor.lastrowid
-                embedding_bytes = sqlite_vec.serialize_float32(embedding_array)
-                await self._db.execute(  # type: ignore[union-attr]
-                    "INSERT INTO memory_vec(rowid, embedding) VALUES (?, ?)",
-                    [rowid, embedding_bytes],
-                )
-            except Exception as exc:
-                logger.warning(
-                    "sqlite-vec insert failed (%s) — vec index may be stale; recall will use numpy",
-                    exc,
-                )
+                    rowid = cursor.lastrowid
+                    embedding_bytes = sqlite_vec.serialize_float32(embedding_array)
+                    await self._db.execute(  # type: ignore[union-attr]
+                        "INSERT INTO memory_vec(rowid, embedding) VALUES (?, ?)",
+                        [rowid, embedding_bytes],
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "sqlite-vec insert failed (%s) — vec index may be stale; recall will use numpy",
+                        exc,
+                    )
 
-        await self._db.commit()  # type: ignore[union-attr]
-        logger.debug("Stored memory id=%s, content_preview=%.80s", memory_id, content)
-        return memory_id
+            await self._db.commit()  # type: ignore[union-attr]
+            logger.debug("Stored memory id=%s, content_preview=%.80s", memory_id, content)
+            return memory_id
 
     async def recall(self, query: str, limit: int = 5) -> list[MemoryEntry]:
         """Return the top-*limit* memories ranked by cosine similarity."""
         self._ensure_open()
         logger.debug("Recalling memories: query_preview=%.80s, limit=%d", query, limit)
 
-        query_vectors = await self._embedding.embed([query])
-        query_embedding = query_vectors[0]
+        async with span("memory.recall", {"query_length": len(query), "limit": limit}) as mem_span:
+            query_vectors = await self._embedding.embed([query])
+            query_embedding = query_vectors[0]
 
-        if self._vec_available:
-            return await self._recall_vec(query_embedding, limit)
-        return await self._recall_numpy(query_embedding, limit)
+            if self._vec_available:
+                results = await self._recall_vec(query_embedding, limit)
+            else:
+                results = await self._recall_numpy(query_embedding, limit)
+
+            mem_span.set_attribute("result_count", len(results))
+            return results
 
     async def _recall_numpy(self, query_embedding: list[float], limit: int) -> list[MemoryEntry]:
         """O(n) numpy cosine-similarity recall (original implementation)."""
