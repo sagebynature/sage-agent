@@ -170,6 +170,8 @@ The parser splits on `---` delimiters, extracts the YAML block via `yaml.safe_lo
 | `context` | `ContextConfig` | `None` | Token budget management |
 | `skills_dir` | `str` | `None` | Skills directory path |
 | `sandbox` | `SandboxConfig` | `None` | Shell sandbox configuration (native env-strip or bubblewrap namespace isolation) |
+| `parallel_tool_execution` | `bool` | `true` | Run independent tool calls concurrently via `asyncio.gather` |
+| `tool_timeout` | `float \| null` | `null` | Default timeout (seconds) for all tool calls; per-tool `@tool(timeout=N)` takes precedence |
 
 *`model` can be inherited from main config defaults.
 
