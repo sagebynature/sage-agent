@@ -104,6 +104,7 @@ class Orchestrator:
                 # Cancel remaining tasks.
                 for t in tasks:
                     t.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)  # Wait for cleanup
                 return result
             errors.append(result)
 
