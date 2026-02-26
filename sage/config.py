@@ -119,7 +119,12 @@ class GitConfig(BaseModel):
 
 
 class TracingConfig(BaseModel):
-    """OpenTelemetry tracing configuration."""
+    """OpenTelemetry tracing configuration.
+
+    Requires ``pip install sage-agent[tracing]`` (opentelemetry-api + sdk).
+    The ``"otlp"`` exporter additionally requires
+    ``opentelemetry-exporter-otlp-proto-grpc``.
+    """
 
     enabled: bool = False
     service_name: str = "sage-agent"

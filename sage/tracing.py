@@ -10,10 +10,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Any, AsyncIterator
-
-if TYPE_CHECKING:
-    pass
+from typing import Any, AsyncIterator
 
 logger = logging.getLogger(__name__)
 
