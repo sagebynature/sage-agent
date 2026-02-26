@@ -50,6 +50,12 @@ CATEGORY_ARG_MAP: dict[str, str | None] = {
     "git": None,
 }
 
+# Modules containing ToolBase instances for each category.
+# Used by register_from_permissions to load entire modules when a category is enabled.
+_CATEGORY_MODULES: dict[str, list[str]] = {
+    "git": ["sage.git.tools", "sage.git.snapshot"],
+}
+
 
 class ToolRegistry:
     """Central registry that stores tool functions and dispatches calls by name.
@@ -200,6 +206,14 @@ class ToolRegistry:
                 except (ToolError, ImportError, ModuleNotFoundError):
                     pass  # tool not yet available
 
+            # Load category modules (for ToolBase classes).
+            if category in _CATEGORY_MODULES:
+                for mod_path in _CATEGORY_MODULES[category]:
+                    try:
+                        self.load_from_module(mod_path)
+                    except (ToolError, ImportError, ModuleNotFoundError):
+                        pass
+
         for module_path in extensions or []:
             self.load_from_module(module_path)
 
@@ -246,5 +260,12 @@ class ToolRegistry:
                 attr = getattr(mod, name)
                 if isinstance(attr, ToolBase):
                     self.register(attr)
+                elif inspect.isclass(attr) and issubclass(attr, ToolBase) and attr is not ToolBase:
+                    # Instantiate ToolBase subclasses found at module level
+                    # so their @tool-decorated methods are available.
+                    try:
+                        self.register(attr())
+                    except Exception:
+                        pass
                 elif callable(attr) and hasattr(attr, "__tool_schema__"):
                     self.register(attr)

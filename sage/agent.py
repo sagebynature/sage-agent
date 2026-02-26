@@ -91,6 +91,7 @@ class Agent:
         self._context_window_detected: bool = False
         self._compacted_last_turn: bool = False
         self._token_budget: Any | None = None
+        self._git_config: Any | None = None
 
         # Default to LiteLLM provider if none supplied.
         self.provider: ProviderProtocol = provider or LiteLLMProvider(model, **(model_params or {}))  # type: ignore[assignment]
@@ -252,6 +253,7 @@ class Agent:
 
         # Store token budget for later use.
         agent._token_budget = token_budget
+        agent._git_config = config.git
 
         return agent
 
@@ -284,6 +286,8 @@ class Agent:
         memory_context = await self._recall_memory(input)
 
         messages = self._build_messages(input, memory_context=memory_context)
+
+        await self._maybe_auto_snapshot()
 
         final_output = ""
 
@@ -384,6 +388,8 @@ class Agent:
 
         memory_context = await self._recall_memory(input)
         messages = self._build_messages(input, memory_context=memory_context)
+
+        await self._maybe_auto_snapshot()
 
         for turn in range(self.max_turns):
             logger.debug("Stream turn %d/%d", turn + 1, self.max_turns)
@@ -519,6 +525,31 @@ class Agent:
         return Pipeline([self, other])
 
     # ── Private helpers ───────────────────────────────────────────────
+
+    async def _maybe_auto_snapshot(self) -> None:
+        """Create a pre-run git snapshot if configured."""
+        if self._git_config is None:
+            return
+        if not self._git_config.auto_snapshot:
+            return
+
+        from sage.git.snapshot import GitSnapshot
+
+        snapshot: GitSnapshot | None = None
+        for instance in self.tool_registry._instances:
+            if isinstance(instance, GitSnapshot):
+                snapshot = instance
+                break
+
+        if snapshot is None:
+            return
+
+        try:
+            await snapshot.setup()
+            result = await snapshot.snapshot_create(label="pre-run")
+            logger.info("Auto-snapshot: %s", result)
+        except Exception as exc:
+            logger.warning("Auto-snapshot failed: %s", exc)
 
     def _register_delegation_tools(self) -> None:
         """Register a ``delegate`` tool so the LLM can invoke subagents.
