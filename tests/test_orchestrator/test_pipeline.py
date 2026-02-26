@@ -210,3 +210,10 @@ class TestPipelineStream:
         chunks = [chunk async for chunk in pipeline.stream("my input")]
 
         assert chunks == ["solo-chunk1", "solo-chunk2"]
+
+    @pytest.mark.asyncio
+    async def test_stream_empty_pipeline_yields_nothing(self) -> None:
+        """stream() on an empty Pipeline yields no chunks and does not raise."""
+        pipeline = Pipeline([])
+        chunks = [chunk async for chunk in pipeline.stream("input")]
+        assert chunks == []

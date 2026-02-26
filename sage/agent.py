@@ -892,5 +892,5 @@ class Agent:
             result = await self.provider.complete(messages)
             response_text = result.message.content or ""
             return float(response_text.strip())
-        except (ValueError, Exception):
+        except Exception:
             return 1.0  # On any failure, default to storing

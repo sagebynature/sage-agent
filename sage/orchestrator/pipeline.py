@@ -40,6 +40,8 @@ class Pipeline:
 
     async def stream(self, input: str) -> AsyncIterator[str]:
         """Stream the pipeline — intermediate agents run(), final agent streams."""
+        if not self.agents:
+            return
         logger.debug("Pipeline stream: %d steps", len(self.agents))
         current = input
         for i, agent in enumerate(self.agents[:-1]):

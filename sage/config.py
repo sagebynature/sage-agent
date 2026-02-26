@@ -53,7 +53,7 @@ class MemoryConfig(BaseModel):
     compaction_threshold: int = 50
     vector_search: Literal["auto", "sqlite_vec", "numpy"] = "auto"
     min_exchange_length: int = 100
-    relevance_filter: Literal["none", "length", "llm"] = "length"
+    relevance_filter: Literal["none", "length", "llm"] = "none"
     relevance_threshold: float = 0.5
 
 

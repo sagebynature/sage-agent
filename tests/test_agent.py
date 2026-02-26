@@ -2489,6 +2489,31 @@ class TestMemoryRelevanceFilter:
         # Fail-safe: parse failure defaults to score=1.0, which is >= 0.5, so stored
         mock_memory.store.assert_awaited_once()
 
+    @pytest.mark.asyncio
+    async def test_store_memory_no_memory_config_stores_everything(self) -> None:
+        """When _memory_config is None (direct Agent() construction), all exchanges are stored."""
+        from unittest.mock import AsyncMock
+
+        mock_memory: Any = AsyncMock()
+        mock_memory.store = AsyncMock(return_value="id-1")
+
+        # Construct the agent directly — _memory_config stays None
+        agent = Agent(
+            name="direct",
+            model="test-model",
+            memory=mock_memory,
+            provider=MockProvider([]),
+        )
+        assert agent._memory_config is None
+
+        # Short exchange that length-filter would skip
+        short_input = "Hi"
+        short_output = "Hello"
+        await agent._store_memory(short_input, short_output)
+
+        # Must be stored regardless — backward compat fallback is "none"
+        mock_memory.store.assert_awaited_once()
+
 
 # ── Structured Output Tests ────────────────────────────────────────────────
 
