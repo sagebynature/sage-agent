@@ -2,6 +2,45 @@
 
 <!-- version list -->
 
+## v1.1.0 (2026-02-26)
+
+### Bug Fixes
+
+- **config**: Revert unplanned max_turns and comment formatting changes
+  ([`e1987d4`](https://github.com/sagebynature/sage-agent/commit/e1987d427bcc8e123ba0b30a695609467037bde4))
+
+- **config**: Update AZURE_AI_API_KEY and AZURE_AI_API_BASE for correct environment variable
+  references
+  ([`7678699`](https://github.com/sagebynature/sage-agent/commit/7678699c452efc2e1f12d6f72a8c454ca607905f))
+
+### Chores
+
+- **uv.lock**: Bump sage-agent version to 1.0.2
+  ([`7678699`](https://github.com/sagebynature/sage-agent/commit/7678699c452efc2e1f12d6f72a8c454ca607905f))
+
+### Documentation
+
+- Add env var waterfall design
+  ([`29ad5bf`](https://github.com/sagebynature/sage-agent/commit/29ad5bf07e52705c5a9adc754c09378aca0d3a25))
+
+- Add env var waterfall implementation plan
+  ([`4ed928a`](https://github.com/sagebynature/sage-agent/commit/4ed928ab082fe2fd2b1c1abb6660ba401b8250d0))
+
+### Features
+
+- **cli**: Wire resolve_and_apply_env into startup
+  ([`fb90f49`](https://github.com/sagebynature/sage-agent/commit/fb90f49778ea8e2a4626a2f0db640c6f6feab50b))
+
+- **config**: Add [env] section to config.toml and update docstring
+  ([`5122f85`](https://github.com/sagebynature/sage-agent/commit/5122f85a57f7e29ee5025c0587294cfa4dd90b52))
+
+- **config**: Add env field to MainConfig
+  ([`9fd0cfe`](https://github.com/sagebynature/sage-agent/commit/9fd0cfe1f8708575b5dfc3d732c39c875534ff8a))
+
+- **config**: Add resolve_and_apply_env for env var waterfall
+  ([`ef360a3`](https://github.com/sagebynature/sage-agent/commit/ef360a3d82745a0131b158b9ad2bc6c84e52ce30))
+
+
 ## v1.0.2 (2026-02-26)
 
 ### Bug Fixes
