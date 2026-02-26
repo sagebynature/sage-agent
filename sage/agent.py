@@ -366,7 +366,7 @@ class Agent:
                     cleaned = re.sub(
                         r"^```(?:json)?\n?|```$", "", final_output.strip(), flags=re.MULTILINE
                     ).strip()
-                    return response_model.model_validate_json(cleaned)  # type: ignore[attr-defined]
+                    return response_model.model_validate_json(cleaned)  # type: ignore[attr-defined, no-any-return]
                 return final_output
 
             await self._execute_tool_calls(result.message.tool_calls, messages)
