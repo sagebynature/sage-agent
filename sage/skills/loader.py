@@ -165,3 +165,22 @@ def resolve_skills_dir(config_skills_dir: str | None = None) -> Path | None:
             return candidate
 
     return None
+
+
+def filter_skills_by_names(skills: list[Skill], names: list[str] | None) -> list[Skill]:
+    """Filter a skill pool by an allowlist of names.
+
+    Args:
+        skills: The global skill pool to filter.
+        names: Allowlist of skill names.
+            - ``None`` — return all skills (no filtering)
+            - ``[]`` — return no skills (empty allowlist)
+            - ``["x", "y"]`` — return only skills whose name is in the list
+
+    Returns:
+        Filtered list preserving pool order (not allowlist order).
+    """
+    if names is None:
+        return skills
+    name_set = set(names)
+    return [s for s in skills if s.name in name_set]
