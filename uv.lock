@@ -2609,6 +2609,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+eval = [
+    { name = "jsonschema" },
+]
 tracing = [
     { name = "opentelemetry-api" },
     { name = "opentelemetry-sdk" },
@@ -2636,6 +2639,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.0" },
     { name = "colorlog", specifier = ">=6.0" },
     { name = "httpx", specifier = ">=0.27" },
+    { name = "jsonschema", marker = "extra == 'eval'", specifier = ">=4.0" },
     { name = "litellm", specifier = ">=1.40" },
     { name = "markdownify", specifier = ">=0.14" },
     { name = "mcp", specifier = ">=1.0" },
@@ -2649,7 +2653,7 @@ requires-dist = [
     { name = "textual", specifier = ">=0.50" },
     { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0" },
 ]
-provides-extras = ["vec", "tracing"]
+provides-extras = ["vec", "tracing", "eval"]
 
 [package.metadata.requires-dev]
 dev = [

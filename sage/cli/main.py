@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 
 from sage.config import load_config
 from sage.exceptions import SageError, ConfigError
+from sage.cli.exit_codes import SageExitCode
 
 if TYPE_CHECKING:
     from sage.main_config import MainConfig
@@ -108,6 +109,9 @@ def agent_run(ctx: click.Context, config_path: str, user_input: str, use_stream:
     try:
         main_config = _get_main_config(ctx)
         asyncio.run(_agent_run(config_path, user_input, use_stream, main_config))
+    except ConfigError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
     except SageError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
@@ -305,3 +309,316 @@ def tui(ctx: click.Context, config_path: str) -> None:
         path = path / "AGENTS.md"
     app = SageTUIApp(config_path=path, central=main_config)
     app.run()
+
+
+# ---------------------------------------------------------------------------
+# Lazy exception imports for exec_cmd error handlers
+# ---------------------------------------------------------------------------
+try:
+    from sage.exceptions import PermissionError as _PermissionError  # type: ignore[assignment]
+    from sage.exceptions import MaxTurnsExceeded as _MaxTurnsExceeded
+    from sage.exceptions import ToolError as _ToolError
+    from sage.exceptions import ProviderError as _ProviderError
+except ImportError:  # pragma: no cover
+    _PermissionError = Exception  # type: ignore[assignment,misc]
+    _MaxTurnsExceeded = Exception  # type: ignore[assignment,misc]
+    _ToolError = Exception  # type: ignore[assignment,misc]
+    _ProviderError = Exception  # type: ignore[assignment,misc]
+
+
+@cli.command("exec")
+@click.argument("config_path", type=click.Path(exists=True))
+@click.option("--input", "-i", "user_input", default=None, help="Input to send to the agent")
+@click.option(
+    "--output",
+    "-o",
+    "output_mode",
+    type=click.Choice(["text", "jsonl", "quiet"]),
+    default="text",
+    show_default=True,
+    help="Output format: text (human-readable), jsonl (machine-readable), quiet (no output)",
+)
+@click.option(
+    "--timeout",
+    type=float,
+    default=None,
+    help="Maximum wall-clock seconds for the agent run (0 = no limit)",
+)
+@click.option("--stdin", "use_stdin", is_flag=True, help="Read user input from stdin")
+@click.option("--yes", "ask_yes", is_flag=True, help="Auto-approve all ASK-gated tool calls")
+@click.option(
+    "--deny-all",
+    "deny_all",
+    is_flag=True,
+    default=False,
+    help="Auto-deny all ASK-gated tool calls (default CI behaviour)",
+)
+@click.pass_context
+def exec_cmd(
+    ctx: click.Context,
+    config_path: str,
+    user_input: str | None,
+    output_mode: str,
+    timeout: float | None,
+    use_stdin: bool,
+    ask_yes: bool,
+    deny_all: bool,
+) -> None:
+    """Run an agent in CI/headless mode with structured exit codes.
+
+    By default all ASK-gated tool calls are denied (\\--deny-all is the
+    implicit default for ``sage exec``). Pass \\--yes to auto-approve.
+
+    Exit codes:\\n
+      0  success\\n
+      1  generic / unclassified error\\n
+      2  config error\\n
+      3  permission denied\\n
+      4  max turns exceeded\\n
+      5  timeout\\n
+      6  tool error\\n
+      7  provider error\\n
+    """
+    # Resolve input source.
+    if use_stdin:
+        user_input = sys.stdin.read().rstrip("\n")
+    if not user_input:
+        click.echo("Error: no input provided. Use -i / --input or --stdin.", err=True)
+        sys.exit(SageExitCode.ERROR)
+
+    # --yes beats implicit deny-all.
+    if ask_yes:
+        ask_policy = "allow"
+    else:
+        # Default for sage exec: deny all ASK-gated calls.
+        ask_policy = "deny"
+
+    from sage.cli.output import make_writer
+
+    writer = make_writer(output_mode)
+    main_config = _get_main_config(ctx)
+
+    try:
+        coro = _exec_run(config_path, user_input, ask_policy, writer, main_config)
+        if timeout is not None and timeout > 0:
+
+            async def _with_timeout() -> None:
+                await asyncio.wait_for(coro, timeout=timeout)
+
+            asyncio.run(_with_timeout())
+        else:
+            asyncio.run(coro)
+    except ConfigError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(SageExitCode.CONFIG_ERROR)
+    except _PermissionError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(SageExitCode.PERMISSION_DENIED)
+    except _MaxTurnsExceeded as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(SageExitCode.MAX_TURNS)
+    except asyncio.TimeoutError:
+        click.echo("Error: agent run timed out.", err=True)
+        sys.exit(SageExitCode.TIMEOUT)
+    except _ToolError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(SageExitCode.TOOL_ERROR)
+    except _ProviderError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(SageExitCode.PROVIDER_ERROR)
+    except SageError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(SageExitCode.ERROR)
+    finally:
+        writer.close()
+
+
+async def _exec_run(
+    config_path: str,
+    user_input: str,
+    ask_policy: str,
+    writer: object,
+    main_config: MainConfig | None = None,
+) -> None:
+    """Inner async coroutine for ``sage exec``."""
+    from sage.agent import Agent
+    from sage.cli.output import OutputWriter
+
+    agent = Agent.from_config(config_path, central=main_config)
+    # Wire the ask policy into the tool registry.
+    if hasattr(agent, "tool_registry") and hasattr(agent.tool_registry, "set_ask_policy"):
+        agent.tool_registry.set_ask_policy(ask_policy)  # type: ignore[arg-type]
+    try:
+        result = await agent.run(user_input)
+        assert isinstance(writer, OutputWriter)
+        writer.write_result(result)
+    finally:
+        await agent.close()
+
+
+# ---------------------------------------------------------------------------
+# eval command group
+# ---------------------------------------------------------------------------
+
+
+@cli.group("eval")
+def eval_group() -> None:
+    """Evaluation commands."""
+
+
+@eval_group.command("run")
+@click.argument("suite_yaml", type=click.Path(exists=True))
+@click.option("--model", "-m", "model", default=None, help="Override model")
+@click.option("--runs", "runs_per_case", default=1, show_default=True, help="Runs per test case")
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["text", "json"]),
+    default="text",
+    show_default=True,
+    help="Output format",
+)
+@click.option(
+    "--min-pass-rate",
+    "min_pass_rate",
+    default=None,
+    type=float,
+    help="Fail (exit 1) if pass rate is below this threshold (0.0–1.0)",
+)
+@click.pass_context
+def eval_run(
+    ctx: click.Context,
+    suite_yaml: str,
+    model: str | None,
+    runs_per_case: int,
+    output_format: str,
+    min_pass_rate: float | None,
+) -> None:
+    """Run an eval suite and report results."""
+    try:
+        asyncio.run(_eval_run(suite_yaml, model, runs_per_case, output_format, min_pass_rate))
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+async def _eval_run(
+    suite_yaml: str,
+    model: str | None,
+    runs_per_case: int,
+    output_format: str,
+    min_pass_rate: float | None,
+) -> None:
+    from sage.eval.history import EvalHistory
+    from sage.eval.report import format_run_json, format_run_text
+    from sage.eval.runner import EvalRunner
+    from sage.eval.suite import load_suite
+
+    suite = load_suite(suite_yaml)
+    runner = EvalRunner(suite, model=model)
+    result = await runner.run(runs_per_case=runs_per_case)
+
+    if output_format == "json":
+        click.echo(format_run_json(result))
+    else:
+        click.echo(format_run_text(result))
+
+    history = EvalHistory()
+    await history.init_db()
+    await history.save_run(result)
+
+    if min_pass_rate is not None and result.pass_rate < min_pass_rate:
+        click.echo(
+            f"Pass rate {result.pass_rate:.1%} below threshold {min_pass_rate:.1%}",
+            err=True,
+        )
+        sys.exit(1)
+
+
+@eval_group.command("validate")
+@click.argument("suite_yaml", type=click.Path(exists=True))
+def eval_validate(suite_yaml: str) -> None:
+    """Validate a suite YAML file without running."""
+    try:
+        from sage.eval.suite import load_suite
+
+        suite = load_suite(suite_yaml)
+        click.echo(
+            f"Suite valid: {suite.name} — {len(suite.test_cases)} test case(s), agent: {suite.agent}"
+        )
+    except Exception as e:
+        click.echo(f"Invalid suite: {e}", err=True)
+        sys.exit(1)
+
+
+@eval_group.command("history")
+@click.option("--suite", "suite_name", default=None, help="Filter by suite name")
+@click.option("--last", "last", default=20, show_default=True, help="Number of runs to show")
+def eval_history(suite_name: str | None, last: int) -> None:
+    """Show eval run history."""
+    try:
+        asyncio.run(_eval_history(suite_name, last))
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+async def _eval_history(suite_name: str | None, last: int) -> None:
+    from sage.eval.history import EvalHistory
+
+    history = EvalHistory()
+    await history.init_db()
+    runs = await history.list_runs(suite_name=suite_name, last=last)
+    if not runs:
+        click.echo("No eval runs found.")
+        return
+    click.echo(f"{'ID':>36}  {'Suite':<20}  {'Model':<15}  {'Pass':>6}  {'Score':>6}")
+    click.echo("-" * 90)
+    for r in runs:
+        click.echo(
+            f"{r['id']:>36}  {r['suite_name']:<20}  {r['model']:<15}  "
+            f"{r['pass_rate']:.1%}  {r['avg_score']:.3f}"
+        )
+
+
+@eval_group.command("compare")
+@click.argument("run_id_1")
+@click.argument("run_id_2")
+def eval_compare(run_id_1: str, run_id_2: str) -> None:
+    """Compare two eval runs side by side."""
+    try:
+        asyncio.run(_eval_compare(run_id_1, run_id_2))
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+async def _eval_compare(run_id_1: str, run_id_2: str) -> None:
+    from sage.eval.history import EvalHistory
+    from sage.eval.report import format_comparison_text
+
+    history = EvalHistory()
+    await history.init_db()
+    comparison = await history.compare_runs(run_id_1, run_id_2)
+    click.echo(format_comparison_text(comparison))
+
+
+@eval_group.command("list")
+@click.argument("directory", type=click.Path(exists=True), default=".")
+def eval_list(directory: str) -> None:
+    """List eval suite YAML files in a directory."""
+    from sage.eval.suite import load_suite
+
+    dir_path = Path(directory)
+    yamls = sorted(list(dir_path.glob("**/*.yaml")) + list(dir_path.glob("**/*.yml")))
+    if not yamls:
+        click.echo("No YAML files found.")
+        return
+    for yaml_path in yamls:
+        try:
+            suite = load_suite(str(yaml_path))
+            click.echo(
+                f"  {yaml_path}: {suite.name} ({len(suite.test_cases)} cases, agent: {suite.agent})"
+            )
+        except Exception:
+            pass  # skip non-suite YAML files
