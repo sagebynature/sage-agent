@@ -7,6 +7,7 @@ from typing import Any
 
 import litellm
 
+from sage.context.fallback_table import get_context_window
 from sage.models import Message
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,7 @@ class TokenBudget:
 
     Uses ``litellm.token_counter()`` for model-specific counting
     and ``litellm.get_max_tokens()`` for context window limits.
+    Falls back to the static context window table when litellm raises.
     """
 
     def __init__(
@@ -26,12 +28,31 @@ class TokenBudget:
         reserve_tokens: int = 4096,
     ) -> None:
         self.model = model
-        max_tokens = litellm.get_max_tokens(model)
-        if not max_tokens:
-            raise ValueError(
-                f"Cannot determine max_tokens for model '{model}'. "
-                "Ensure the model is supported by litellm."
+        try:
+            max_tokens = litellm.get_max_tokens(model)
+        except Exception:
+            max_tokens = None
+            logger.warning(
+                "litellm.get_max_tokens('%s') raised an exception; "
+                "falling back to static context window table.",
+                model,
             )
+        if not max_tokens:
+            fallback = get_context_window(model)
+            if fallback != 4096:
+                # Found a real entry in the fallback table — use it.
+                logger.warning(
+                    "litellm could not determine max_tokens for '%s'; "
+                    "using fallback table value %d.",
+                    model,
+                    fallback,
+                )
+                max_tokens = fallback
+            else:
+                raise ValueError(
+                    f"Cannot determine max_tokens for model '{model}'. "
+                    "Ensure the model is supported by litellm."
+                )
         self.max_tokens: int = int(max_tokens)
         self.compaction_threshold = compaction_threshold
         self.reserve_tokens = reserve_tokens
