@@ -11,9 +11,7 @@
 #   Env:  SAGE_CONFIG_PATH=path/to/config.toml
 #   Default: ~/.config/sage/config.toml
 
-# skills_dir = "/path/to/skills"  # Global skills directory. If unset, waterfall: $cwd/skills -> ~/.agents/skills -> ~/.claude/skills
-skills_dir = "${HOME}/.agents/skills/"
-# skills_dir = "./examples/skills_demo/skills/"
+# skills_dir = "${HOME}/.agents/skills/"  # Global skills directory. If unset, waterfall: $cwd/skills -> ~/.agents/skills -> ~/.claude/skills
 
 # ─── Environment Variables ──────────────────────────────────────────────────
 # Resolved at startup. Values can reference env vars with ${VAR} syntax.
