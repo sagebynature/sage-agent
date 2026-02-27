@@ -56,6 +56,7 @@ def _setup_logging(config_path: str | None = None, verbose: bool = False) -> Non
 
 
 from sage import Agent  # noqa: E402
+from sage.providers.litellm_provider import LiteLLMProvider  # noqa: E402
 
 # Demo scenarios — each targets a specific skill
 SCENARIOS = {
@@ -180,7 +181,8 @@ async def main() -> None:
         help="Override the model (default: uses AGENTS.md config)",
     )
     parser.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
         help="Enable debug logging for sage internals",
     )
@@ -194,16 +196,15 @@ async def main() -> None:
     # Initialize logging before anything else.
     _setup_logging(args.log_config, args.verbose)
 
-    # Load agent from config — this auto-discovers skills/ directory
+    # Load agent from config — use demo-local config.toml so skills_dir
+    # points to examples/skills_demo/skills/ instead of global ~/.agents/skills/
     demo_dir = os.path.dirname(os.path.abspath(__file__))
+    os.environ.setdefault("SAGE_CONFIG_PATH", os.path.join(demo_dir, "config.toml"))
     agent = Agent.from_config(os.path.join(demo_dir, "AGENTS.md"))
-
     # Override model if specified
     if args.model:
         agent.model = args.model
-        agent.provider = __import__(
-            "sage.providers.litellm_provider", fromlist=["LiteLLMProvider"]
-        ).LiteLLMProvider(args.model)
+        agent.provider = LiteLLMProvider(args.model)
 
     print("╔══════════════════════════════════════════════════════════════╗")
     print("║           Sage — Skills Demo                    ║")
@@ -219,7 +220,7 @@ async def main() -> None:
     print(f"\n  Agent: {agent.name}")
     print(f"  Model: {agent.model}")
     print(f"  Skills loaded: {[s.name for s in agent.skills]}")
-    print(f"  Tools: {list(agent.tool_registry._schemas.keys())}")
+    print(f"  Tools: {[s.name for s in agent.tool_registry.get_schemas()]}")
 
     if args.interactive:
         await run_interactive(agent)

@@ -9,6 +9,11 @@ max_turns: 15
 model_params:
   temperature: 0
   max_tokens: 4096
+skills:
+  - crypto-toolkit
+  - network-diagnostics
+  - dependency-auditor
+  - data-cruncher
 ---
 
 You are a senior DevOps engineer assistant with access to specialized skills.

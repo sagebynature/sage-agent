@@ -1,0 +1,4 @@
+# Demo-local config for skills_demo example.
+# Sets skills_dir to the demo's local skills/ folder so the agent
+# loads only the 4 demo skills instead of global skills.
+skills_dir = "examples/skills_demo/skills"

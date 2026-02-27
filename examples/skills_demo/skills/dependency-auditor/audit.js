@@ -1,257 +1,170 @@
 #!/usr/bin/env node
-/**
- * audit.js — Dependency auditor for the Sage Agent dependency-auditor skill.
- *
- * Analyzes package.json or requirements.txt files and produces a structured
- * report about dependency health, version patterns, and potential risks.
- *
- * Usage: node audit.js <command> <filepath>
- */
+// audit.js — Dependency auditor for package.json and requirements.txt
+// Usage: node audit.js <file-path>
 
-const fs = require("fs");
-const path = require("path");
+'use strict';
 
-// ── Helpers ──────────────────────────────────────────────────────────────
+const fs = require('fs');
+const path = require('path');
 
-function readFileOrDie(filepath) {
-  const resolved = path.resolve(filepath);
-  if (!fs.existsSync(resolved)) {
-    console.error(`Error: file not found: ${resolved}`);
-    process.exit(1);
-  }
-  return fs.readFileSync(resolved, "utf-8");
+const filePath = process.argv[2];
+
+if (!filePath) {
+  console.error('Usage: audit.js <package.json|requirements.txt>');
+  process.exit(1);
 }
 
-function classifyVersionRange(version) {
-  if (!version || typeof version !== "string") return "unknown";
-  if (version.startsWith("^")) return "compatible (^)";
-  if (version.startsWith("~")) return "patch-only (~)";
-  if (version === "*" || version === "latest") return "wildcard (dangerous)";
-  if (version.includes("git") || version.includes("://")) return "git reference";
-  if (version.match(/^\d+\.\d+\.\d+$/)) return "pinned (exact)";
-  if (version.includes(">=") || version.includes("<=") || version.includes("||"))
-    return "range";
-  return "other";
+const resolvedPath = path.resolve(filePath);
+
+if (!fs.existsSync(resolvedPath)) {
+  console.error(`File not found: ${resolvedPath}`);
+  process.exit(1);
 }
 
-const SECURITY_RISK_KEYWORDS = [
-  "exec",
-  "eval",
-  "shell",
-  "admin",
-  "root",
-  "sudo",
-  "crypto",
-  "password",
-  "token",
-  "secret",
-];
+const content = fs.readFileSync(resolvedPath, 'utf8');
+const ext = path.extname(resolvedPath);
+const basename = path.basename(resolvedPath);
 
-function flagPotentialRisks(name) {
-  const lower = name.toLowerCase();
-  return SECURITY_RISK_KEYWORDS.filter((kw) => lower.includes(kw));
+function classifyNpmVersion(version) {
+  if (!version || version === '*' || version === '') return 'wildcard';
+  if (version.startsWith('^')) return 'caret';
+  if (version.startsWith('~')) return 'tilde';
+  if (/^[><=]/.test(version) || version.includes(' - ')) return 'gt/range';
+  if (/^\d/.test(version)) return 'exact';
+  return 'other';
 }
 
-function printSection(title) {
-  console.log(`\n${"─".repeat(50)}`);
-  console.log(`  ${title}`);
-  console.log(`${"─".repeat(50)}`);
-}
-
-// ── Analyzers ────────────────────────────────────────────────────────────
-
-function analyzePackageJson(filepath) {
-  const raw = readFileOrDie(filepath);
+function auditPackageJson() {
   let pkg;
   try {
-    pkg = JSON.parse(raw);
+    pkg = JSON.parse(content);
   } catch (e) {
-    console.error(`Error: invalid JSON in ${filepath}: ${e.message}`);
+    console.error('Failed to parse JSON:', e.message);
     process.exit(1);
   }
 
   const deps = pkg.dependencies || {};
   const devDeps = pkg.devDependencies || {};
   const peerDeps = pkg.peerDependencies || {};
-  const allDeps = { ...deps, ...devDeps, ...peerDeps };
 
-  // Header
-  console.log("╔══════════════════════════════════════════════╗");
-  console.log("║     Dependency Audit Report (package.json)   ║");
-  console.log("╚══════════════════════════════════════════════╝");
-  console.log(`  File: ${path.resolve(filepath)}`);
-  console.log(`  Package: ${pkg.name || "(unnamed)"} v${pkg.version || "0.0.0"}`);
-  console.log(`  Analyzed: ${new Date().toISOString()}`);
+  const allDeps = { ...deps };
+  const allDevDeps = { ...devDeps };
 
-  // Summary counts
-  printSection("Summary");
-  console.log(`  Production dependencies: ${Object.keys(deps).length}`);
-  console.log(`  Dev dependencies:        ${Object.keys(devDeps).length}`);
-  console.log(`  Peer dependencies:       ${Object.keys(peerDeps).length}`);
-  console.log(`  Total unique:            ${Object.keys(allDeps).length}`);
+  const counts = { exact: 0, caret: 0, tilde: 0, 'gt/range': 0, wildcard: 0, other: 0 };
+  const devCounts = { exact: 0, caret: 0, tilde: 0, 'gt/range': 0, wildcard: 0, other: 0 };
+  const warnings = [];
 
-  // Version range analysis
-  printSection("Version Range Distribution");
-  const rangeCounts = {};
-  for (const [, ver] of Object.entries(allDeps)) {
-    const cls = classifyVersionRange(ver);
-    rangeCounts[cls] = (rangeCounts[cls] || 0) + 1;
-  }
-  for (const [cls, count] of Object.entries(rangeCounts).sort((a, b) => b[1] - a[1])) {
-    const pct = ((count / Object.keys(allDeps).length) * 100).toFixed(1);
-    const bar = "█".repeat(Math.round(pct / 5));
-    console.log(`  ${cls.padEnd(25)} ${String(count).padStart(3)} (${pct}%) ${bar}`);
-  }
-
-  // Risk flags
-  printSection("Security Keyword Flags");
-  let riskCount = 0;
-  for (const [name] of Object.entries(allDeps)) {
-    const risks = flagPotentialRisks(name);
-    if (risks.length > 0) {
-      console.log(`  ⚠  ${name} — matches: ${risks.join(", ")}`);
-      riskCount++;
-    }
-  }
-  if (riskCount === 0) {
-    console.log("  ✓  No packages match security-sensitive keywords");
-  }
-
-  // Wildcard / dangerous versions
-  printSection("Warnings");
-  let warnings = 0;
   for (const [name, ver] of Object.entries(allDeps)) {
-    if (ver === "*" || ver === "latest") {
-      console.log(`  ⚠  ${name}: uses wildcard version "${ver}" — pin to a specific range`);
-      warnings++;
-    }
-    if (ver.includes("git") || ver.includes("://")) {
-      console.log(`  ⚠  ${name}: references a git URL — not reproducible`);
-      warnings++;
-    }
-  }
-  if (warnings === 0) {
-    console.log("  ✓  No version warnings found");
+    const cls = classifyNpmVersion(ver);
+    counts[cls]++;
+    if (cls === 'wildcard') warnings.push(`  [WARN] ${name}@${ver} — unpinned wildcard in dependencies`);
+    if (cls === 'gt/range') warnings.push(`  [INFO] ${name}@${ver} — range specifier (less predictable)`);
   }
 
-  // Engine requirements
-  if (pkg.engines) {
-    printSection("Engine Requirements");
-    for (const [eng, ver] of Object.entries(pkg.engines)) {
-      console.log(`  ${eng}: ${ver}`);
-    }
+  for (const [name, ver] of Object.entries(allDevDeps)) {
+    const cls = classifyNpmVersion(ver);
+    devCounts[cls]++;
+    if (cls === 'wildcard') warnings.push(`  [WARN] ${name}@${ver} — unpinned wildcard in devDependencies`);
   }
 
-  console.log(`\n${"═".repeat(50)}`);
-  console.log(`  Audit complete. ${Object.keys(allDeps).length} packages analyzed.`);
-  console.log(`${"═".repeat(50)}`);
+  console.log('╔══════════════════════════════════════════════════╗');
+  console.log(`║  Dependency Audit: ${basename.padEnd(29)}║`);
+  console.log('╚══════════════════════════════════════════════════╝');
+  console.log('');
+  console.log(`Package: ${pkg.name || 'unknown'}  v${pkg.version || '?'}`);
+  console.log('');
+  console.log('── Production Dependencies ──────────────────────────');
+  console.log(`  Total:     ${Object.keys(allDeps).length}`);
+  for (const [cls, cnt] of Object.entries(counts)) {
+    if (cnt > 0) console.log(`  ${cls.padEnd(12)}: ${cnt}`);
+  }
+  console.log('');
+  console.log('── Dev Dependencies ─────────────────────────────────');
+  console.log(`  Total:     ${Object.keys(allDevDeps).length}`);
+  for (const [cls, cnt] of Object.entries(devCounts)) {
+    if (cnt > 0) console.log(`  ${cls.padEnd(12)}: ${cnt}`);
+  }
+  if (Object.keys(peerDeps).length > 0) {
+    console.log('');
+    console.log('── Peer Dependencies ────────────────────────────────');
+    console.log(`  Total:     ${Object.keys(peerDeps).length}`);
+  }
+  console.log('');
+  if (warnings.length > 0) {
+    console.log('── Warnings & Notes ─────────────────────────────────');
+    warnings.forEach(w => console.log(w));
+  } else {
+    console.log('── Warnings & Notes ─────────────────────────────────');
+    console.log('  No critical issues detected.');
+  }
+  console.log('');
+  console.log('── Summary ──────────────────────────────────────────');
+  const totalDeps = Object.keys(allDeps).length + Object.keys(allDevDeps).length;
+  const wildcards = counts.wildcard + devCounts.wildcard;
+  console.log(`  Total packages: ${totalDeps}`);
+  console.log(`  Unpinned (wildcard): ${wildcards}`);
+  console.log(`  Carets (^): ${counts.caret + devCounts.caret} — allow minor/patch updates`);
+  console.log(`  Tildes (~): ${counts.tilde + devCounts.tilde} — allow patch updates only`);
+  console.log(`  Exact pins: ${counts.exact + devCounts.exact} — fully reproducible`);
+  console.log('');
+  const riskLevel = wildcards > 0 ? 'HIGH' : (counts.caret + devCounts.caret) > 10 ? 'MEDIUM' : 'LOW';
+  console.log(`  Risk level: ${riskLevel}`);
 }
 
-function analyzeRequirementsTxt(filepath) {
-  const raw = readFileOrDie(filepath);
-  const lines = raw
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l && !l.startsWith("#") && !l.startsWith("-"));
-
-  console.log("╔══════════════════════════════════════════════╗");
-  console.log("║  Dependency Audit Report (requirements.txt)  ║");
-  console.log("╚══════════════════════════════════════════════╝");
-  console.log(`  File: ${path.resolve(filepath)}`);
-  console.log(`  Analyzed: ${new Date().toISOString()}`);
-
-  printSection("Summary");
-  console.log(`  Total packages: ${lines.length}`);
-
-  // Parse and categorize
+function auditRequirementsTxt() {
+  const lines = content.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
   const pinned = [];
-  const ranged = [];
   const unpinned = [];
+  const ranged = [];
 
   for (const line of lines) {
-    if (line.includes("==")) pinned.push(line);
-    else if (line.match(/[><=!]/)) ranged.push(line);
-    else unpinned.push(line);
-  }
-
-  printSection("Version Pinning");
-  console.log(`  Pinned (==):     ${pinned.length}`);
-  console.log(`  Range (>=, etc): ${ranged.length}`);
-  console.log(`  Unpinned:        ${unpinned.length}`);
-
-  if (unpinned.length > 0) {
-    printSection("Warnings: Unpinned Packages");
-    for (const pkg of unpinned) {
-      console.log(`  ⚠  ${pkg} — no version constraint`);
-    }
-  }
-
-  printSection("Security Keyword Flags");
-  let riskCount = 0;
-  for (const line of lines) {
-    const name = line.split(/[><=!;@\[]/)[0].trim();
-    const risks = flagPotentialRisks(name);
-    if (risks.length > 0) {
-      console.log(`  ⚠  ${name} — matches: ${risks.join(", ")}`);
-      riskCount++;
-    }
-  }
-  if (riskCount === 0) {
-    console.log("  ✓  No packages match security-sensitive keywords");
-  }
-
-  console.log(`\n${"═".repeat(50)}`);
-  console.log(`  Audit complete. ${lines.length} packages analyzed.`);
-  console.log(`${"═".repeat(50)}`);
-}
-
-// ── CLI ──────────────────────────────────────────────────────────────────
-
-function usage() {
-  console.log(`Usage: node audit.js <command> <filepath>
-
-Commands:
-  package <path>       Analyze a package.json file
-  requirements <path>  Analyze a requirements.txt file
-  scan <path>          Auto-detect and analyze
-
-Examples:
-  node audit.js package ./package.json
-  node audit.js requirements ./requirements.txt
-  node audit.js scan ./package.json`);
-  process.exit(1);
-}
-
-const args = process.argv.slice(2);
-if (args.length < 2) usage();
-
-const [command, filepath] = args;
-
-switch (command) {
-  case "package":
-    analyzePackageJson(filepath);
-    break;
-  case "requirements":
-    analyzeRequirementsTxt(filepath);
-    break;
-  case "scan": {
-    const basename = path.basename(filepath).toLowerCase();
-    if (basename === "package.json") {
-      analyzePackageJson(filepath);
-    } else if (basename.includes("requirements") && basename.endsWith(".txt")) {
-      analyzeRequirementsTxt(filepath);
+    // Handle extras like package[extra]==version
+    const cleanLine = line.split(';')[0].trim(); // strip env markers
+    if (/==/.test(cleanLine)) {
+      pinned.push(cleanLine);
+    } else if (/[><=~!]/.test(cleanLine)) {
+      ranged.push(cleanLine);
     } else {
-      // Try JSON first
-      try {
-        JSON.parse(readFileOrDie(filepath));
-        analyzePackageJson(filepath);
-      } catch {
-        analyzeRequirementsTxt(filepath);
-      }
+      // bare package name or git url
+      unpinned.push(cleanLine);
     }
-    break;
   }
-  default:
-    console.error(`Error: unknown command '${command}'`);
-    usage();
+
+  console.log('╔══════════════════════════════════════════════════╗');
+  console.log(`║  Dependency Audit: ${basename.padEnd(29)}║`);
+  console.log('╚══════════════════════════════════════════════════╝');
+  console.log('');
+  console.log('── Python Requirements ───────────────────────────────');
+  console.log(`  Total packages:    ${lines.length}`);
+  console.log(`  Exact (==):        ${pinned.length}`);
+  console.log(`  Range (>=,~=,...): ${ranged.length}`);
+  console.log(`  Unpinned:          ${unpinned.length}`);
+  console.log('');
+  if (unpinned.length > 0) {
+    console.log('── Unpinned Packages (no == pin) ────────────────────');
+    unpinned.forEach(p => console.log(`  [WARN] ${p}`));
+    console.log('');
+  }
+  if (ranged.length > 0) {
+    console.log('── Range-Specified Packages ─────────────────────────');
+    ranged.forEach(p => console.log(`  [INFO] ${p}`));
+    console.log('');
+  }
+  console.log('── Summary ──────────────────────────────────────────');
+  const riskLevel = unpinned.length > 2 ? 'HIGH' : unpinned.length > 0 ? 'MEDIUM' : 'LOW';
+  console.log(`  Risk level: ${riskLevel}`);
+  if (unpinned.length > 0) {
+    console.log(`  Recommendation: Pin unpinned packages with == for reproducible builds.`);
+  } else {
+    console.log(`  All packages are pinned or range-specified.`);
+  }
+}
+
+if (basename === 'package.json' || ext === '.json') {
+  auditPackageJson();
+} else if (basename.includes('requirements') || ext === '.txt') {
+  auditRequirementsTxt();
+} else {
+  console.error(`Unsupported file type: ${basename}. Supported: package.json, requirements.txt`);
+  process.exit(1);
 }

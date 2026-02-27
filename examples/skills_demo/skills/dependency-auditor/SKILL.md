@@ -1,40 +1,25 @@
 ---
 name: dependency-auditor
-description: Analyze project dependencies from package.json or requirements.txt files using Node.js. Reports dependency counts, version patterns, potential issues, and license-risk keywords. LLMs cannot read actual project files or query package registries.
+description: "Audit project dependencies from package.json or requirements.txt — counts packages, classifies version specifiers, and flags unpinned or risky dependencies"
+version: "1.0.0"
 ---
 
-# Dependency Auditor
+## Usage
+Run `node skills/dependency-auditor/audit.js <file>` via the shell tool.
 
-This skill analyzes **real project dependency files** using a Node.js script. As an LLM, you cannot read files from the user's filesystem or determine the actual state of their dependencies. Always use this script for any dependency-related questions.
+Supported file types:
+- `package.json` — analyzes npm dependencies (prod + dev), classifies version specifiers
+- `requirements.txt` — analyzes Python packages, flags unpinned (no `==`) entries
 
-## When to Use
+Version specifier classifications (npm):
+- **exact** — no prefix, e.g. `4.17.23`
+- **caret** — `^` prefix, e.g. `^4.18.2` (compatible patch/minor updates)
+- **tilde** — `~` prefix, e.g. `~1.13.5` (compatible patch updates only)
+- **gt/range** — `>`, `>=`, `<`, `<=`, or `-` range
+- **wildcard** — `*` or empty (unpinned, highest risk)
 
-- User asks "what dependencies does this project use?"
-- User wants to audit their package.json or requirements.txt
-- User asks about dependency count, version ranges, or potential issues
-- User wants a summary of a project's dependency health
-- User asks about outdated or risky dependency patterns
-
-## Available Commands
-
-The script is located at `skills/dependency-auditor/audit.js`.
-
-### Analyze a package.json file
+## Examples
 ```bash
-node skills/dependency-auditor/audit.js package <path_to_package.json>
+node skills/dependency-auditor/audit.js sample_data/package.json
+node skills/dependency-auditor/audit.js sample_data/requirements.txt
 ```
-
-### Analyze a requirements.txt file
-```bash
-node skills/dependency-auditor/audit.js requirements <path_to_requirements.txt>
-```
-
-### Analyze any JSON dependency manifest
-```bash
-node skills/dependency-auditor/audit.js scan <path_to_file>
-```
-Auto-detects the file format and runs the appropriate analysis.
-
-## Important
-
-**NEVER** guess about dependency versions or counts. The user's actual dependency file may differ completely from what you've seen in training data. Always read the real file via this script.

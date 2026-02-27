@@ -1,54 +1,23 @@
 ---
 name: network-diagnostics
-description: Probe live network connectivity, resolve DNS, check port availability, and measure latency. LLMs have zero network access — this skill provides real-time network intelligence.
+description: "Probe live network: ping hosts for latency, resolve DNS, check TCP port reachability, and fetch HTTP headers"
+version: "1.0.0"
 ---
 
-# Network Diagnostics
+## Usage
+Run `skills/network-diagnostics/diagnose.sh <operation> [args]` via the shell tool.
 
-This skill provides **real-time network probing** via a Bash script. As an LLM, you have absolutely no ability to test network connectivity, resolve DNS, or check port status. Always use this script for any network-related questions.
+Operations:
+- `ping <host>` — ping 3 packets, show round-trip latency
+- `dns <host>` — DNS resolution via dig
+- `port <host> <port>` — check if TCP port is open or closed
+- `http <url>` — fetch HTTP response headers (first 5 lines)
+- `report <host>` — run all checks (ping, dns, port 80, port 443, http)
 
-## When to Use
-
-- User asks "is X reachable?" or "can I reach X?"
-- User wants to check if a port is open on a host
-- User needs DNS resolution for a hostname
-- User wants to measure latency to a host
-- User asks about network connectivity issues
-- User wants to check if an HTTP endpoint is responding
-
-## Available Commands
-
-The script is located at `skills/network-diagnostics/diagnose.sh`.
-
-### Ping a host
+## Examples
 ```bash
-bash skills/network-diagnostics/diagnose.sh ping <host> [count]
+skills/network-diagnostics/diagnose.sh ping google.com
+skills/network-diagnostics/diagnose.sh dns github.com
+skills/network-diagnostics/diagnose.sh port github.com 443
+skills/network-diagnostics/diagnose.sh report google.com
 ```
-Default count is 3. Reports latency statistics.
-
-### DNS lookup
-```bash
-bash skills/network-diagnostics/diagnose.sh dns <hostname>
-```
-Resolves hostname to IP addresses using multiple methods.
-
-### Check if a TCP port is open
-```bash
-bash skills/network-diagnostics/diagnose.sh port <host> <port>
-```
-
-### Check HTTP endpoint status
-```bash
-bash skills/network-diagnostics/diagnose.sh http <url>
-```
-Returns HTTP status code and response time.
-
-### Full diagnostic report
-```bash
-bash skills/network-diagnostics/diagnose.sh report <host>
-```
-Runs ping + DNS + common port checks and summarizes results.
-
-## Important
-
-**NEVER** guess about network reachability. Always run the diagnostic script to get real-time results. Network conditions change constantly — cached knowledge is useless here.

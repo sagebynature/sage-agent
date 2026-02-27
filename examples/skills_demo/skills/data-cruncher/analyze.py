@@ -1,381 +1,278 @@
 #!/usr/bin/env python3
+"""analyze.py — Statistical analysis of CSV files using stdlib only.
+
+Usage:
+    analyze.py <csv-file>
+    analyze.py <csv-file> --correlate <col1> <col2>
+    analyze.py <csv-file> --outliers <col>
 """
-analyze.py — Statistical analysis tool for the Sage data-cruncher skill.
 
-Performs precise numerical computation on CSV data files. Designed to be
-invoked by an LLM agent that cannot reliably perform arithmetic.
-
-Usage: python3 analyze.py <command> <filepath> [args...]
-"""
-
+import argparse
 import csv
-import json
 import math
 import sys
-from collections import Counter
 from pathlib import Path
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Statistical analysis of CSV files (stdlib only)")
+    parser.add_argument("csv_file", help="Path to CSV file")
+    parser.add_argument(
+        "--correlate",
+        nargs=2,
+        metavar=("COL1", "COL2"),
+        help="Compute Pearson correlation between two columns",
+    )
+    parser.add_argument(
+        "--outliers",
+        metavar="COL",
+        help="Detect outliers in a column using IQR method",
+    )
+    return parser.parse_args()
 
 
-def read_csv(filepath: str) -> tuple[list[str], list[dict[str, str]]]:
-    """Read a CSV file and return (headers, rows)."""
-    path = Path(filepath)
-    if not path.exists():
-        print(f"Error: file not found: {filepath}", file=sys.stderr)
+def load_csv(path: str) -> tuple[list[str], list[dict[str, str]]]:
+    """Load CSV and return (headers, rows)."""
+    p = Path(path)
+    if not p.exists():
+        print(f"Error: file not found: {path}", file=sys.stderr)
         sys.exit(1)
-
-    with open(path, newline="", encoding="utf-8") as f:
+    with p.open(newline="") as f:
         reader = csv.DictReader(f)
-        headers = reader.fieldnames or []
+        headers = list(reader.fieldnames or [])
         rows = list(reader)
-
-    if not rows:
-        print("Error: CSV file is empty or has no data rows", file=sys.stderr)
-        sys.exit(1)
-
     return headers, rows
 
 
-def parse_numeric(values: list[str]) -> list[float]:
-    """Parse a list of string values into floats, skipping non-numeric."""
-    result = []
-    for v in values:
-        try:
-            result.append(float(v))
-        except (ValueError, TypeError):
+def extract_numeric(rows: list[dict], col: str) -> list[float]:
+    """Extract numeric values from a column, skipping non-numeric."""
+    values = []
+    for row in rows:
+        raw = row.get(col, "").strip()
+        if raw == "":
             continue
-    return result
+        try:
+            values.append(float(raw))
+        except ValueError:
+            continue
+    return values
 
 
 def percentile(sorted_data: list[float], p: float) -> float:
-    """Compute the p-th percentile (0-100) of sorted data."""
-    if not sorted_data:
-        return 0.0
-    k = (len(sorted_data) - 1) * (p / 100.0)
-    f = math.floor(k)
-    c = math.ceil(k)
-    if f == c:
-        return sorted_data[int(k)]
-    return sorted_data[f] * (c - k) + sorted_data[c] * (k - f)
+    """Compute p-th percentile (0–100) using linear interpolation."""
+    n = len(sorted_data)
+    if n == 0:
+        return float("nan")
+    if n == 1:
+        return sorted_data[0]
+    rank = (p / 100) * (n - 1)
+    lower = int(rank)
+    upper = lower + 1
+    if upper >= n:
+        return sorted_data[-1]
+    frac = rank - lower
+    return sorted_data[lower] + frac * (sorted_data[upper] - sorted_data[lower])
 
 
-def mean(data: list[float]) -> float:
-    return sum(data) / len(data) if data else 0.0
+def mean(values: list[float]) -> float:
+    return sum(values) / len(values) if values else float("nan")
 
 
-def median(data: list[float]) -> float:
-    return percentile(sorted(data), 50)
-
-
-def std_dev(data: list[float]) -> float:
-    if len(data) < 2:
-        return 0.0
-    m = mean(data)
-    variance = sum((x - m) ** 2 for x in data) / (len(data) - 1)
+def std(values: list[float]) -> float:
+    if len(values) < 2:
+        return float("nan")
+    m = mean(values)
+    variance = sum((x - m) ** 2 for x in values) / (len(values) - 1)
     return math.sqrt(variance)
 
 
-def correlation(x: list[float], y: list[float]) -> float:
+def pearson_correlation(x: list[float], y: list[float]) -> float:
     """Compute Pearson correlation coefficient."""
-    n = min(len(x), len(y))
-    if n < 2:
-        return 0.0
-    x, y = x[:n], y[:n]
+    n = len(x)
+    if n < 2 or n != len(y):
+        return float("nan")
     mx, my = mean(x), mean(y)
-    sx, sy = std_dev(x), std_dev(y)
-    if sx == 0 or sy == 0:
-        return 0.0
-    return sum((xi - mx) * (yi - my) for xi, yi in zip(x, y)) / ((n - 1) * sx * sy)
+    num = sum((xi - mx) * (yi - my) for xi, yi in zip(x, y))
+    denom_x = math.sqrt(sum((xi - mx) ** 2 for xi in x))
+    denom_y = math.sqrt(sum((yi - my) ** 2 for yi in y))
+    if denom_x == 0 or denom_y == 0:
+        return float("nan")
+    return num / (denom_x * denom_y)
 
 
-def print_section(title: str) -> None:
-    print(f"\n{'─' * 55}")
-    print(f"  {title}")
-    print(f"{'─' * 55}")
-
-
-def format_num(n: float) -> str:
-    """Format a number nicely — integers stay clean, floats get 4 decimals."""
-    if n == int(n) and abs(n) < 1e15:
-        return str(int(n))
-    return f"{n:.4f}"
-
-
-# ── Commands ─────────────────────────────────────────────────────────────
-
-
-def cmd_summary(filepath: str) -> None:
-    """Produce a full statistical summary of all numeric columns."""
-    headers, rows = read_csv(filepath)
-
-    print("╔═══════════════════════════════════════════════════════╗")
-    print("║          Statistical Summary Report                  ║")
-    print("╚═══════════════════════════════════════════════════════╝")
-    print(f"  File:    {Path(filepath).resolve()}")
-    print(f"  Rows:    {len(rows)}")
-    print(f"  Columns: {len(headers)}")
-
+def print_stats_summary(headers: list[str], rows: list[dict]) -> None:
+    """Print descriptive statistics for all numeric columns."""
     numeric_cols = []
-    for h in headers:
-        values = parse_numeric([r.get(h, "") for r in rows])
-        if len(values) >= len(rows) * 0.5:  # At least 50% numeric
-            numeric_cols.append(h)
+    for col in headers:
+        values = extract_numeric(rows, col)
+        if values:
+            numeric_cols.append((col, values))
 
     if not numeric_cols:
-        print("\n  No numeric columns found.")
+        print("No numeric columns found.")
         return
 
-    print(f"  Numeric: {len(numeric_cols)} of {len(headers)} columns")
+    col_width = max(len(col) for col, _ in numeric_cols) + 2
+    fmt = f"  {{:<{col_width}}} {{:>8}} {{:>10}} {{:>10}} {{:>10}} {{:>10}} {{:>10}} {{:>10}} {{:>10}} {{:>10}}"
 
-    for col in numeric_cols:
-        values = parse_numeric([r.get(col, "") for r in rows])
+    print("╔══════════════════════════════════════════════════════════════════════╗")
+    print(
+        f"║  Statistical Summary — {len(rows)} rows, {len(numeric_cols)} numeric columns{' ' * (30 - len(str(len(rows))) - len(str(len(numeric_cols))))}║"
+    )
+    print("╚══════════════════════════════════════════════════════════════════════╝")
+    print("")
+    print(fmt.format("Column", "Count", "Mean", "Std", "Min", "P25", "P50", "P75", "P99", "Max"))
+    print("  " + "─" * (col_width + 92))
+
+    for col, values in numeric_cols:
         s = sorted(values)
+        n = len(s)
+        row_mean = mean(values)
+        row_std = std(values)
+        row_min = s[0]
+        row_p25 = percentile(s, 25)
+        row_p50 = percentile(s, 50)
+        row_p75 = percentile(s, 75)
+        row_p99 = percentile(s, 99)
+        row_max = s[-1]
 
-        print_section(f"Column: {col}")
-        print(f"  Count:   {len(values)}")
-        print(f"  Missing: {len(rows) - len(values)}")
-        print(f"  Mean:    {format_num(mean(values))}")
-        print(f"  Median:  {format_num(median(values))}")
-        print(f"  Std Dev: {format_num(std_dev(values))}")
-        print(f"  Min:     {format_num(s[0])}")
-        print(f"  Max:     {format_num(s[-1])}")
-        print(f"  P25:     {format_num(percentile(s, 25))}")
-        print(f"  P75:     {format_num(percentile(s, 75))}")
-        print(f"  P95:     {format_num(percentile(s, 95))}")
-        print(f"  P99:     {format_num(percentile(s, 99))}")
+        def fmt_num(v: float) -> str:
+            if math.isnan(v):
+                return "nan"
+            if abs(v) >= 1000 or (abs(v) < 0.01 and v != 0):
+                return f"{v:.2e}"
+            return f"{v:.2f}"
 
-    print(f"\n{'═' * 55}")
-    print(f"  Analysis complete. {len(numeric_cols)} numeric columns processed.")
-    print(f"{'═' * 55}")
+        print(
+            fmt.format(
+                col,
+                n,
+                fmt_num(row_mean),
+                fmt_num(row_std),
+                fmt_num(row_min),
+                fmt_num(row_p25),
+                fmt_num(row_p50),
+                fmt_num(row_p75),
+                fmt_num(row_p99),
+                fmt_num(row_max),
+            )
+        )
+
+    print("")
 
 
-def cmd_column(filepath: str, column: str) -> None:
-    """Deep analysis of a single column."""
-    headers, rows = read_csv(filepath)
+def print_correlation(rows: list[dict], col1: str, col2: str) -> None:
+    """Print Pearson correlation between two columns."""
 
-    if column not in headers:
-        print(f"Error: column '{column}' not found. Available: {', '.join(headers)}")
-        sys.exit(1)
+    # Align by row (only rows where both are present)
+    paired_x, paired_y = [], []
+    # Re-extract as pairs
+    for row in rows:
+        raw1 = row.get(col1, "").strip()
+        raw2 = row.get(col2, "").strip()
+        try:
+            paired_x.append(float(raw1))
+            paired_y.append(float(raw2))
+        except ValueError:
+            continue
 
-    values = parse_numeric([r.get(column, "") for r in rows])
+    r = pearson_correlation(paired_x, paired_y)
+    n = len(paired_x)
+
+    print("╔═══════════════════════════════════════╗")
+    print("║  Pearson Correlation Analysis         ║")
+    print("╚═══════════════════════════════════════╝")
+    print("")
+    print(f"  Column 1: {col1}")
+    print(f"  Column 2: {col2}")
+    print(f"  N (paired rows): {n}")
+    print(f"  Pearson r: {r:.6f}")
+    print("")
+
+    if math.isnan(r):
+        print("  Interpretation: Cannot compute (insufficient data or zero variance)")
+    elif abs(r) >= 0.9:
+        direction = "positive" if r > 0 else "negative"
+        print(f"  Interpretation: Very strong {direction} correlation")
+    elif abs(r) >= 0.7:
+        direction = "positive" if r > 0 else "negative"
+        print(f"  Interpretation: Strong {direction} correlation")
+    elif abs(r) >= 0.5:
+        direction = "positive" if r > 0 else "negative"
+        print(f"  Interpretation: Moderate {direction} correlation")
+    elif abs(r) >= 0.3:
+        direction = "positive" if r > 0 else "negative"
+        print(f"  Interpretation: Weak {direction} correlation")
+    else:
+        print("  Interpretation: Very weak or no linear correlation")
+    print("")
+
+
+def print_outliers(rows: list[dict], col: str) -> None:
+    """Detect outliers using IQR method (1.5 × IQR fence)."""
+    values = extract_numeric(rows, col)
     if not values:
-        print(f"Error: column '{column}' has no numeric values")
-        sys.exit(1)
+        print(f"No numeric data in column: {col}")
+        return
 
     s = sorted(values)
-
-    print(f"╔═══════════════════════════════════════════════════════╗")
-    print(f"║  Column Analysis: {column:<36} ║")
-    print(f"╚═══════════════════════════════════════════════════════╝")
-
-    print_section("Basic Statistics")
-    print(f"  Count:      {len(values)}")
-    print(f"  Mean:       {format_num(mean(values))}")
-    print(f"  Median:     {format_num(median(values))}")
-    print(f"  Std Dev:    {format_num(std_dev(values))}")
-    print(f"  Variance:   {format_num(std_dev(values) ** 2)}")
-    print(f"  Min:        {format_num(s[0])}")
-    print(f"  Max:        {format_num(s[-1])}")
-    print(f"  Range:      {format_num(s[-1] - s[0])}")
-
-    print_section("Percentiles")
-    for p in [1, 5, 10, 25, 50, 75, 90, 95, 99]:
-        print(f"  P{str(p).ljust(2)}:  {format_num(percentile(s, p))}")
-
-    # Simple text histogram
-    print_section("Distribution (10 bins)")
-    bin_count = 10
-    lo, hi = s[0], s[-1]
-    bin_width = (hi - lo) / bin_count if hi != lo else 1
-    bins = [0] * bin_count
-    for v in values:
-        idx = min(int((v - lo) / bin_width), bin_count - 1)
-        bins[idx] += 1
-
-    max_bin = max(bins) if bins else 1
-    for i, count in enumerate(bins):
-        lo_edge = lo + i * bin_width
-        hi_edge = lo + (i + 1) * bin_width
-        bar_len = int((count / max_bin) * 30) if max_bin > 0 else 0
-        bar = "█" * bar_len
-        print(f"  [{format_num(lo_edge):>10} - {format_num(hi_edge):>10}] {count:>4} {bar}")
-
-    # Outlier detection (IQR)
     q1 = percentile(s, 25)
     q3 = percentile(s, 75)
     iqr = q3 - q1
     lower_fence = q1 - 1.5 * iqr
     upper_fence = q3 + 1.5 * iqr
+
     outliers = [v for v in values if v < lower_fence or v > upper_fence]
 
-    print_section("Outlier Detection (IQR Method)")
-    print(f"  Q1:           {format_num(q1)}")
-    print(f"  Q3:           {format_num(q3)}")
-    print(f"  IQR:          {format_num(iqr)}")
-    print(f"  Lower Fence:  {format_num(lower_fence)}")
-    print(f"  Upper Fence:  {format_num(upper_fence)}")
-    print(f"  Outliers:     {len(outliers)}")
-    if outliers and len(outliers) <= 20:
-        print(f"  Values:       {', '.join(format_num(v) for v in sorted(outliers))}")
-
-
-def cmd_correlate(filepath: str, col1: str, col2: str) -> None:
-    """Compute correlation between two columns."""
-    headers, rows = read_csv(filepath)
-
-    for c in [col1, col2]:
-        if c not in headers:
-            print(f"Error: column '{c}' not found. Available: {', '.join(headers)}")
-            sys.exit(1)
-
-    x = parse_numeric([r.get(col1, "") for r in rows])
-    y = parse_numeric([r.get(col2, "") for r in rows])
-
-    n = min(len(x), len(y))
-    r = correlation(x, y)
-
-    print(f"Correlation: {col1} vs {col2}")
-    print(f"  Samples (n):             {n}")
-    print(f"  Pearson r:               {r:.6f}")
-    print(f"  R² (explained variance): {r**2:.6f}")
-
-    # Interpret
-    abs_r = abs(r)
-    if abs_r >= 0.8:
-        strength = "very strong"
-    elif abs_r >= 0.6:
-        strength = "strong"
-    elif abs_r >= 0.4:
-        strength = "moderate"
-    elif abs_r >= 0.2:
-        strength = "weak"
+    print("╔═══════════════════════════════════════╗")
+    print("║  Outlier Detection (IQR Method)       ║")
+    print("╚═══════════════════════════════════════╝")
+    print("")
+    print(f"  Column: {col}")
+    print(f"  N: {len(values)}")
+    print(f"  Q1: {q1:.4f}")
+    print(f"  Q3: {q3:.4f}")
+    print(f"  IQR: {iqr:.4f}")
+    print(f"  Lower fence (Q1 - 1.5×IQR): {lower_fence:.4f}")
+    print(f"  Upper fence (Q3 + 1.5×IQR): {upper_fence:.4f}")
+    print("")
+    print(f"  Outliers found: {len(outliers)}")
+    if outliers:
+        print("")
+        print("  Values outside fence:")
+        for v in sorted(set(outliers)):
+            tag = "above" if v > upper_fence else "below"
+            print(f"    {v:.4f}  ({tag} fence)")
     else:
-        strength = "negligible"
-
-    direction = "positive" if r > 0 else "negative"
-    print(f"  Interpretation:          {strength} {direction} correlation")
+        print("  No outliers detected within 1.5×IQR range.")
+    print("")
 
 
-def cmd_outliers(filepath: str, column: str) -> None:
-    """Detect outliers using IQR method."""
-    headers, rows = read_csv(filepath)
+def main() -> None:
+    args = parse_args()
+    headers, rows = load_csv(args.csv_file)
 
-    if column not in headers:
-        print(f"Error: column '{column}' not found. Available: {', '.join(headers)}")
-        sys.exit(1)
+    if not rows:
+        print("CSV file is empty or has only headers.")
+        sys.exit(0)
 
-    values = parse_numeric([r.get(column, "") for r in rows])
-    s = sorted(values)
-    q1 = percentile(s, 25)
-    q3 = percentile(s, 75)
-    iqr = q3 - q1
-    lower = q1 - 1.5 * iqr
-    upper = q3 + 1.5 * iqr
-
-    outlier_values = [v for v in values if v < lower or v > upper]
-
-    print(f"Outlier Detection: {column}")
-    print(f"  Method:      IQR (1.5x)")
-    print(f"  Q1:          {format_num(q1)}")
-    print(f"  Q3:          {format_num(q3)}")
-    print(f"  IQR:         {format_num(iqr)}")
-    print(f"  Lower Fence: {format_num(lower)}")
-    print(f"  Upper Fence: {format_num(upper)}")
-    print(f"  Total:       {len(values)} values")
-    print(f"  Outliers:    {len(outlier_values)} ({len(outlier_values) / len(values) * 100:.1f}%)")
-
-    if outlier_values:
-        print(f"\n  Outlier values:")
-        for v in sorted(outlier_values):
-            side = "below" if v < lower else "above"
-            print(f"    {format_num(v)} ({side})")
-
-
-def cmd_frequency(filepath: str, column: str) -> None:
-    """Generate a frequency table for a column."""
-    headers, rows = read_csv(filepath)
-
-    if column not in headers:
-        print(f"Error: column '{column}' not found. Available: {', '.join(headers)}")
-        sys.exit(1)
-
-    values = [r.get(column, "") for r in rows]
-    counter = Counter(values)
-    total = len(values)
-
-    print(f"Frequency Table: {column}")
-    print(f"  Total:  {total}")
-    print(f"  Unique: {len(counter)}")
-    print()
-
-    # Sort by frequency descending
-    max_count = max(counter.values()) if counter else 1
-    for value, count in counter.most_common(30):
-        pct = count / total * 100
-        bar = "█" * int((count / max_count) * 25)
-        display_val = value if len(value) <= 30 else value[:27] + "..."
-        print(f"  {display_val:<32} {count:>5} ({pct:>5.1f}%) {bar}")
-
-    if len(counter) > 30:
-        print(f"\n  ... and {len(counter) - 30} more unique values")
-
-
-# ── CLI ──────────────────────────────────────────────────────────────────
-
-
-def usage():
-    print("""Usage: python3 analyze.py <command> <filepath> [args...]
-
-Commands:
-  summary <csv_path>                        Full statistical summary
-  column <csv_path> <column_name>           Deep dive on one column
-  correlate <csv_path> <col1> <col2>        Pearson correlation
-  outliers <csv_path> <column_name>         IQR outlier detection
-  frequency <csv_path> <column_name>        Frequency table
-
-Examples:
-  python3 analyze.py summary data.csv
-  python3 analyze.py column data.csv response_time
-  python3 analyze.py correlate data.csv cpu_usage memory_usage
-  python3 analyze.py outliers data.csv latency_ms
-  python3 analyze.py frequency data.csv status_code""")
-    sys.exit(1)
-
-
-def main():
-    if len(sys.argv) < 3:
-        usage()
-
-    command = sys.argv[1]
-    filepath = sys.argv[2]
-
-    if command == "summary":
-        cmd_summary(filepath)
-    elif command == "column":
-        if len(sys.argv) < 4:
-            print("Error: column command requires <filepath> <column_name>")
+    if args.correlate:
+        col1, col2 = args.correlate
+        if col1 not in headers:
+            print(f"Error: column '{col1}' not found. Available: {headers}", file=sys.stderr)
             sys.exit(1)
-        cmd_column(filepath, sys.argv[3])
-    elif command == "correlate":
-        if len(sys.argv) < 5:
-            print("Error: correlate command requires <filepath> <col1> <col2>")
+        if col2 not in headers:
+            print(f"Error: column '{col2}' not found. Available: {headers}", file=sys.stderr)
             sys.exit(1)
-        cmd_correlate(filepath, sys.argv[3], sys.argv[4])
-    elif command == "outliers":
-        if len(sys.argv) < 4:
-            print("Error: outliers command requires <filepath> <column_name>")
+        print_correlation(rows, col1, col2)
+    elif args.outliers:
+        col = args.outliers
+        if col not in headers:
+            print(f"Error: column '{col}' not found. Available: {headers}", file=sys.stderr)
             sys.exit(1)
-        cmd_outliers(filepath, sys.argv[3])
-    elif command == "frequency":
-        if len(sys.argv) < 4:
-            print("Error: frequency command requires <filepath> <column_name>")
-            sys.exit(1)
-        cmd_frequency(filepath, sys.argv[3])
+        print_outliers(rows, col)
     else:
-        print(f"Error: unknown command '{command}'")
-        usage()
+        print_stats_summary(headers, rows)
 
 
 if __name__ == "__main__":
