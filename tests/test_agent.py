@@ -817,8 +817,37 @@ class TestAgentSkills:
         skill_pos = system_msg.content.index("## Skill: s")
         assert body_pos < skill_pos
 
-    def test_from_config_no_skills_dir_yields_empty(self, tmp_path: Path) -> None:
-        """No auto-discovered skills when 'skills/' directory does not exist."""
+    def test_from_config_resolves_global_skills(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+
+        global_skills_dir = tmp_path / "skills"
+        global_skills_dir.mkdir(parents=True)
+        (global_skills_dir / "alpha.md").write_text(
+            "---\nname: alpha\n---\n\nAlpha content.", encoding="utf-8"
+        )
+        (global_skills_dir / "beta.md").write_text(
+            "---\nname: beta\n---\n\nBeta content.", encoding="utf-8"
+        )
+
+        config_dir = tmp_path / "workspace"
+        config_dir.mkdir()
+        config_file = config_dir / "AGENTS.md"
+        config_file.write_text("---\nname: test\nmodel: gpt-4o\n---\n", encoding="utf-8")
+
+        agent = Agent.from_config(config_file)
+
+        assert [s.name for s in agent.skills] == ["alpha", "beta"]
+
+    def test_from_config_no_skills_when_no_directory(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr("sage.skills.loader.Path.home", staticmethod(lambda: tmp_path / "home"))
+
         config_file = tmp_path / "AGENTS.md"
         config_file.write_text("---\nname: test\nmodel: gpt-4o\n---\n", encoding="utf-8")
 
@@ -826,14 +855,119 @@ class TestAgentSkills:
 
         assert agent.skills == []
 
-    def test_from_config_directory_per_skill(self, tmp_path: Path) -> None:
-        """Skills stored as subdirectories (dir/skill.md) are loaded correctly."""
-        skills_dir = tmp_path / "skills"
-        skill_subdir = skills_dir / "code-review"
-        skill_subdir.mkdir(parents=True)
-        (skill_subdir / "skill.md").write_text(
-            "---\nname: code-review\ndescription: Review code\n---\n\nReview steps.",
+    def test_from_config_uses_config_toml_skills_dir(self, tmp_path: Path) -> None:
+        from sage.main_config import MainConfig
+
+        global_skills_dir = tmp_path / "central-skills"
+        global_skills_dir.mkdir(parents=True)
+        (global_skills_dir / "gamma.md").write_text(
+            "---\nname: gamma\n---\n\nGamma content.", encoding="utf-8"
+        )
+
+        config_file = tmp_path / "AGENTS.md"
+        config_file.write_text("---\nname: test\nmodel: gpt-4o\n---\n", encoding="utf-8")
+
+        central = MainConfig(skills_dir=str(global_skills_dir))
+        agent = Agent.from_config(config_file, central=central)
+
+        assert [s.name for s in agent.skills] == ["gamma"]
+
+    def test_from_config_passes_global_pool_to_subagents(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+
+        global_skills_dir = tmp_path / "skills"
+        global_skills_dir.mkdir(parents=True)
+        (global_skills_dir / "one.md").write_text(
+            "---\nname: one\n---\n\nOne content.", encoding="utf-8"
+        )
+        (global_skills_dir / "two.md").write_text(
+            "---\nname: two\n---\n\nTwo content.", encoding="utf-8"
+        )
+
+        config_md = textwrap.dedent("""\
+            ---
+            name: parent
+            model: gpt-4o
+            subagents:
+              - name: child
+                model: gpt-4o-mini
+            ---
+        """)
+        config_dir = tmp_path / "workspace"
+        config_dir.mkdir()
+        config_file = config_dir / "AGENTS.md"
+        config_file.write_text(config_md, encoding="utf-8")
+
+        agent = Agent.from_config(config_file)
+
+        assert [s.name for s in agent.skills] == ["one", "two"]
+        assert [s.name for s in agent.subagents["child"].skills] == ["one", "two"]
+
+    def test_from_config_skills_allowlist_filters_pool(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+
+        global_skills_dir = tmp_path / "skills"
+        global_skills_dir.mkdir(parents=True)
+        (global_skills_dir / "alpha.md").write_text(
+            "---\nname: alpha\n---\n\nAlpha content.", encoding="utf-8"
+        )
+        (global_skills_dir / "beta.md").write_text(
+            "---\nname: beta\n---\n\nBeta content.", encoding="utf-8"
+        )
+
+        config_file = tmp_path / "AGENTS.md"
+        config_file.write_text(
+            "---\nname: test\nmodel: gpt-4o\nskills:\n  - alpha\n---\n",
             encoding="utf-8",
+        )
+
+        agent = Agent.from_config(config_file)
+
+        assert [s.name for s in agent.skills] == ["alpha"]
+
+    def test_from_config_empty_allowlist_yields_no_skills(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+
+        global_skills_dir = tmp_path / "skills"
+        global_skills_dir.mkdir(parents=True)
+        (global_skills_dir / "alpha.md").write_text(
+            "---\nname: alpha\n---\n\nAlpha content.", encoding="utf-8"
+        )
+        (global_skills_dir / "beta.md").write_text(
+            "---\nname: beta\n---\n\nBeta content.", encoding="utf-8"
+        )
+        (global_skills_dir / "gamma.md").write_text(
+            "---\nname: gamma\n---\n\nGamma content.", encoding="utf-8"
+        )
+
+        config_file = tmp_path / "AGENTS.md"
+        config_file.write_text(
+            "---\nname: test\nmodel: gpt-4o\nskills: []\n---\n",
+            encoding="utf-8",
+        )
+
+        agent = Agent.from_config(config_file)
+
+        assert agent.skills == []
+
+    def test_from_config_no_allowlist_gets_all_skills(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+
+        global_skills_dir = tmp_path / "skills"
+        global_skills_dir.mkdir(parents=True)
+        (global_skills_dir / "alpha.md").write_text(
+            "---\nname: alpha\n---\n\nAlpha content.", encoding="utf-8"
+        )
+        (global_skills_dir / "beta.md").write_text(
+            "---\nname: beta\n---\n\nBeta content.", encoding="utf-8"
         )
 
         config_file = tmp_path / "AGENTS.md"
@@ -841,24 +975,90 @@ class TestAgentSkills:
 
         agent = Agent.from_config(config_file)
 
-        assert len(agent.skills) == 1
-        assert agent.skills[0].name == "code-review"
-        assert agent.skills[0].description == "Review code"
-        assert "Review steps." in agent.skills[0].content
+        assert [s.name for s in agent.skills] == ["alpha", "beta"]
 
-    def test_from_config_dir_name_used_when_no_frontmatter_name(self, tmp_path: Path) -> None:
-        """When skill.md has no frontmatter name, the directory name is used."""
-        skills_dir = tmp_path / "skills"
-        skill_subdir = skills_dir / "my-technique"
-        skill_subdir.mkdir(parents=True)
-        (skill_subdir / "skill.md").write_text("Just content, no frontmatter.", encoding="utf-8")
+    def test_from_config_allowlist_unknown_name_ignored(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+
+        global_skills_dir = tmp_path / "skills"
+        global_skills_dir.mkdir(parents=True)
+        (global_skills_dir / "alpha.md").write_text(
+            "---\nname: alpha\n---\n\nAlpha content.", encoding="utf-8"
+        )
+        (global_skills_dir / "beta.md").write_text(
+            "---\nname: beta\n---\n\nBeta content.", encoding="utf-8"
+        )
 
         config_file = tmp_path / "AGENTS.md"
-        config_file.write_text("---\nname: test\nmodel: gpt-4o\n---\n", encoding="utf-8")
+        config_file.write_text(
+            "---\nname: test\nmodel: gpt-4o\nskills:\n  - nonexistent\n---\n",
+            encoding="utf-8",
+        )
 
         agent = Agent.from_config(config_file)
 
-        assert agent.skills[0].name == "my-technique"
+        assert agent.skills == []
+
+    def test_from_config_subagent_has_own_allowlist(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+
+        global_skills_dir = tmp_path / "skills"
+        global_skills_dir.mkdir(parents=True)
+        (global_skills_dir / "alpha.md").write_text(
+            "---\nname: alpha\n---\n\nAlpha content.", encoding="utf-8"
+        )
+        (global_skills_dir / "beta.md").write_text(
+            "---\nname: beta\n---\n\nBeta content.", encoding="utf-8"
+        )
+
+        config_md = textwrap.dedent("""\
+            ---
+            name: parent
+            model: gpt-4o
+            subagents:
+              - name: child
+                model: gpt-4o-mini
+                skills:
+                  - alpha
+            ---
+        """)
+        config_file = tmp_path / "AGENTS.md"
+        config_file.write_text(config_md, encoding="utf-8")
+
+        agent = Agent.from_config(config_file)
+
+        assert [s.name for s in agent.skills] == ["alpha", "beta"]
+        assert [s.name for s in agent.subagents["child"].skills] == ["alpha"]
+
+    def test_from_config_toml_skills_overrides_frontmatter_skills(self, tmp_path: Path) -> None:
+        from sage.main_config import AgentOverrides, MainConfig
+
+        global_skills_dir = tmp_path / "skills"
+        global_skills_dir.mkdir(parents=True)
+        (global_skills_dir / "alpha.md").write_text(
+            "---\nname: alpha\n---\n\nAlpha content.", encoding="utf-8"
+        )
+        (global_skills_dir / "beta.md").write_text(
+            "---\nname: beta\n---\n\nBeta content.", encoding="utf-8"
+        )
+
+        config_file = tmp_path / "AGENTS.md"
+        config_file.write_text(
+            "---\nname: test\nmodel: gpt-4o\nskills:\n  - alpha\n---\n",
+            encoding="utf-8",
+        )
+
+        central = MainConfig(
+            skills_dir=str(global_skills_dir),
+            agents={"test": AgentOverrides(skills=["beta"])},
+        )
+        agent = Agent.from_config(config_file, central=central)
+
+        assert [s.name for s in agent.skills] == ["beta"]
 
 
 class TestAgentLogging:

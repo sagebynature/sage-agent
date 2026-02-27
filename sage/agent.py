@@ -18,7 +18,12 @@ if TYPE_CHECKING:
 from sage.exceptions import MaxTurnsExceeded, PermissionError as SagePermissionError, ToolError
 from sage.models import CompletionResult, Message, ToolCall, ToolSchema
 from sage.providers.litellm_provider import LiteLLMProvider
-from sage.skills.loader import Skill, load_skills_from_directory
+from sage.skills.loader import (
+    Skill,
+    filter_skills_by_names,
+    load_skills_from_directory,
+    resolve_skills_dir,
+)
 from sage.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
@@ -127,17 +132,28 @@ class Agent:
         if resolved.is_dir():
             resolved = resolved / "AGENTS.md"
         config = load_config(str(resolved), central=central)
-        return cls._from_agent_config(config, resolved.parent)
+        resolved_dir = resolve_skills_dir(central.skills_dir if central else None)
+        global_skills = load_skills_from_directory(resolved_dir) if resolved_dir else []
+        return cls._from_agent_config(config, resolved.parent, global_skills=global_skills)
 
     @classmethod
-    def _from_agent_config(cls, config: AgentConfig, base_dir: Path) -> Agent:
+    def _from_agent_config(
+        cls,
+        config: AgentConfig,
+        base_dir: Path,
+        global_skills: list[Skill] | None = None,
+    ) -> Agent:
         """Recursively build an agent (and subagents) from config."""
+        global_skills = global_skills or []
         subagents: dict[str, Agent] = {}
         for sub_config in config.subagents:
-            subagents[sub_config.name] = cls._from_agent_config(sub_config, base_dir)
+            subagents[sub_config.name] = cls._from_agent_config(
+                sub_config,
+                base_dir,
+                global_skills=global_skills,
+            )
 
-        skill_path = base_dir / "skills"
-        skills = load_skills_from_directory(skill_path) if skill_path.is_dir() else []
+        skills = filter_skills_by_names(global_skills, config.skills)
 
         # Build MCP clients from config.
         mcp_clients: list[MCPClient] = []
