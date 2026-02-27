@@ -497,7 +497,17 @@ class Agent:
             subagent_name,
             task[:120],
         )
-        return await self.subagents[subagent_name].run(task)
+        subagent = self.subagents[subagent_name]
+        try:
+            result = await subagent.run(task)
+        except KeyboardInterrupt:
+            raise  # Always propagate user interrupts
+        except BaseException as e:
+            if isinstance(e, (KeyboardInterrupt, SystemExit)):
+                raise
+            logger.error("Subagent '%s' crashed: %s", subagent.name, e, exc_info=True)
+            result = f"[Subagent Error] {subagent.name} failed: {type(e).__name__}: {e}"
+        return result
 
     # ── Operator overloads ──────────────────────────────────────────────
 
