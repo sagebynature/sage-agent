@@ -291,8 +291,15 @@ class Agent:
                     return f"No matches for: {query}"
                 return "\n".join(f"- {e.content}" for e in entries)
 
+            @_tool
+            async def memory_forget(memory_id: str) -> str:
+                """Forget/delete a specific memory entry by its ID."""
+                result = await memory.forget(memory_id)
+                return f"Memory {memory_id} {'deleted' if result else 'not found'}"
+
             agent.tool_registry.register(memory_store)
             agent.tool_registry.register(memory_recall)
+            agent.tool_registry.register(memory_forget)
 
         # Wire permission handler into tool registry.
         if permission_handler is not None:
