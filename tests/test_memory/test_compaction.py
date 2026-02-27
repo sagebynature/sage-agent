@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -287,3 +287,328 @@ class TestSystemPromptBulletFormat:
         system_prompt = call_args[0].content or ""
         # Check that the system prompt mentions bullet points
         assert "bullet" in system_prompt.lower() or "- " in system_prompt
+
+
+# ---------------------------------------------------------------------------
+# Task 17: multi_part_compact tests
+# ---------------------------------------------------------------------------
+
+
+class TestMultiPartCompactImportable:
+    def test_multi_part_compact_importable(self) -> None:
+        from sage.memory.compaction import multi_part_compact  # noqa: F401
+
+        assert callable(multi_part_compact)
+
+
+class TestSplitIntoChunks:
+    def test_split_into_chunks_importable(self) -> None:
+        from sage.memory.compaction import _split_into_chunks  # noqa: F401
+
+        assert callable(_split_into_chunks)
+
+    def test_split_into_chunks_single_chunk_when_small(self) -> None:
+        from sage.memory.compaction import _split_into_chunks
+
+        msgs = [_msg("user", "a" * 100), _msg("assistant", "b" * 100)]
+        chunks = _split_into_chunks(msgs, max_chunk_chars=1000)
+        assert len(chunks) == 1
+        assert chunks[0] == msgs
+
+    def test_split_into_chunks_splits_at_boundaries(self) -> None:
+        from sage.memory.compaction import _split_into_chunks
+
+        # Each message is 500 chars; max_chunk_chars=600 → each chunk holds 1 msg
+        msgs = [_msg("user", "x" * 500) for _ in range(4)]
+        chunks = _split_into_chunks(msgs, max_chunk_chars=600)
+        assert len(chunks) == 4
+        for chunk in chunks:
+            assert len(chunk) == 1
+
+    def test_split_into_chunks_groups_fitting_messages(self) -> None:
+        from sage.memory.compaction import _split_into_chunks
+
+        # Messages: 300, 300, 300 chars; max=650 → chunk1=[0,1], chunk2=[2]
+        msgs = [_msg("user", "y" * 300), _msg("assistant", "y" * 300), _msg("user", "y" * 300)]
+        chunks = _split_into_chunks(msgs, max_chunk_chars=650)
+        assert len(chunks) == 2
+        assert len(chunks[0]) == 2
+        assert len(chunks[1]) == 1
+
+    def test_split_into_chunks_empty_returns_single_chunk(self) -> None:
+        from sage.memory.compaction import _split_into_chunks
+
+        chunks = _split_into_chunks([], max_chunk_chars=1000)
+        assert chunks == [[]]
+
+    def test_split_into_chunks_none_content_treated_as_zero(self) -> None:
+        from sage.memory.compaction import _split_into_chunks
+
+        msgs = [Message(role="assistant", content=None), _msg("user", "hello")]
+        chunks = _split_into_chunks(msgs, max_chunk_chars=100)
+        # None content is 0 chars; both fit in one chunk
+        assert len(chunks) == 1
+
+
+class TestMultiPartCompactSmallHistory:
+    @pytest.mark.asyncio
+    async def test_small_history_single_pass(self) -> None:
+        """Messages fitting within one chunk → compact_messages called once."""
+        msgs = [_msg("user", "hi")]
+        with patch(
+            "sage.memory.compaction.compact_messages", new_callable=AsyncMock
+        ) as mock_compact:
+            mock_compact.return_value = [_msg("system", "- Summary")]
+            from sage.memory.compaction import multi_part_compact
+
+            provider = _make_provider()
+            await multi_part_compact(msgs, provider, max_chunk_chars=10000)
+            mock_compact.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_large_history_multiple_chunks(self) -> None:
+        """Messages exceeding max_chunk_chars → compact_messages called per chunk + final."""
+        # 3 messages of 500 chars each = 1500 total; max_chunk=600 → 3 chunks
+        msgs = [_msg("user", "x" * 500) for _ in range(3)]
+        call_count = 0
+
+        async def fake_compact(messages, provider, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return [_msg("system", f"summary-{call_count}")]
+
+        with patch("sage.memory.compaction.compact_messages", side_effect=fake_compact):
+            from sage.memory.compaction import multi_part_compact
+
+            provider = _make_provider()
+            await multi_part_compact(msgs, provider, max_chunk_chars=600)
+            # 3 chunk summaries + 1 final merge pass = 4 calls
+            assert call_count >= 4
+
+    @pytest.mark.asyncio
+    async def test_depth_limit_respected(self) -> None:
+        """Recursion stops at _depth >= MAX_DEPTH=3, falls back to compact_messages."""
+        msgs = [_msg("user", "x" * 500)]
+        call_count = 0
+
+        async def fake_compact(messages, provider, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            # Return a large merged message to encourage recursion
+            return [_msg("user", "x" * 500)]
+
+        with patch("sage.memory.compaction.compact_messages", side_effect=fake_compact):
+            from sage.memory.compaction import multi_part_compact
+
+            provider = _make_provider()
+            # Force recursion: pass _depth=3 directly (depth limit)
+            await multi_part_compact(msgs, provider, max_chunk_chars=100, _depth=3)
+            # At depth 3, should fall through to single compact_messages call
+            assert call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Task 18: emergency_drop tests
+# ---------------------------------------------------------------------------
+
+
+class TestEmergencyDropImportable:
+    def test_emergency_drop_importable(self) -> None:
+        from sage.memory.compaction import emergency_drop  # noqa: F401
+
+        assert callable(emergency_drop)
+
+
+class TestEmergencyDrop:
+    def test_system_message_preserved(self) -> None:
+        from sage.memory.compaction import emergency_drop
+
+        msgs = [
+            _msg("system", "You are helpful"),
+            _msg("user", "old question"),
+            _msg("assistant", "old answer"),
+            _msg("user", "latest question"),
+        ]
+        result = emergency_drop(msgs, keep_last_n=0)
+        roles = [m.role for m in result]
+        assert "system" in roles
+        assert result[0].content == "You are helpful"
+
+    def test_last_user_message_preserved(self) -> None:
+        from sage.memory.compaction import emergency_drop
+
+        msgs = [
+            _msg("user", "old question 1"),
+            _msg("assistant", "old answer 1"),
+            _msg("user", "latest question"),
+        ]
+        result = emergency_drop(msgs, keep_last_n=0)
+        contents = [m.content for m in result]
+        assert "latest question" in contents
+
+    def test_oldest_dropped_first(self) -> None:
+        from sage.memory.compaction import emergency_drop
+
+        msgs = [
+            _msg("user", "old 1"),
+            _msg("assistant", "old 2"),
+            _msg("user", "old 3"),
+            _msg("assistant", "old 4"),
+            _msg("user", "latest"),
+        ]
+        # keep_last_n=1 non-protected: should keep only 1 non-protected besides last user
+        result = emergency_drop(msgs, keep_last_n=1)
+        contents = [m.content for m in result]
+        # Latest user is always kept
+        assert "latest" in contents
+        # Oldest should be dropped
+        assert "old 1" not in contents
+
+    def test_keep_last_n_respected(self) -> None:
+        from sage.memory.compaction import emergency_drop
+
+        msgs = [
+            _msg("user", "old 1"),
+            _msg("assistant", "old 2"),
+            _msg("user", "old 3"),
+            _msg("assistant", "old 4"),
+            _msg("user", "latest"),
+        ]
+        result = emergency_drop(msgs, keep_last_n=2)
+        # latest user is protected; keep_last_n=2 non-protected kept
+        # non-protected: old 1, old 2, old 3, old 4 → keep last 2: old 3, old 4
+        # total: old 3, old 4, latest
+        assert len(result) == 3
+
+    def test_tool_results_preserved(self) -> None:
+        from sage.memory.compaction import emergency_drop
+
+        msgs = [
+            _msg("user", "old 1"),
+            Message(role="tool", content="tool result", tool_call_id="tc1"),
+            _msg("user", "latest"),
+        ]
+        result = emergency_drop(msgs, keep_last_n=0)
+        roles = [m.role for m in result]
+        assert "tool" in roles
+
+    def test_already_small_list_nothing_dropped(self) -> None:
+        from sage.memory.compaction import emergency_drop
+
+        msgs = [
+            _msg("system", "sys"),
+            _msg("user", "only user"),
+        ]
+        result = emergency_drop(msgs, keep_last_n=5)
+        assert len(result) == len(msgs)
+
+    def test_empty_list_returns_empty(self) -> None:
+        from sage.memory.compaction import emergency_drop
+
+        result = emergency_drop([], keep_last_n=5)
+        assert result == []
+
+    def test_multiple_system_messages_all_preserved(self) -> None:
+        from sage.memory.compaction import emergency_drop
+
+        msgs = [
+            _msg("system", "sys 1"),
+            _msg("system", "sys 2"),
+            _msg("user", "old"),
+            _msg("assistant", "old answer"),
+            _msg("user", "latest"),
+        ]
+        result = emergency_drop(msgs, keep_last_n=0)
+        system_contents = [m.content for m in result if m.role == "system"]
+        assert "sys 1" in system_contents
+        assert "sys 2" in system_contents
+
+
+# ---------------------------------------------------------------------------
+# Task 19: deterministic_trim tests
+# ---------------------------------------------------------------------------
+
+
+class TestDeterministicTrimImportable:
+    def test_deterministic_trim_importable(self) -> None:
+        from sage.memory.compaction import deterministic_trim  # noqa: F401
+
+        assert callable(deterministic_trim)
+
+
+class TestDeterministicTrim:
+    def test_trim_to_target(self) -> None:
+        from sage.memory.compaction import deterministic_trim
+
+        msgs = [_msg("user" if i % 2 == 0 else "assistant", f"msg {i}") for i in range(31)]
+        result = deterministic_trim(msgs, target_count=10)
+        assert len(result) == 10
+
+    def test_system_preserved_in_trim(self) -> None:
+        from sage.memory.compaction import deterministic_trim
+
+        msgs = [_msg("system", "sys")] + [
+            _msg("user" if i % 2 == 0 else "assistant", f"msg {i}") for i in range(30)
+        ]
+        result = deterministic_trim(msgs, target_count=10)
+        # System message must be in result
+        assert any(m.role == "system" for m in result)
+        assert result[0].role == "system"
+
+    def test_already_small_unchanged(self) -> None:
+        from sage.memory.compaction import deterministic_trim
+
+        msgs = [_msg("user", f"msg {i}") for i in range(5)]
+        result = deterministic_trim(msgs, target_count=10)
+        assert result is msgs
+
+    def test_exactly_at_target_unchanged(self) -> None:
+        from sage.memory.compaction import deterministic_trim
+
+        msgs = [_msg("user", f"msg {i}") for i in range(10)]
+        result = deterministic_trim(msgs, target_count=10)
+        assert result is msgs
+
+    def test_target_count_includes_system(self) -> None:
+        from sage.memory.compaction import deterministic_trim
+
+        msgs = [_msg("system", "sys")] + [
+            _msg("user" if i % 2 == 0 else "assistant", f"msg {i}") for i in range(30)
+        ]
+        result = deterministic_trim(msgs, target_count=10)
+        # Total kept = target_count (system + non-system)
+        assert len(result) == 10
+
+    def test_oldest_non_system_dropped_first(self) -> None:
+        from sage.memory.compaction import deterministic_trim
+
+        msgs = [_msg("user", f"msg {i}") for i in range(20)]
+        result = deterministic_trim(msgs, target_count=5)
+        contents = [m.content for m in result]
+        # Most recent 5 should be kept
+        assert "msg 19" in contents
+        assert "msg 15" in contents
+        # Oldest should be dropped
+        assert "msg 0" not in contents
+
+    def test_no_non_system_to_drop_when_all_system(self) -> None:
+        from sage.memory.compaction import deterministic_trim
+
+        msgs = [_msg("system", f"sys {i}") for i in range(5)]
+        # target_count=10 → already ≤ target, return unchanged
+        result = deterministic_trim(msgs, target_count=10)
+        assert result is msgs
+
+    def test_trim_preserves_message_order(self) -> None:
+        from sage.memory.compaction import deterministic_trim
+
+        msgs = [_msg("system", "sys")] + [
+            _msg("user" if i % 2 == 0 else "assistant", f"msg {i}") for i in range(30)
+        ]
+        result = deterministic_trim(msgs, target_count=5)
+        # Result should be in the original order (system first)
+        assert result[0].role == "system"
+        # Remaining should be the last 4 non-system in order
+        non_sys = [m for m in result if m.role != "system"]
+        contents = [m.content for m in non_sys]
+        assert contents == ["msg 26", "msg 27", "msg 28", "msg 29"]

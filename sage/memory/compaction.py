@@ -127,6 +127,109 @@ async def compact_messages(
     return compacted
 
 
+async def multi_part_compact(
+    messages: list[Message],
+    provider: "ProviderProtocol",
+    *,
+    max_chunk_chars: int = 12000,
+    _depth: int = 0,
+) -> list[Message]:
+    """Multi-part summarization: split large histories, summarize chunks, merge.
+
+    If total content <= max_chunk_chars: delegate to compact_messages() (single-pass).
+    Otherwise: split → summarize each chunk → merge → final compact. Max depth 3.
+    """
+    MAX_DEPTH = 3
+    total_chars = sum(len(m.content or "") for m in messages)
+
+    if total_chars <= max_chunk_chars or _depth >= MAX_DEPTH:
+        return await compact_messages(messages, provider)
+
+    chunks = _split_into_chunks(messages, max_chunk_chars)
+    summaries: list[Message] = []
+    for chunk in chunks:
+        chunk_result = await compact_messages(chunk, provider)
+        summaries.extend(chunk_result)
+
+    merged_chars = sum(len(m.content or "") for m in summaries)
+    if merged_chars > max_chunk_chars and _depth < MAX_DEPTH:
+        return await multi_part_compact(
+            summaries, provider, max_chunk_chars=max_chunk_chars, _depth=_depth + 1
+        )
+    return await compact_messages(summaries, provider)
+
+
+def _split_into_chunks(messages: list[Message], max_chunk_chars: int) -> list[list[Message]]:
+    """Split messages into chunks of <= max_chunk_chars at message boundaries."""
+    chunks: list[list[Message]] = []
+    current_chunk: list[Message] = []
+    current_size = 0
+    for msg in messages:
+        msg_size = len(msg.content or "")
+        if current_chunk and current_size + msg_size > max_chunk_chars:
+            chunks.append(current_chunk)
+            current_chunk = [msg]
+            current_size = msg_size
+        else:
+            current_chunk.append(msg)
+            current_size += msg_size
+    if current_chunk:
+        chunks.append(current_chunk)
+    return chunks if chunks else [messages]
+
+
+def emergency_drop(messages: list[Message], *, keep_last_n: int = 5) -> list[Message]:
+    """Nuclear fallback: drop oldest messages preserving system/last-user/tool-results.
+
+    Never drops system messages, the most recent user message, or tool results.
+    Keeps protected messages + last keep_last_n non-protected messages.
+    """
+    if not messages:
+        return messages
+    last_user_idx: int | None = None
+    for i in range(len(messages) - 1, -1, -1):
+        if messages[i].role == "user":
+            last_user_idx = i
+            break
+    protected: set[int] = set()
+    for i, msg in enumerate(messages):
+        if msg.role == "system":
+            protected.add(i)
+        if i == last_user_idx:
+            protected.add(i)
+        if getattr(msg, "tool_call_id", None) or msg.role == "tool":
+            protected.add(i)
+    non_protected = [(i, msg) for i, msg in enumerate(messages) if i not in protected]
+    keep_non_protected = {i for i, _ in non_protected[-keep_last_n:]} if non_protected else set()
+    keep = protected | keep_non_protected
+    result = [msg for i, msg in enumerate(messages) if i in keep]
+    dropped = len(messages) - len(result)
+    if dropped > 0:
+        logger.warning("Emergency drop: removed %d messages, kept %d", dropped, len(result))
+    return result
+
+
+def deterministic_trim(messages: list[Message], *, target_count: int = 20) -> list[Message]:
+    """Simple trim: drop oldest non-system messages to reach target_count.
+
+    Preserves system messages. No LLM calls.
+    """
+    if len(messages) <= target_count:
+        return messages
+    system_msgs = [m for m in messages if m.role == "system"]
+    non_system = [m for m in messages if m.role != "system"]
+    keep_count = max(0, target_count - len(system_msgs))
+    kept_non_system = non_system[-keep_count:] if keep_count > 0 else []
+    kept_set = {id(m) for m in system_msgs + kept_non_system}
+    result = [m for m in messages if id(m) in kept_set]
+    dropped = len(messages) - len(result)
+    if dropped > 0:
+        logger.info(
+            "Deterministic trim: reduced from %d to %d messages", len(messages), len(result)
+        )
+    return result
+
+
 def prune_tool_outputs(
     messages: list[Message],
     max_chars: int = 5000,
