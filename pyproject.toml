@@ -62,7 +62,7 @@ packages = ["sage"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "--cov=sage --cov-report=term-missing  --cov-report=xml"
+addopts = "--cov=sage --cov-report=term-missing  --cov-report=xml --import-mode=importlib"
 
 [tool.coverage.run]
 source = ["sage"]

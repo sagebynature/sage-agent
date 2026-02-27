@@ -15,6 +15,7 @@ from sage.main_config import load_main_config, resolve_and_apply_env, resolve_ma
 from sage.tracing import setup_tracing, span
 
 if TYPE_CHECKING:
+    from sage.coordination.cancellation import CancellationToken
     from sage.main_config import MainConfig
 from sage.exceptions import MaxTurnsExceeded, PermissionError as SagePermissionError, ToolError
 from sage.models import CompletionResult, Message, ToolCall, ToolSchema
@@ -533,15 +534,38 @@ class Agent:
 
         return messages
 
+    def _is_ask_gated(self, name: str) -> bool:
+        """Return True if the tool requires interactive approval (ask policy)."""
+        try:
+            handler = self.tool_registry._permission_handler
+            if handler is None:
+                return False
+            from sage.permissions.base import PermissionAction
+            from sage.permissions.policy import TOOL_TO_CATEGORY
+
+            category = TOOL_TO_CATEGORY.get(name)
+            if category is None:
+                return False
+            matched_action = getattr(handler, "default", PermissionAction.ASK)
+            for rule in getattr(handler, "rules", []):
+                if getattr(rule, "category", None) == category:
+                    matched_action = rule.action
+            return matched_action == PermissionAction.ASK
+        except Exception:
+            return False
+
     async def _execute_tool_calls(
-        self, tool_calls: list[ToolCall], messages: list[Message]
+        self,
+        tool_calls: list[ToolCall],
+        messages: list[Message],
+        token: "CancellationToken | None" = None,
     ) -> None:
         """Execute tool calls and append result messages.
 
-        When parallel_tool_execution is enabled (default), all calls run
-        concurrently via asyncio.gather, preserving the original call order in
-        the results. Errors in individual tools are captured as error messages
-        so other tools in the same turn can still succeed.
+        When parallel_tool_execution is enabled (default), non-ask-gated calls
+        run concurrently via asyncio.gather. Ask-gated tools execute sequentially
+        so approval prompts are handled one at a time. If *token* is provided and
+        cancelled, pending sequential calls are skipped.
         """
         tool_names = [tc.name for tc in tool_calls]
         logger.debug("Dispatching tools: %s", tool_names)
@@ -580,23 +604,39 @@ class Agent:
                 logger.error("Tool '%s' raised unexpected error: %s", tc.name, exc)
                 return tc.id, f"Error executing tool '{tc.name}': {exc}"
 
-        if self.parallel_tool_execution:
-            raw = await asyncio.gather(
-                *(_safe_execute(tc) for tc in tool_calls),
-                return_exceptions=True,
-            )
-            # Re-raise any BaseException (e.g. SagePermissionError, CancelledError).
-            # _safe_execute converts Exception-typed failures to error strings, so
-            # anything that lands here as an exception is genuinely fatal.
-            for item in raw:
-                if isinstance(item, BaseException):
-                    raise item
-            pairs = cast(list[tuple[str, str]], raw)
-        else:
-            pairs = [await _safe_execute(tc) for tc in tool_calls]
+        # Split into parallel (allow/deny) and sequential (ask-gated) groups.
+        parallel_tcs = [tc for tc in tool_calls if not self._is_ask_gated(tc.name)]
+        ask_tcs = [tc for tc in tool_calls if self._is_ask_gated(tc.name)]
 
-        for tc, (call_id, result_text) in zip(tool_calls, pairs):
-            messages.append(Message(role="tool", content=result_text, tool_call_id=call_id))
+        pairs: list[tuple[str, str]] = []
+
+        # Execute non-ask-gated tools (parallel or sequential per flag).
+        if parallel_tcs:
+            if self.parallel_tool_execution:
+                raw = await asyncio.gather(
+                    *(_safe_execute(tc) for tc in parallel_tcs),
+                    return_exceptions=True,
+                )
+                for item in raw:
+                    if isinstance(item, BaseException):
+                        raise item
+                pairs.extend(cast(list[tuple[str, str]], raw))
+            else:
+                for tc in parallel_tcs:
+                    pairs.append(await _safe_execute(tc))
+
+        # Execute ask-gated tools sequentially, respecting cancellation.
+        for tc in ask_tcs:
+            if token is not None and token.is_cancelled:
+                logger.info("Cancellation token set — skipping remaining ask-gated tools")
+                break
+            pairs.append(await _safe_execute(tc))
+
+        # Reassemble in original order and append to messages.
+        id_to_result = dict(pairs)
+        for tc in tool_calls:
+            result_text = id_to_result.get(tc.id, f"Tool '{tc.name}' was skipped (cancelled)")
+            messages.append(Message(role="tool", content=result_text, tool_call_id=tc.id))
 
     async def _post_loop_cleanup(self, input: str, final_output: str) -> None:
         """Append to history, compact history, update token usage, store memory."""
