@@ -44,11 +44,58 @@ class SandboxConfig(BaseModel):
     network: bool = True
 
 
+class CredentialScrubConfig(BaseModel):
+    """Configuration for the credential scrubbing hook."""
+
+    enabled: bool = False
+    patterns: list[str] = Field(default_factory=list)
+    allowlist: list[str] = Field(default_factory=list)
+
+
+class ClassificationRuleConfig(BaseModel):
+    """A single classification rule mapping a pattern to a model."""
+
+    pattern: str
+    model: str
+    priority: int = 0
+
+
+class QueryClassificationConfig(BaseModel):
+    """Configuration for the query classification hook."""
+
+    rules: list[ClassificationRuleConfig] = Field(default_factory=list)
+
+
+class ResearchConfig(BaseModel):
+    """Configuration for the pre-response research phase."""
+
+    enabled: bool = False
+    max_sources: int = 3
+    timeout: float = 10.0
+
+
+class FollowThroughConfig(BaseModel):
+    """Configuration for the follow-through guardrail hook."""
+
+    enabled: bool = False
+    patterns: list[str] = Field(
+        default_factory=lambda: ["I cannot", "I'm unable", "I don't have access"]
+    )
+
+
+class SessionConfig(BaseModel):
+    """Configuration for session lifecycle management."""
+
+    enabled: bool = False
+
+
 class MemoryConfig(BaseModel):
     """Configuration for the agent memory backend."""
 
-    backend: str = "sqlite"
+    backend: Literal["sqlite", "file"] = "sqlite"
     path: str = "memory.db"
+    auto_load: bool = False
+    auto_load_top_k: int = 5
     embedding: str = "text-embedding-3-large"
     compaction_threshold: int = 50
     vector_search: Literal["auto", "sqlite_vec", "numpy"] = "auto"
@@ -176,6 +223,11 @@ class AgentConfig(BaseModel):
     tracing: TracingConfig | None = None
     parallel_tool_execution: bool = True
     tool_timeout: float | None = None
+    credential_scrubbing: CredentialScrubConfig | None = None
+    query_classification: QueryClassificationConfig | None = None
+    research: ResearchConfig | None = None
+    follow_through: FollowThroughConfig | None = None
+    session: SessionConfig | None = None
 
     @field_validator("subagents", mode="before")
     @classmethod
