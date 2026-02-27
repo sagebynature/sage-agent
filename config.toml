@@ -100,7 +100,7 @@ max_tokens = 8192
 
 # ── Agent-only fields (not available in [defaults]) ──────────────────────────
 # memory: persistent memory backend configuration
-# skills_dir: path to a directory of skill files
+# skills: optional list of skill names to load for this agent (allowlist)
 
 [agents.researcher.memory]
 backend = "sqlite"
