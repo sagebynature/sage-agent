@@ -44,3 +44,7 @@ class MaxTurnsExceeded(SageError):
         self.turns = turns
         self.last_content = last_content
         super().__init__(f"Agent reached max_turns={turns} without producing a final response.")
+
+
+class CancelledError(SageError):
+    """Raised when an operation is cancelled via a CancellationToken."""
