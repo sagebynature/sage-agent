@@ -199,6 +199,7 @@ async def main() -> None:
     # Load agent from config — use demo-local config.toml so skills_dir
     # points to examples/skills_demo/skills/ instead of global ~/.agents/skills/
     demo_dir = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(demo_dir)  # ensure relative paths in SKILL.md resolve from demo dir
     os.environ.setdefault("SAGE_CONFIG_PATH", os.path.join(demo_dir, "config.toml"))
     agent = Agent.from_config(os.path.join(demo_dir, "AGENTS.md"))
     # Override model if specified
