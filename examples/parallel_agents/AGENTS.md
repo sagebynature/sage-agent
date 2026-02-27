@@ -1,6 +1,9 @@
 ---
 name: orchestrator
 model: azure_ai/gpt-4o
+permission:
+  read: allow
+  shell: allow
 subagents:
   - research_agent
   - summarize_agent
