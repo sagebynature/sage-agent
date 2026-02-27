@@ -81,9 +81,34 @@ SQLite-backed with litellm embeddings. Zero-config persistent recall across sess
 
 Control what tools can do via a single `permission:` block in YAML frontmatter. Each permission category (`read`, `edit`, `shell`, `web`, `memory`) maps to a set of built-in tools. Set a category to `allow`, `deny`, or `ask`, or use pattern matching for fine-grained shell control. When set to `deny`, tools are invisible to the LLM. Interactive prompts in the TUI when policy is `ask`.
 
+### Hook System
+
+A lifecycle event bus for intercepting and extending agent behavior without modifying core code. Register async handlers against named `HookEvent` values (`PRE_LLM_CALL`, `POST_LLM_CALL`, `POST_TOOL_EXECUTE`, `ON_DELEGATION`, `ON_COMPACTION`, …). Built-in hooks cover credential scrubbing, query-based model routing, bail-out retry (follow-through), and automatic memory injection. Hooks that raise never crash the agent — errors are logged and swallowed.
+
+```python
+from sage.hooks.registry import HookRegistry
+from sage.hooks.base import HookEvent
+
+hr = HookRegistry()
+
+async def log_calls(event, data):
+    print(f"{event}: {data.get('model')}")
+
+hr.register(HookEvent.PRE_LLM_CALL, log_calls)
+agent = Agent(name="a", model="gpt-4o", hook_registry=hr)
+```
+
+### Coordination
+
+Agent-to-agent messaging and lifecycle primitives for multi-agent systems:
+
+- **MessageBus** — in-memory per-agent inboxes with TTL expiry, idempotency, overflow protection, and broadcast delivery
+- **CancellationScope** — propagate cancel signals across async tasks; child scopes inherit parent cancellation
+- **SessionManager** — create, track, and destroy concurrent agent sessions with typed metadata
+
 ### Context Management
 
-Token-aware context window management. Automatic compaction when approaching the model's limit, configurable reserve tokens, and optional pruning of large tool outputs.
+Token-aware context window management. Automatic compaction when approaching the model's limit — tries LLM summarization first, then emergency drop, then deterministic trim as a guaranteed last resort. Configurable reserve tokens and optional pruning of large tool outputs.
 
 ### TUI
 
@@ -211,10 +236,12 @@ extensions:
   - myapp.tools                       # Your own tools (module path)
 
 memory:
-  backend: sqlite
+  backend: sqlite                    # "sqlite" (default) or "file"
   path: memory.db
   embedding: text-embedding-3-large
   compaction_threshold: 50
+  auto_load: false                   # Auto-inject recalled memories pre-LLM-call
+  auto_load_top_k: 5                 # How many memories to inject
 
 subagents:
   - research_agent                   # Directory containing AGENTS.md
@@ -239,6 +266,31 @@ context:
 model_params:
   temperature: 0.7
   max_tokens: 2048
+
+# Hook-driven features (all optional)
+credential_scrubbing:
+  enabled: true
+  patterns: ["sk-.*", "Bearer .*"]
+  allowlist: ["sk-test"]
+
+query_classification:
+  rules:
+    - keywords: ["python", "code"]
+      patterns: []
+      priority: 1
+      target_model: gpt-4o
+
+follow_through:
+  enabled: true
+  patterns: ["I cannot", "I'm unable"]
+
+research:
+  enabled: true
+  max_sources: 5
+  timeout: 15.0
+
+session:
+  enabled: true
 ---
 
 You are a helpful AI assistant.
@@ -269,20 +321,24 @@ Override priority: **main config defaults < per-agent overrides < frontmatter**.
 
 ```
 sage/
-  agent.py          # Core Agent class (run loop, delegation)
+  agent.py          # Core Agent class (run loop, delegation, hook emission)
   config.py         # Markdown frontmatter loading (Pydantic)
   models.py         # Message, ToolCall, ToolSchema, Usage, etc.
   exceptions.py     # SageError, ConfigError, ProviderError, ToolError
   frontmatter.py    # YAML frontmatter parser
   main_config.py    # TOML main config support
+  research.py       # Pre-response research system
   providers/        # ProviderProtocol + LiteLLMProvider
-  tools/            # @tool decorator, ToolRegistry, builtins, file/web tools
+  tools/            # @tool decorator, ToolRegistry, ToolDispatcher, builtins
   skills/           # Skill loader (markdown-based reusable capabilities)
   orchestrator/     # Orchestrator (parallel, race) + Pipeline (>>)
-  memory/           # MemoryProtocol, SQLiteMemory, embeddings, compaction
+  memory/           # MemoryProtocol, SQLiteMemory, FileMemory, compaction
+  hooks/            # HookRegistry, HookEvent, built-in hooks
+  coordination/     # MessageBus, CancellationScope, SessionManager
+  parsing/          # Multi-format tool call parser, JSON repair
   mcp/              # MCPClient + MCPServer
   permissions/      # PermissionProtocol, policy rules, interactive prompts
-  context/          # Token-aware context budget and compaction
+  context/          # Token-aware context budget, fallback table
   git/              # GitSnapshot (snapshot/restore capability)
   cli/              # Click CLI + Textual TUI
 ```

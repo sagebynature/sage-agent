@@ -8,13 +8,15 @@
 4. [Tool System](#4-tool-system)
 5. [Skills System](#5-skills-system)
 6. [Memory System](#6-memory-system)
-7. [Orchestration](#7-orchestration)
-8. [Provider System](#8-provider-system)
-9. [Permissions System](#9-permissions-system)
-10. [Configuration System](#10-configuration-system)
-11. [CLI & Entry Points](#11-cli--entry-points)
-12. [Data Models](#12-data-models)
-13. [Complete Examples](#13-complete-examples)
+7. [Hook System](#7-hook-system)
+8. [Coordination](#8-coordination)
+9. [Orchestration](#9-orchestration)
+10. [Provider System](#10-provider-system)
+11. [Permissions System](#11-permissions-system)
+12. [Configuration System](#12-configuration-system)
+13. [CLI & Entry Points](#13-cli--entry-points)
+14. [Data Models](#14-data-models)
+15. [Complete Examples](#15-complete-examples)
 
 ---
 
@@ -39,12 +41,13 @@ Agent               <- Core orchestration loop (sage/agent.py)
 
 ```
 sage/
-|-- agent.py                 # Core Agent class (761 lines)
-|-- config.py                # Agent config loading/validation (289 lines)
+|-- agent.py                 # Core Agent class — run loop, hooks, compaction chain
+|-- config.py                # Agent config loading/validation (Pydantic)
 |-- models.py                # Pydantic data models
 |-- main_config.py           # TOML-based main config system
 |-- frontmatter.py           # YAML frontmatter parser
 |-- exceptions.py            # Exception hierarchy
+|-- research.py              # Pre-response research system (ResearchTrigger, run_research)
 |-- __init__.py              # Public API exports
 |-- cli/
 |   |-- main.py              # Click CLI commands
@@ -53,6 +56,7 @@ sage/
 |   |-- base.py              # ToolBase abstract class
 |   |-- decorator.py         # @tool decorator
 |   |-- registry.py          # ToolRegistry dispatch
+|   |-- dispatcher.py        # ToolDispatcher — parallel/sequential with timeout isolation
 |   |-- builtins.py          # shell, file_read, file_write, http_request, memory_store, memory_recall
 |   |-- file_tools.py        # file_edit
 |   |-- web_tools.py         # web_search, web_fetch
@@ -70,7 +74,24 @@ sage/
 |   |-- base.py              # MemoryProtocol
 |   |-- embedding.py         # Embedding generation
 |   |-- sqlite_backend.py    # SQLite + vector search
-|   +-- compaction.py        # History compaction
+|   |-- file_backend.py      # File-based memory backend (JSON lines)
+|   +-- compaction.py        # compact_messages, multi_part_compact, emergency_drop, deterministic_trim
+|-- hooks/
+|   |-- base.py              # HookEvent enum, HookHandler protocol
+|   |-- registry.py          # HookRegistry — emit_void, emit_modifying
+|   +-- builtin/
+|       |-- credential_scrubber.py  # POST_TOOL_EXECUTE — redact secrets from tool outputs
+|       |-- query_classifier.py     # PRE_LLM_CALL — route queries to different models
+|       |-- follow_through.py       # POST_LLM_CALL — detect and retry bail-out phrases
+|       +-- auto_memory.py          # PRE_LLM_CALL — inject recalled memories automatically
+|-- coordination/
+|   |-- messages.py          # MessageEnvelope, ReplyEnvelope typed message structs
+|   |-- bus.py               # MessageBus — per-agent inboxes with TTL + idempotency
+|   |-- cancellation.py      # CancellationScope — propagate cancel across async tasks
+|   +-- session.py           # SessionManager, SessionState — session lifecycle
+|-- parsing/
+|   |-- tool_calls.py        # ChainParser — OpenAI JSON, XML, markdown, key-value formats
+|   +-- json_repair.py       # Heuristic JSON fixer for malformed LLM output
 |-- mcp/
 |   |-- client.py            # MCP client
 |   +-- server.py            # MCP server
@@ -79,7 +100,8 @@ sage/
 |   |-- policy.py            # Pattern-matching policy
 |   +-- interactive.py       # Interactive prompting
 +-- context/
-    +-- token_budget.py      # Token budget management
+    |-- token_budget.py      # Token budget management
+    +-- fallback_table.py    # Static context-window size table (60+ models)
 ```
 
 ### Execution Flow
@@ -92,20 +114,32 @@ Agent.run(input)
     |
     |-- Initialize MCP servers (first run only)
     |-- Initialize memory backend (first run only)
-    |-- Recall relevant memories
+    |-- Recall relevant memories (or via auto_memory hook)
     |-- Build messages: [system + skills + memory + history + user]
     |
     |-- FOR turn in range(max_turns):
+    |   |-- Emit PRE_LLM_CALL hook (model, messages, tool_schemas)
     |   |-- Call provider.complete(messages, tools)
+    |   |-- Emit POST_LLM_CALL hook (response)
     |   |-- If no tool_calls -> DONE (return content)
-    |   +-- For each tool_call:
+    |   +-- For each tool_call (parallel if parallel_tool_execution=true):
     |       |-- Permission check
     |       |-- Execute via ToolRegistry or MCPClient
+    |       |-- Emit POST_TOOL_EXECUTE hook (tool_name, arguments, result)
     |       +-- Append tool result to messages
     |
     |-- Store conversation to memory
-    |-- Maybe compact history (token-aware)
+    |-- Maybe compact history (token-aware):
+    |       1. compact_messages (LLM summarization)
+    |       2. emergency_drop (keep last N) — fallback
+    |       3. deterministic_trim (slice to target) — always succeeds
+    |-- Emit ON_COMPACTION hook (strategy, before_count, after_count)
     +-- Return final output
+
+Agent.delegate(agent_name, task)
+    |-- Emit ON_DELEGATION hook (target, input)
+    |-- subagent.run(task)  [crash-isolated; returns error string on failure]
+    +-- Return result
 ```
 
 ---
@@ -171,6 +205,11 @@ The parser splits on `---` delimiters, extracts the YAML block via `yaml.safe_lo
 | `parallel_tool_execution` | `bool` | `true` | Run independent tool calls concurrently via `asyncio.gather` |
 | `tool_timeout` | `float \| null` | `null` | Default timeout (seconds) for all tool calls; per-tool `@tool(timeout=N)` takes precedence |
 | `tracing` | `TracingConfig` | `None` | OpenTelemetry tracing configuration (requires `pip install sage-agent[tracing]`) |
+| `credential_scrubbing` | `CredentialScrubConfig` | `None` | Redact secrets from tool outputs via regex patterns and allowlist |
+| `query_classification` | `QueryClassificationConfig` | `None` | Route queries to different models based on keyword/regex rules |
+| `follow_through` | `FollowThroughConfig` | `None` | Detect LLM bail-out phrases and trigger retries |
+| `research` | `ResearchConfig` | `None` | Pre-response research phase configuration |
+| `session` | `SessionConfig` | `None` | Session lifecycle management |
 
 *`model` can be inherited from main config defaults.
 
@@ -243,10 +282,12 @@ subagents:
 
 ```yaml
 memory:
-  backend: sqlite                        # Backend type (only "sqlite" currently)
-  path: memory.db                        # Database file path
+  backend: sqlite                        # "sqlite" (default) or "file" (JSON-lines flat file)
+  path: memory.db                        # Database file path (or .jsonl path for file backend)
   embedding: text-embedding-3-large      # Embedding model (litellm format)
   compaction_threshold: 50               # Messages before compaction triggers
+  auto_load: false                       # Inject recalled memories as system message before each LLM call
+  auto_load_top_k: 5                     # How many memories to inject when auto_load is true
   vector_search: auto                    # "auto" | "sqlite_vec" | "numpy"
                                          # auto: use sqlite-vec if available, numpy fallback
                                          # sqlite_vec: require extension (pip install sage-agent[vec])
@@ -258,6 +299,10 @@ memory:
   min_exchange_length: 100               # Minimum chars to store (length filter only)
   relevance_threshold: 0.5              # Min LLM score to store (llm filter only, 0.0–1.0)
 ```
+
+**Backends:**
+- `sqlite` (default) — SQLite database with optional `sqlite-vec` ANN search; falls back to numpy cosine similarity
+- `file` — JSON-lines flat file (`FileMemory`); simpler, no database; suitable for lightweight or read-only deployments
 
 ### MCP Server Configuration
 
@@ -713,11 +758,191 @@ entries = await memory.recall("How do decorators work?", limit=5)
 
 1. **Recall**: Before each `run()`, memories relevant to the input are recalled and prepended as a system message
 2. **Store**: After each `run()`, the user-assistant exchange is stored: `"User: {input}\nAssistant: {output}"`
-3. **Compaction**: When history grows too large, older messages are summarized
+3. **Compaction**: When history grows too large, the compaction chain runs (see Agent section)
 
 ---
 
-## 7. Orchestration
+## 7. Hook System
+
+Hooks let you intercept and extend agent behavior at well-defined lifecycle points without modifying core code. Every hook is async; errors are caught and logged without crashing the agent.
+
+### HookEvent (`sage/hooks/base.py`)
+
+```python
+class HookEvent(str, enum.Enum):
+    PRE_LLM_CALL       = "pre_llm_call"       # before provider.complete()
+    POST_LLM_CALL      = "post_llm_call"       # after provider.complete()
+    PRE_TOOL_EXECUTE   = "pre_tool_execute"    # before tool dispatch
+    POST_TOOL_EXECUTE  = "post_tool_execute"   # after tool dispatch
+    ON_DELEGATION      = "on_delegation"       # before subagent.run()
+    ON_COMPACTION      = "on_compaction"       # after history compaction
+    PRE_MEMORY_RECALL  = "pre_memory_recall"
+    POST_MEMORY_STORE  = "post_memory_store"
+    PRE_COMPACTION     = "pre_compaction"
+    POST_COMPACTION    = "post_compaction"
+```
+
+### HookRegistry (`sage/hooks/registry.py`)
+
+```python
+from sage.hooks.registry import HookRegistry
+from sage.hooks.base import HookEvent
+
+hr = HookRegistry()
+
+# Void handler (side effects only — runs in parallel with other void handlers)
+async def log_calls(event: HookEvent, data: dict) -> None:
+    print(f"[{event}] model={data.get('model')}")
+
+# Modifying handler (can mutate data — runs sequentially, receives prior output)
+async def reroute(event: HookEvent, data: dict) -> dict | None:
+    if "python" in str(data.get("messages", "")):
+        data["model"] = "gpt-4o"
+        return data
+    return None  # no change
+
+hr.register(HookEvent.PRE_LLM_CALL, log_calls)
+hr.register(HookEvent.PRE_LLM_CALL, reroute)
+
+agent = Agent(name="a", model="gpt-4o", hook_registry=hr)
+```
+
+**Emission modes:**
+- `emit_void(event, data)` — fires all registered handlers in parallel (`asyncio.gather`); return values are ignored
+- `emit_modifying(event, data)` — fires handlers sequentially; each handler receives the (possibly mutated) output of the previous one; returning `None` passes data unchanged
+
+### Built-in Hooks
+
+#### Credential Scrubbing (`sage/hooks/builtin/credential_scrubber.py`)
+
+Redacts secrets from tool outputs on `POST_TOOL_EXECUTE`:
+
+```yaml
+credential_scrubbing:
+  enabled: true
+  patterns: ["sk-[A-Za-z0-9]{20,}", "Bearer [A-Za-z0-9._-]+"]
+  allowlist: ["sk-test"]          # substrings that are never redacted
+```
+
+#### Query Classification (`sage/hooks/builtin/query_classifier.py`)
+
+Routes queries to different models on `PRE_LLM_CALL`:
+
+```yaml
+query_classification:
+  rules:
+    - keywords: ["python", "typescript"]
+      patterns: [".*code.*review.*"]
+      priority: 10
+      target_model: gpt-4o
+    - keywords: ["summarize", "tldr"]
+      patterns: []
+      priority: 5
+      target_model: gpt-4o-mini
+```
+
+Rules are sorted by `priority` descending; first match wins.
+
+#### Follow-Through Guardrail (`sage/hooks/builtin/follow_through.py`)
+
+Detects bail-out phrases in assistant responses and requests a retry on `POST_LLM_CALL`:
+
+```yaml
+follow_through:
+  enabled: true
+  patterns: ["I cannot", "I'm unable", "I don't have access"]
+  # max_retries defaults to 2 — set via code if needed
+```
+
+Default bail-out patterns: `"I can't/cannot do/perform/execute"`, `"I'm unable to"`, `"I don't have the ability/access/permission"`, `"Let me know if you'd like me to"`, `"Would you like me to"`, `"I cannot directly"`.
+
+#### Auto Memory (`sage/hooks/builtin/auto_memory.py`)
+
+Injects recalled memories as a system message before each LLM call, when `auto_load: true` is set in the memory config:
+
+```yaml
+memory:
+  backend: sqlite
+  path: memory.db
+  auto_load: true
+  auto_load_top_k: 5
+```
+
+---
+
+## 8. Coordination
+
+Primitives for multi-agent coordination and session management.
+
+### MessageBus (`sage/coordination/bus.py`)
+
+```python
+from sage.coordination.bus import MessageBus
+from sage.coordination.messages import MessageEnvelope
+
+bus = MessageBus(max_inbox_size=100, ttl_seconds=300.0)
+
+msg = MessageEnvelope(
+    sender="orchestrator",
+    recipient="worker",
+    topic="task",
+    payload={"job": "summarize doc X"},
+)
+
+# Send (returns False if duplicate — idempotency guard)
+delivered = bus.send(msg)
+
+# Receive up to 10 live (non-expired) messages
+msgs = bus.receive("worker", limit=10)
+
+# Broadcast to all known inboxes
+count = bus.broadcast(msg)
+
+# Peek count without consuming
+pending = bus.peek("worker")
+```
+
+Messages expire after `ttl_seconds` and are moved to a dead-letter collection.
+
+### CancellationScope (`sage/coordination/cancellation.py`)
+
+```python
+from sage.coordination.cancellation import CancellationScope
+
+root = CancellationScope()
+child = root.child()
+
+# Cancel propagates to child
+root.cancel()
+assert child.is_cancelled
+
+# check() raises asyncio.CancelledError if cancelled
+try:
+    child.check()
+except asyncio.CancelledError:
+    pass
+```
+
+### SessionManager (`sage/coordination/session.py`)
+
+```python
+from sage.coordination.session import SessionManager
+
+mgr = SessionManager()
+
+session = mgr.create("my-agent", metadata={"user_id": "u123"})
+print(session.id, session.status)  # "active"
+
+mgr.get(session.id)                # lookup by id
+mgr.list_sessions(agent_name="my-agent")
+mgr.destroy(session.id)            # returns True if found
+
+print(mgr.count())
+```
+
+---
+
+## 9. Orchestration
 
 ### Sequential Pipeline (`sage/orchestrator/pipeline.py`)
 
@@ -790,7 +1015,7 @@ The framework auto-generates a `delegate(agent_name, task)` tool. The LLM calls 
 
 ---
 
-## 8. Provider System
+## 10. Provider System
 
 ### ProviderProtocol (`sage/providers/base.py`)
 
@@ -834,7 +1059,7 @@ If no provider is supplied to the Agent constructor, `LiteLLMProvider(model)` is
 
 ---
 
-## 9. Permissions System
+## 11. Permissions System
 
 ### Permission Categories and Actions
 
@@ -874,7 +1099,7 @@ When a category is `"deny"`, its tools become invisible to the LLM (not register
 
 ---
 
-## 10. Configuration System
+## 12. Configuration System
 
 ### Three-Tier Override System
 
@@ -946,7 +1171,7 @@ def merge_agent_config(metadata, central, agent_name):
 
 ---
 
-## 11. CLI & Entry Points
+## 13. CLI & Entry Points
 
 Entry point defined in `pyproject.toml`: `sage = "sage.cli.main:cli"`
 
@@ -981,7 +1206,7 @@ sage --config path/to/config.toml --verbose agent run ...
 
 ---
 
-## 12. Data Models (`sage/models.py`)
+## 14. Data Models (`sage/models.py`)
 
 ```python
 class Message(BaseModel):
@@ -1030,7 +1255,7 @@ SageError                    # Base
 
 ---
 
-## 13. Complete Examples
+## 15. Complete Examples
 
 ### Minimal Agent
 

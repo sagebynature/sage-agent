@@ -2,6 +2,109 @@
 
 <!-- version list -->
 
+## v1.7.0 (2026-02-27)
+
+### Features
+
+- **hooks**: Hook/event system — `HookRegistry` in `sage/hooks/registry.py` with two emission modes:
+  `emit_void()` for parallel side-effect handlers, `emit_modifying()` for sequential chained
+  transformers; `HookEvent` enum covers `PRE_LLM_CALL`, `POST_LLM_CALL`, `PRE_TOOL_EXECUTE`,
+  `POST_TOOL_EXECUTE`, `ON_DELEGATION`, `ON_COMPACTION`, `PRE_MEMORY_RECALL`, `POST_MEMORY_STORE`,
+  `PRE_COMPACTION`, `POST_COMPACTION`; hooks that raise are logged and swallowed so agent runs
+  are never aborted by a hook failure
+
+- **hooks/builtin**: `credential_scrubber` — `POST_TOOL_EXECUTE` void hook that redacts secrets
+  from tool outputs using configurable regex patterns and an allowlist; enabled via
+  `credential_scrubbing:` in agent frontmatter
+
+- **hooks/builtin**: `query_classifier` — `PRE_LLM_CALL` modifying hook that routes queries to
+  different models based on keyword/regex rules; enabled via `query_classification:` in frontmatter;
+  rules specify `keywords`, `patterns`, `priority`, and `target_model`
+
+- **hooks/builtin**: `follow_through` — `POST_LLM_CALL` modifying hook that detects LLM bail-out
+  phrases (e.g. "I cannot", "I'm unable to") and sets `retry_needed: True` in hook data to trigger
+  a retry; configurable `max_retries` and `retry_prompt`; enabled via `follow_through:` in frontmatter
+
+- **hooks/builtin**: `auto_memory` — `PRE_LLM_CALL` hook that automatically injects recalled
+  memories into the message list before each LLM call; enabled automatically when a memory backend
+  is configured with `auto_load: true`
+
+- **agent**: Hook emission points wired throughout the agentic loop — `PRE_LLM_CALL`/
+  `POST_LLM_CALL` around each provider call, `POST_TOOL_EXECUTE` after each tool dispatch,
+  `ON_DELEGATION` before each subagent handoff, `ON_COMPACTION` after history compaction;
+  `hook_registry` constructor parameter; `_last_compaction_strategy` attribute tracking which
+  strategy was used most recently
+
+- **agent**: Compaction strategy chain — `_run_compaction_chain()` tries three strategies in
+  order: (1) LLM-based `compact_messages` for intelligent summarization, (2) `emergency_drop`
+  keeping the N most recent messages, (3) `deterministic_trim` always succeeding as a last resort;
+  system message is preserved through all strategies; `ON_COMPACTION` hook data includes
+  `strategy`, `before_count`, `after_count`
+
+- **memory/compaction**: `multi_part_compact` — chunked LLM compaction for very long histories
+  that exceed a single LLM context; splits into overlapping chunks, summarizes each, then
+  combines summaries
+
+- **memory/compaction**: `emergency_drop(messages, *, keep_last_n=5)` — truncates history to the
+  N most recent messages while preserving any leading system message
+
+- **memory/compaction**: `deterministic_trim(messages, *, target_count=20)` — slices history to
+  at most `target_count` messages, preserving system message; always succeeds (no LLM call)
+
+- **memory**: File backend — `FileMemory` in `sage/memory/file_backend.py`; stores memories as
+  JSON lines in a flat file; supports the full `MemoryProtocol` (store, recall via numpy cosine
+  similarity, compact, clear, forget); enabled via `backend: file` in agent frontmatter
+
+- **memory**: `auto_load` / `auto_load_top_k` — new `MemoryConfig` fields to automatically recall
+  the top-K memories and inject them as a system message before each LLM call; wired via the
+  `auto_memory` builtin hook
+
+- **coordination**: Message bus (`sage/coordination/bus.py`) — in-memory per-agent inboxes with
+  TTL-based expiry, idempotency via seen-ID deduplication, overflow protection (drops oldest on
+  full inbox), dead-letter collection for expired messages, and broadcast delivery
+
+- **coordination**: Typed message envelopes (`sage/coordination/messages.py`) — `MessageEnvelope`
+  with `id`, `sender`, `recipient`, `topic`, `payload`, `timestamp`, `ttl`; `ReplyEnvelope` for
+  request/reply correlation
+
+- **coordination**: Cancellation scopes (`sage/coordination/cancellation.py`) —
+  `CancellationScope` that propagates a cancel signal across async tasks; nested child scopes
+  inherit parent cancellation; `scope.cancel()` / `scope.is_cancelled` / `scope.check()` raise
+  `CancelledError` on entry when already cancelled
+
+- **coordination**: `SessionManager` (`sage/coordination/session.py`) — manage concurrent agent
+  sessions with create/get/list/destroy lifecycle; `SessionState` holds agent name, metadata,
+  timestamps, message count, and status; metadata is preserved across `clear()`
+
+- **research**: Pre-response research system (`sage/research.py`) — `ResearchTrigger` enum
+  (`NEVER`, `ALWAYS`, `KEYWORDS`, `LENGTH`, `QUESTION`), `should_research()` predicate,
+  `run_research()` async function that runs a mini tool-calling loop to gather context before the
+  main response; configured via `research:` in frontmatter (`enabled`, `max_sources`, `timeout`)
+
+- **parsing**: Multi-format tool call parser (`sage/parsing/tool_calls.py`) — parser chain for
+  OpenAI JSON, XML-tagged, markdown code-fence, and key-value tool call formats; composable via
+  `ChainParser`; `ToolCallParser` protocol for custom parsers
+
+- **parsing**: JSON repair (`sage/parsing/json_repair.py`) — heuristic fixer for common LLM JSON
+  output errors (unquoted keys, trailing commas, single quotes, truncated strings); used by the
+  JSON tool-call parser before falling back
+
+- **tools**: `ToolDispatcher` (`sage/tools/dispatcher.py`) — parallel and sequential tool dispatch
+  with per-tool timeout enforcement, result ordering, and error isolation per call
+
+- **context**: `ContextFallbackTable` (`sage/context/fallback_table.py`) — static lookup table of
+  model context window sizes for when litellm model info is unavailable; covers 60+ models across
+  OpenAI, Anthropic, Google, Mistral, Cohere, and Meta families
+
+- **config**: New `AgentConfig` fields for hook-driven features — all optional, all default `None`:
+  `credential_scrubbing: CredentialScrubConfig`, `query_classification: QueryClassificationConfig`,
+  `research: ResearchConfig`, `follow_through: FollowThroughConfig`, `session: SessionConfig`
+
+- **agent**: Approval-aware tool execution — `_execute_tool_calls` appends tool result messages
+  to the shared `messages` list and respects per-tool approval state; subagent crash isolation
+  wraps `delegate()` in a try/except so a crashing subagent returns a structured error string
+  instead of propagating the exception to the parent
+
 ## v1.6.0 (2026-02-27)
 
 ### Features
