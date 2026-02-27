@@ -6,7 +6,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from sage.memory.compaction import compact_messages, prune_tool_outputs
+from sage.memory.compaction import (
+    MAX_BULLET_POINTS,
+    MAX_SOURCE_CHARS,
+    MAX_SUMMARY_CHARS,
+    compact_messages,
+    prune_tool_outputs,
+)
 from sage.models import CompletionResult, Message, Usage
 
 
@@ -157,3 +163,127 @@ class TestPruneToolOutputs:
         pruned = prune_tool_outputs(msgs, max_chars=5000, keep_recent=2)
         assert "[truncated" in (pruned[1].content or "").lower()
         assert pruned[3].content == long_content  # recent — preserved
+
+
+# ---------------------------------------------------------------------------
+# Character caps and bullet-point format tests (Task 14)
+# ---------------------------------------------------------------------------
+
+
+class TestConstants:
+    def test_max_summary_constant(self) -> None:
+        assert MAX_SUMMARY_CHARS == 2000
+
+    def test_source_truncation_constant(self) -> None:
+        assert MAX_SOURCE_CHARS == 12000
+
+    def test_max_bullet_constant(self) -> None:
+        assert MAX_BULLET_POINTS == 12
+
+
+class TestSummaryCharLimit:
+    @pytest.mark.asyncio
+    async def test_summary_char_limit_respected(self) -> None:
+        """If the LLM returns a summary >2000 chars, it must be truncated to <=2000."""
+        # Build a mock response that exceeds MAX_SUMMARY_CHARS
+        long_summary = "- " + "x" * 2500  # single bullet, way over limit
+        provider = _make_provider(long_summary)
+
+        msgs = [_msg("user", f"msg {i}") for i in range(60)]
+        result = await compact_messages(msgs, provider, threshold=50, keep_recent=10)
+
+        # Find the summary message (system role containing [Conversation summary])
+        summary_msg = next(
+            m
+            for m in result
+            if m.role == "system" and "[Conversation summary]" in (m.content or "")
+        )
+        assert len(summary_msg.content or "") <= MAX_SUMMARY_CHARS + len("[Conversation summary]: ")
+
+    @pytest.mark.asyncio
+    async def test_bullet_point_truncation(self) -> None:
+        """When LLM returns many bullets, output is truncated at last complete bullet <=2000 chars."""
+        # Create a response with many bullet points that together exceed 2000 chars
+        # Each bullet is ~100 chars, so 25 bullets = ~2500 chars
+        bullets = [f"- Bullet point number {i:03d}: " + "detail " * 10 for i in range(25)]
+        long_summary = "\n".join(bullets)
+        provider = _make_provider(long_summary)
+
+        msgs = [_msg("user", f"msg {i}") for i in range(60)]
+        result = await compact_messages(msgs, provider, threshold=50, keep_recent=10)
+
+        summary_msg = next(
+            m
+            for m in result
+            if m.role == "system" and "[Conversation summary]" in (m.content or "")
+        )
+        content = summary_msg.content or ""
+        # Total content must be within limit
+        assert len(content) <= MAX_SUMMARY_CHARS + len("[Conversation summary]: ")
+        # The raw summary part (after "[Conversation summary]: ") must be at most MAX_SUMMARY_CHARS
+        raw_summary = content.removeprefix("[Conversation summary]: ")
+        assert len(raw_summary) <= MAX_SUMMARY_CHARS
+
+    @pytest.mark.asyncio
+    async def test_short_summary_not_truncated(self) -> None:
+        """A summary within the limit is returned as-is."""
+        short_summary = "- Point A.\n- Point B.\n- Point C."
+        provider = _make_provider(short_summary)
+
+        msgs = [_msg("user", f"msg {i}") for i in range(60)]
+        result = await compact_messages(msgs, provider, threshold=50, keep_recent=10)
+
+        summary_msg = next(
+            m
+            for m in result
+            if m.role == "system" and "[Conversation summary]" in (m.content or "")
+        )
+        assert short_summary in (summary_msg.content or "")
+
+
+class TestSourceTruncation:
+    @pytest.mark.asyncio
+    async def test_source_truncated_when_exceeds_max(self) -> None:
+        """When the serialized source text exceeds MAX_SOURCE_CHARS, oldest messages are dropped."""
+        # Create messages with large content so they exceed MAX_SOURCE_CHARS when serialized
+        # Each message is ~600 chars; 25 messages = ~15000 chars > 12000
+        large_msgs = [_msg("user", f"msg_{i}: " + "A" * 600) for i in range(25)]
+        # Add more recent messages to keep
+        recent_msgs = [_msg("user", f"recent {i}") for i in range(10)]
+        all_msgs = large_msgs + recent_msgs
+
+        provider = _make_provider("Summary.")
+        await compact_messages(all_msgs, provider, threshold=10, keep_recent=10)
+
+        # The provider should have been called with source text <= MAX_SOURCE_CHARS
+        call_args = provider.complete.call_args[0][0]
+        user_prompt = call_args[1].content or ""
+        assert len(user_prompt) <= MAX_SOURCE_CHARS
+
+    @pytest.mark.asyncio
+    async def test_source_within_limit_not_truncated(self) -> None:
+        """When source text is within MAX_SOURCE_CHARS, all messages are included."""
+        # Small messages that won't exceed the limit
+        msgs = [_msg("user", f"msg {i}") for i in range(60)]
+        provider = _make_provider()
+        await compact_messages(msgs, provider, threshold=50, keep_recent=10)
+
+        call_args = provider.complete.call_args[0][0]
+        user_prompt = call_args[1].content or ""
+        # All 50 to-summarize messages should be present
+        assert "msg 0" in user_prompt
+        assert "msg 49" in user_prompt
+
+
+class TestSystemPromptBulletFormat:
+    @pytest.mark.asyncio
+    async def test_system_prompt_requests_bullet_points(self) -> None:
+        """The system prompt sent to the LLM should request bullet-point format."""
+        msgs = [_msg("user", f"msg {i}") for i in range(60)]
+        provider = _make_provider()
+        await compact_messages(msgs, provider, threshold=50, keep_recent=10)
+
+        call_args = provider.complete.call_args[0][0]
+        system_prompt = call_args[0].content or ""
+        # Check that the system prompt mentions bullet points
+        assert "bullet" in system_prompt.lower() or "- " in system_prompt
