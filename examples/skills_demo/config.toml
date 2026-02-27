@@ -2,3 +2,11 @@
 # Sets skills_dir to the demo's local skills/ folder so the agent
 # loads only the 4 demo skills instead of global skills.
 skills_dir = "skills"
+
+[env]
+AZURE_AI_API_KEY = "${ANTHROPIC_FOUNDRY_API_KEY}"
+AZURE_AI_API_BASE = "https://${ANTHROPIC_FOUNDRY_RESOURCE}.services.ai.azure.com"
+
+[defaults]
+model = "azure_ai/Kimi-K2.5"
+max_turns = 10
