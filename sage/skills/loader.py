@@ -6,6 +6,7 @@ reusable capabilities for agents.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -151,7 +152,8 @@ def resolve_skills_dir(config_skills_dir: str | None = None) -> Path | None:
     5. None (no skills directory found)
     """
     if config_skills_dir is not None:
-        p = Path(config_skills_dir)
+        expanded = os.path.expandvars(config_skills_dir)
+        p = Path(expanded).expanduser()
         if p.is_dir():
             return p
 

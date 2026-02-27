@@ -11,6 +11,10 @@
 #   Env:  SAGE_CONFIG_PATH=path/to/config.toml
 #   Default: ~/.config/sage/config.toml
 
+# skills_dir = "/path/to/skills"  # Global skills directory. If unset, waterfall: $cwd/skills -> ~/.agents/skills -> ~/.claude/skills
+skills_dir = "${HOME}/.agents/skills/"
+# skills_dir = "./examples/skills_demo/skills/"
+
 # ─── Environment Variables ──────────────────────────────────────────────────
 # Resolved at startup. Values can reference env vars with ${VAR} syntax.
 # Resolution order: config.toml [env] > .env file > os.environ
@@ -19,7 +23,6 @@
 AZURE_AI_API_KEY = "${ANTHROPIC_FOUNDRY_API_KEY}"
 AZURE_AI_API_BASE = "https://${ANTHROPIC_FOUNDRY_RESOURCE}.services.ai.azure.com"
 
-# skills_dir = "/path/to/skills"  # Global skills directory. If unset, waterfall: $cwd/skills -> ~/.agents/skills -> ~/.claude/skills
 
 # ─── Global Defaults ──────────────────────────────────────────────────────────
 [defaults]

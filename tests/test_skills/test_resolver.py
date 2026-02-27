@@ -26,6 +26,43 @@ def test_config_skills_dir_nonexistent_skipped(tmp_path: Path, monkeypatch) -> N
     assert resolved is None
 
 
+def test_config_skills_dir_expands_home_env_var(tmp_path: Path, monkeypatch) -> None:
+    """Test that ${HOME} in config_skills_dir is expanded."""
+    config_skills = tmp_path / "config-skills"
+    config_skills.mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    resolved = resolve_skills_dir("${HOME}/config-skills")
+
+    assert resolved == config_skills
+
+
+def test_config_skills_dir_expands_tilde(tmp_path: Path, monkeypatch) -> None:
+    """Test that ~ in config_skills_dir is expanded to home directory."""
+    config_skills = tmp_path / "config-skills"
+    config_skills.mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path))
+    # Also patch Path.home() for expanduser()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+
+    resolved = resolve_skills_dir("~/config-skills")
+
+    assert resolved == config_skills
+
+
+def test_config_skills_dir_expands_custom_env_var(tmp_path: Path, monkeypatch) -> None:
+    """Test that custom ${VAR} in config_skills_dir is expanded; nonexistent path returns None."""
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    monkeypatch.setenv("CUSTOM_SKILLS_DIR", str(tmp_path / "nonexistent"))
+    monkeypatch.setattr(Path, "cwd", classmethod(lambda cls: cwd))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+
+    resolved = resolve_skills_dir("${CUSTOM_SKILLS_DIR}")
+
+    assert resolved is None
+
+
 def test_waterfall_cwd_skills_first(tmp_path: Path, monkeypatch) -> None:
     cwd_skills = tmp_path / "skills"
     cwd_skills.mkdir()

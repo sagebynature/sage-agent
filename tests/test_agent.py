@@ -630,6 +630,43 @@ class TestAgentFromConfig:
 
         assert agent.description == description_path
 
+    def test_from_config_auto_loads_config_toml_when_central_none(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Auto-load config.toml when central=None is not explicitly passed."""
+        # Create the central skills directory with one skill
+        central_skills_dir = tmp_path / "central_skills"
+        central_skills_dir.mkdir(parents=True)
+        (central_skills_dir / "skill_a.md").write_text(
+            "---\nname: skill_a\n---\n\nSkill A content.",
+            encoding="utf-8",
+        )
+
+        # Create a central config.toml
+        config_toml = tmp_path / "config.toml"
+        config_toml.write_text(
+            f'skills_dir = "{central_skills_dir}"\n',
+            encoding="utf-8",
+        )
+
+        # Create an AGENTS.md file
+        agents_file = tmp_path / "AGENTS.md"
+        agents_file.write_text(
+            "---\nname: test-agent\nmodel: gpt-4o\n---\n",
+            encoding="utf-8",
+        )
+
+        # Set SAGE_CONFIG_PATH to point to config.toml
+        monkeypatch.setenv("SAGE_CONFIG_PATH", str(config_toml))
+
+        # Call from_config without the central parameter
+        # This should auto-load the config.toml and find skill_a
+        agent = Agent.from_config(agents_file)
+
+        # Assert that the skill was loaded from the config-specified directory
+        assert len(agent.skills) > 0
+        assert agent.skills[0].name == "skill_a"
+
 
 class TestAgentInit:
     """Tests for Agent constructor edge cases."""
@@ -716,11 +753,19 @@ class TestAgentModelParams:
         assert agent.provider.config["temperature"] == 0.7
         assert agent.provider.config["max_tokens"] == 512
 
-    def test_from_config_no_model_params_empty_provider_config(self, tmp_path: Path) -> None:
+    def test_from_config_no_model_params_empty_provider_config(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Agent loaded from config without model_params has empty provider config."""
         import textwrap
 
         from sage.providers.litellm_provider import LiteLLMProvider
+
+        # Isolate from system config by mocking Path.home() and changing directory
+        fake_home = tmp_path / "fake_home"
+        fake_home.mkdir()
+        monkeypatch.setattr("pathlib.Path.home", lambda: fake_home)
+        monkeypatch.chdir(tmp_path)
 
         config_md = textwrap.dedent("""\
             ---

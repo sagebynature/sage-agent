@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar, cast, overload
 
 from sage.config import AgentConfig, load_config
+from sage.main_config import load_main_config, resolve_main_config_path
 from sage.tracing import setup_tracing, span
 
 if TYPE_CHECKING:
@@ -131,6 +132,8 @@ class Agent:
         resolved = Path(path)
         if resolved.is_dir():
             resolved = resolved / "AGENTS.md"
+        if central is None:
+            central = load_main_config(resolve_main_config_path())
         config = load_config(str(resolved), central=central)
         resolved_dir = resolve_skills_dir(central.skills_dir if central else None)
         global_skills = load_skills_from_directory(resolved_dir) if resolved_dir else []
