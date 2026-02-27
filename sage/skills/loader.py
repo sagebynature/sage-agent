@@ -138,3 +138,30 @@ def _load_skill_from_dir(skill_dir: Path) -> Skill | None:
     if skill.name == skill_file.stem:
         skill = skill.model_copy(update={"name": skill_dir.name})
     return skill
+
+
+def resolve_skills_dir(config_skills_dir: str | None = None) -> Path | None:
+    """Resolve the global skills directory using waterfall lookup.
+
+    Resolution order:
+    1. config.toml top-level skills_dir (if set and is a directory)
+    2. ./skills in current working directory
+    3. ~/.agents/skills
+    4. ~/.claude/skills
+    5. None (no skills directory found)
+    """
+    if config_skills_dir is not None:
+        p = Path(config_skills_dir)
+        if p.is_dir():
+            return p
+
+    candidates = [
+        Path.cwd() / "skills",
+        Path.home() / ".agents" / "skills",
+        Path.home() / ".claude" / "skills",
+    ]
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+
+    return None
