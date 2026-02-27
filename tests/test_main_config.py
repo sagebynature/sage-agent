@@ -68,9 +68,9 @@ class TestConfigOverrides:
 
 class TestAgentOverrides:
     def test_inherits_config_overrides(self) -> None:
-        overrides = AgentOverrides(model="gpt-4o", skills_dir="my_skills")
+        overrides = AgentOverrides(model="gpt-4o", max_turns=30)
         assert overrides.model == "gpt-4o"
-        assert overrides.skills_dir == "my_skills"
+        assert overrides.max_turns == 30
 
     def test_memory_field(self) -> None:
         overrides = AgentOverrides(memory={"backend": "sqlite", "path": "mem.db"})  # type: ignore[arg-type]

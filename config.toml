@@ -19,6 +19,7 @@
 AZURE_AI_API_KEY = "${ANTHROPIC_FOUNDRY_API_KEY}"
 AZURE_AI_API_BASE = "https://${ANTHROPIC_FOUNDRY_RESOURCE}.services.ai.azure.com"
 
+# skills_dir = "/path/to/skills"  # Global skills directory. If unset, waterfall: $cwd/skills -> ~/.agents/skills -> ~/.claude/skills
 
 # ─── Global Defaults ──────────────────────────────────────────────────────────
 [defaults]
@@ -107,7 +108,7 @@ path = "memory.db"
 embedding = "text-embedding-3-large"
 compaction_threshold = 50
 
-# skills_dir = "skills/"
+# skills = ["git-master", "terraform"]  # Optional: limit this agent to specific skills
 
 [agents.summarizer]
 model = "azure_ai/gpt-4o"
