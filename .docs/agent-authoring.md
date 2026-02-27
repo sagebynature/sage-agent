@@ -130,7 +130,6 @@ subagents: [...]          # Optional: child agents for delegation
 mcp_servers: [...]        # Optional: MCP server connections
 model_params: {...}       # Optional: LLM parameters
 context: {...}            # Optional: token budget management
-skills_dir: skills/       # Optional: path to skills directory
 ---
 
 <!-- Markdown body = system prompt sent to the LLM -->
@@ -168,7 +167,6 @@ The parser splits on `---` delimiters, extracts the YAML block via `yaml.safe_lo
 | `mcp_servers` | `list[MCPServerConfig]` | `[]` | MCP server connections |
 | `model_params` | `ModelParams` | `{}` | LLM generation parameters |
 | `context` | `ContextConfig` | `None` | Token budget management |
-| `skills_dir` | `str` | `None` | Skills directory path |
 | `sandbox` | `SandboxConfig` | `None` | Shell sandbox configuration (native env-strip or bubblewrap namespace isolation) |
 | `parallel_tool_execution` | `bool` | `true` | Run independent tool calls concurrently via `asyncio.gather` |
 | `tool_timeout` | `float \| null` | `null` | Default timeout (seconds) for all tool calls; per-tool `@tool(timeout=N)` takes precedence |
@@ -654,9 +652,22 @@ When building messages (`sage/agent.py:557-588`), skills are appended to the sys
 [User message]
 ```
 
-### Auto-Discovery
+### Skill Pool Resolution
 
-If `skills_dir` is set in frontmatter, that directory is loaded. Otherwise, a `skills/` directory next to the `AGENTS.md` file is auto-discovered (`sage/agent.py:130-139`).
+Skills are resolved from a **global pool** shared across all agents. The pool directory is determined via a waterfall (first existing path wins):
+
+1. `skills_dir` in `config.toml` (explicit path)
+2. `./skills/` (current working directory)
+3. `~/.agents/skills/`
+4. `~/.claude/skills/`
+5. No skills (if none of the above exist)
+
+Each agent in `[agents.<name>]` of `config.toml` can optionally restrict its skills via a named allowlist:
+```toml
+[agents.my-agent]
+skills = ["git-master", "terraform"]  # only these skills are injected
+```
+Omitting `skills` (or setting it to `null`) injects the full pool. Subagents always receive the full unfiltered pool and apply their own allowlist independently.
 
 ---
 
@@ -876,6 +887,9 @@ Agent .md frontmatter     <- highest priority
 ### Main Config (TOML) -- `config.toml`
 
 ```toml
+# Optional: global skills directory
+# skills_dir = "/path/to/skills"
+
 [defaults]
 model = "azure_ai/gpt-4o"
 max_turns = 10
@@ -904,6 +918,9 @@ max_tokens = 8192
 backend = "sqlite"
 path = "memory.db"
 embedding = "text-embedding-3-large"
+
+# Optional: limit this agent to a subset of the global skill pool
+# skills = ["git-master", "terraform"]
 ```
 
 ### Config Resolution (`sage/main_config.py`)

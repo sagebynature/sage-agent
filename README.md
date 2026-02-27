@@ -47,7 +47,7 @@ Built-in tools included — or load them all at once with `sage.tools.builtins`:
 
 ### Skills
 
-Reusable capabilities defined as Markdown files. Drop them in a directory, and agents can load them. Flat files or directory-per-skill — both work. Skills are just knowledge and instructions, cleanly separated from tools.
+Reusable capabilities defined as Markdown files. Drop them in a `skills/` directory and all agents share them automatically. Sage resolves the global skill pool via a waterfall (`skills_dir` in `config.toml` → `./skills/` → `~/.agents/skills/` → `~/.claude/skills/`). Each agent can optionally limit its skills to a named subset via an allowlist in `config.toml`. Flat files or directory-per-skill — both work.
 
 ### Orchestration
 
@@ -249,6 +249,9 @@ You are a helpful AI assistant.
 Sage supports a global TOML config file for defaults and per-agent overrides. It's auto-discovered at `./config.toml` or `~/.config/sage/config.toml`, or set via `SAGE_CONFIG_PATH`.
 
 ```toml
+# Optional: global skills directory (waterfall: $cwd/skills → ~/.agents/skills → ~/.claude/skills)
+# skills_dir = "/path/to/skills"
+
 [defaults]
 model = "gpt-4o"
 max_turns = 15
@@ -256,6 +259,8 @@ max_turns = 15
 [agents.my-agent]
 model = "gpt-4o-mini"
 max_turns = 5
+# Optional: limit this agent to a subset of the global skill pool
+# skills = ["git-master", "terraform"]
 ```
 
 Override priority: **main config defaults < per-agent overrides < frontmatter**.

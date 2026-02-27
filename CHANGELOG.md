@@ -2,6 +2,33 @@
 
 <!-- version list -->
 
+## v1.6.0 (2026-02-27)
+
+### Features
+
+- **skills**: Global skill pool with per-agent allowlist — skills are now resolved from a single
+  global directory shared across all agents; `skills_dir` is a top-level `config.toml` field with
+  waterfall resolution (`config.toml` → `$cwd/skills` → `~/.agents/skills` → `~/.claude/skills`);
+  each agent in `[agents.<name>]` can optionally specify a `skills` allowlist to restrict which
+  skills from the global pool it receives; subagents always inherit the full unfiltered pool and
+  apply their own allowlist independently
+
+- **skills**: `resolve_skills_dir()` waterfall resolver in `sage/skills/loader.py` — resolves the
+  global skills directory using priority order: explicit `config.toml` path → `$cwd/skills` →
+  `~/.agents/skills` → `~/.claude/skills` → `None`
+
+- **skills**: `filter_skills_by_names()` allowlist filter in `sage/skills/loader.py` — `None` returns
+  all skills, `[]` returns none, `["x","y"]` returns only named skills; pool order is preserved
+
+- **config**: `MainConfig.skills_dir` — new top-level field in TOML config for global skills directory
+
+- **config**: `AgentOverrides.skills` — new per-agent allowlist field in `[agents.<name>]` sections
+
+### Breaking Changes
+
+- **config**: `skills_dir` removed from agent frontmatter (`AgentConfig`) and per-agent TOML
+  overrides (`AgentOverrides`) — use top-level `skills_dir` in `config.toml` instead
+
 ## v1.5.0 (2026-02-26)
 
 ### Features
