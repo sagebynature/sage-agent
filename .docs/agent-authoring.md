@@ -50,8 +50,10 @@ sage/
 |-- research.py              # Pre-response research system (ResearchTrigger, run_research)
 |-- __init__.py              # Public API exports
 |-- cli/
-|   |-- main.py              # Click CLI commands
-|   +-- tui.py               # Textual TUI
+|   |-- main.py              # Click CLI — sage agent / exec / eval / tool / init / tui
+|   |-- tui.py               # Textual interactive TUI
+|   |-- exit_codes.py        # SageExitCode IntEnum (exit codes 0–7)
+|   +-- output.py            # OutputWriter — TextWriter, JSONLWriter, QuietWriter
 |-- tools/
 |   |-- base.py              # ToolBase abstract class
 |   |-- decorator.py         # @tool decorator
@@ -102,6 +104,12 @@ sage/
 +-- context/
     |-- token_budget.py      # Token budget management
     +-- fallback_table.py    # Static context-window size table (60+ models)
+|-- eval/
+|   |-- suite.py             # TestSuite, TestCase, EvalSettings, load_suite()
+|   |-- assertions.py        # 11 assertion types + run_assertion()
+|   |-- runner.py            # EvalRunner, CaseResult, EvalRunResult
+|   |-- history.py           # EvalHistory — SQLite (~/.config/sage/eval_history.db)
+|   +-- report.py            # Text/JSON/comparison formatters
 ```
 
 ### Execution Flow
@@ -201,7 +209,7 @@ The parser splits on `---` delimiters, extracts the YAML block via `yaml.safe_lo
 | `mcp_servers` | `list[MCPServerConfig]` | `[]` | MCP server connections |
 | `model_params` | `ModelParams` | `{}` | LLM generation parameters |
 | `context` | `ContextConfig` | `None` | Token budget management |
-| `sandbox` | `SandboxConfig` | `None` | Shell sandbox configuration (native env-strip or bubblewrap namespace isolation) |
+| `sandbox` | `SandboxConfig` | `None` | Shell sandbox: `backend` (`auto`/`native`/`bubblewrap`/`seatbelt`/`docker`/`none`), `mode` (`read-only`/`workspace-write`/`full-access`), `enabled` (default `false`), `network` (default `true`) |
 | `parallel_tool_execution` | `bool` | `true` | Run independent tool calls concurrently via `asyncio.gather` |
 | `tool_timeout` | `float \| null` | `null` | Default timeout (seconds) for all tool calls; per-tool `@tool(timeout=N)` takes precedence |
 | `tracing` | `TracingConfig` | `None` | OpenTelemetry tracing configuration (requires `pip install sage-agent[tracing]`) |
@@ -1203,6 +1211,52 @@ sage tui --agent-config AGENTS.md
 # Global options
 sage --config path/to/config.toml --verbose agent run ...
 ```
+### `sage exec` — Headless & CI Execution
+
+Run an agent in a non-interactive, headless mode suitable for scripts and CI/CD pipelines. Supports structured output and timeout isolation.
+
+```bash
+sage exec AGENTS.md -i "task" [-o text|jsonl|quiet] [--timeout N] [--yes]
+```
+
+**Output Formats (`-o` / `--output`):**
+- `text` (default): Human-readable streaming text output.
+- `jsonl`: One JSON object per event (llm_call, tool_call, result). Ideal for programmatic consumption.
+- `quiet`: No output to stdout; only exit codes and logs (if configured).
+
+**Exit Codes:**
+Defined in `sage.cli.exit_codes.SageExitCode`:
+- `0`: SUCCESS
+- `1`: ERROR (Generic failure)
+- `2`: CONFIG_ERROR (Validation failure)
+- `3`: PROVIDER_ERROR (LLM timeout/failure)
+- `4`: TOOL_ERROR (Tool execution failure)
+- `5`: PERMISSION_DENIED (User or policy denied tool)
+- `6`: TIMEOUT (Global execution timeout reached)
+- `7`: CANCELLED (Interrupt or signal)
+
+### `sage eval` — Evaluation Framework
+
+Manage and execute evaluation suites to benchmark agent quality and performance.
+
+```bash
+# Run a suite and report metrics
+sage eval run suite.yaml [--min-pass-rate 0.9] [--runs N]
+
+# Validate suite YAML syntax
+sage eval validate suite.yaml
+
+# Browse SQLite run history
+sage eval history [--suite NAME] [--last N]
+
+# Compare two run results side-by-side
+sage eval compare <run-id-1> <run-id-2>
+
+# Discover suite files in a directory
+sage eval list [directory]
+```
+
+Evaluation results are stored in `~/.config/sage/eval_history.db` by default.
 
 ---
 

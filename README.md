@@ -6,7 +6,7 @@ Inspired by the recent sprawl of OpenClaw, PicoBot, ZeroClaw, and whatever else 
 
 Sage doesn't aspire to be the next Claude Code. Instead, it's intentionally designed to be a **clean slate out of the box**, so that *you* can make it more intelligent. No opinions. No bloat. Just a solid foundation you can build on top of.
 
-See also: [Sage Evaluator](https://github.com/sagebynature/sage-evaluator) — a companion app for evaluating and benchmarking your agents.
+Built-in evaluation and CI/headless execution are included. See [`.docs/eval.md`](.docs/eval.md) and [`.docs/ci-headless.md`](.docs/ci-headless.md).
 
 ## Key Features
 
@@ -206,6 +206,12 @@ sage agent orchestrate AGENTS.md --input "text"        # Run subagents in parall
 sage tool list AGENTS.md                               # List available tools
 sage init [--name my-agent] [--model gpt-4o]           # Scaffold a new project
 sage tui --agent-config AGENTS.md                      # Launch interactive TUI
+sage exec AGENTS.md -i "Hello" [-o text|jsonl|quiet] [--timeout N] [--yes]    # Run headless (CI/scripting)
+sage eval run suite.yaml [--min-pass-rate 0.9] [--runs N]                      # Run evaluation suite
+sage eval validate suite.yaml                                                   # Validate suite file
+sage eval history [--suite NAME] [--last N]                                     # Show run history
+sage eval compare <run-id-1> <run-id-2>                                         # Compare two runs
+sage eval list [directory]                                                       # Find suite files
 ```
 
 ## Configuration Reference
@@ -340,7 +346,17 @@ sage/
   permissions/      # PermissionProtocol, policy rules, interactive prompts
   context/          # Token-aware context budget, fallback table
   git/              # GitSnapshot (snapshot/restore capability)
-  cli/              # Click CLI + Textual TUI
+  cli/              # Click CLI commands + Textual TUI
+    main.py         # sage agent / exec / eval / tool / init / tui commands
+    tui.py          # Textual interactive TUI
+    exit_codes.py   # SageExitCode IntEnum (exit codes 0–7)
+    output.py       # OutputWriter — TextWriter, JSONLWriter, QuietWriter
+  eval/             # Built-in evaluation framework
+    suite.py        # TestSuite, TestCase, EvalSettings, load_suite()
+    assertions.py   # 11 assertion types + run_assertion()
+    runner.py       # EvalRunner, CaseResult, EvalRunResult
+    history.py      # EvalHistory — SQLite run history (~/.config/sage/eval_history.db)
+    report.py       # Text/JSON/comparison formatters
 ```
 
 ## Examples
@@ -364,7 +380,7 @@ This repo includes [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
 ### Prerequisites
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed
-- [sage-evaluator](https://github.com/sagebynature/sage-evaluator) installed (`uv pip install sage-evaluator`) — required by the evaluate skill
+- `sage-agent` installed — the `evaluate-sage-agent` skill uses `sage eval` which is built in
 
 ### Available Skills
 

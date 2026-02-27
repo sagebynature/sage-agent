@@ -107,36 +107,37 @@ Agent calls: shell(command="ls -la src/")
 
 ### Shell Sandbox
 
-For stricter isolation, Sage can run shell commands inside a **sandbox** in
-addition to the blocklist. Enable it via the `sandbox:` field in `AGENTS.md`
-frontmatter:
+For stricter isolation, Sage can run shell commands inside a **sandbox** in addition to the blocklist. Enable it via the `sandbox:` field in `AGENTS.md` frontmatter.
+
+**Sandbox is opt-in** — `enabled` defaults to `false`. Set `enabled: true` to activate it.
 
 ```yaml
 sandbox:
-  backend: native       # "native" (default) or "bubblewrap"
-  allowed_env:          # extra env vars to pass through
-    - MY_TOKEN
-  network: true         # allow network access (bubblewrap backend only)
+  enabled: true
+  backend: auto              # auto|native|bubblewrap|seatbelt|docker|none  (default: native)
+  mode: workspace-write      # read-only|workspace-write|full-access
+  workspace: .               # root path agent can write to (default: cwd)
+  writable_roots: ["/tmp"]
+  deny_read: ["~/.ssh", "~/.aws", "~/.gnupg"]
+  allowed_env: []            # extra env vars to pass through
+  network: true              # allow network access
+  timeout: 30.0              # per-command timeout in seconds
 ```
+
+#### SandboxConfig Fields
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `backend` | `"native"` or `"bubblewrap"` | `"native"` | Sandbox implementation |
+| `enabled` | `bool` | `false` | Must be `true` to activate sandboxing |
+| `backend` | `str` | `"native"` | Sandbox implementation (see below) |
+| `mode` | `str` | `"workspace-write"` | Access level: `read-only`, `workspace-write`, or `full-access` |
+| `workspace` | `path` | `cwd` | Root path the agent may write to |
+| `writable_roots` | `list[str]` | `["/tmp"]` | Additional writable paths |
+| `deny_read` | `list[str]` | `["~/.ssh", "~/.aws", "~/.gnupg"]` | Paths blocked from reading |
 | `allowed_env` | `list[str]` | `[]` | Extra environment variables to pass through |
-| `network` | `bool` | `true` | Allow network (bubblewrap only) |
-
-**Native sandbox** strips the child process environment to a trusted minimum
-(`PATH`, `HOME`, `USER`, `LANG`, `TERM`) plus any variables explicitly listed in
-`allowed_env`. This blocks common bypass vectors such as `$SHELL` and injected
-`$BASH_FUNC_*` variables.
-
-**Bubblewrap sandbox** provides Linux kernel namespace isolation via the `bwrap`
-binary (must be installed separately). It mounts only safe read-only filesystem
-views and can disable network access (`network: false`).
-
-When `sandbox:` is not set, commands run in the current process environment with
-only the blocklist as protection.
-
+| `network` | `bool` | `true` | Allow network access |
+| `timeout` | `float` | `30.0` | Per-command timeout (seconds) |
+,
 ---
 
 ### File Read
@@ -805,7 +806,7 @@ Agent
 | `sage.tools.file_tools` | File manipulation: file_edit |
 | `sage.tools.web_tools` | Web access: web_fetch, web_search |
 | `sage.tools._security` | URL validation, DNS-pinned SSRF protection (`ResolvedURL`, `validate_and_resolve_url`) |
-| `sage.tools._sandbox` | Shell sandbox backends (`NativeSandbox`, `BubblewrapSandbox`) and `make_sandboxed_shell` factory |
+| `sage.tools._sandbox` | Shell sandbox backends (`NativeSandbox`, `BubblewrapSandbox`, `SeatbeltSandbox`, `DockerSandbox`), `_detect_backend()` auto-selector, and `make_sandboxed_shell` factory |
 | `sage.permissions.policy` | Config-driven permission rules with pattern matching |
 | `sage.permissions.interactive` | Interactive permission handler (prompts user on `ask`) |
 | `sage.mcp.client` | MCP client — connects to servers, discovers and calls tools |
