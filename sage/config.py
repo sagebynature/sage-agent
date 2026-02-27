@@ -39,9 +39,15 @@ class SandboxConfig(BaseModel):
     ``bwrap`` to be installed.
     """
 
-    backend: Literal["native", "bubblewrap"] = "native"
+    backend: Literal["auto", "native", "bubblewrap", "seatbelt", "docker", "none"] = "native"
+    enabled: bool = False
+    mode: Literal["read-only", "workspace-write", "full-access"] = "workspace-write"
+    workspace: Path = Field(default_factory=Path.cwd)
+    writable_roots: list[str] = Field(default_factory=lambda: ["/tmp"])
+    deny_read: list[str] = Field(default_factory=lambda: ["~/.ssh", "~/.aws", "~/.gnupg"])
     allowed_env: list[str] = Field(default_factory=list)
     network: bool = True
+    timeout: float = 30.0
 
 
 class CredentialScrubConfig(BaseModel):

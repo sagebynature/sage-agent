@@ -70,6 +70,18 @@ _DANGEROUS_PATTERNS: list[str] = [
     r"\bgit\s+rebase\b",
     r"\bgit\s+push\s+.*\bmain\b",
     r"\bgit\s+push\s+.*\bmaster\b",
+    # Interpreter-based bypasses
+    r"\bpython[23]?\s+-c\s+",
+    r"\bperl\s+-e\s+",
+    r"\bruby\s+-e\s+",
+    r"\bnode\s+-e\s+",
+    r"\bnodejs\s+-e\s+",
+    # Base64 decode piped to shell
+    r"\bbase64\s+(-d|--decode)\b.*\|",
+    # wget/curl to pipe to shell
+    r"\b(curl|wget)\s+.*\|\s*(sh|bash|zsh|fish)\b",
+    # Environment variable prefix bypass
+    r"\benv\s+.*\brm\b",
 ]
 
 
@@ -78,6 +90,23 @@ def _check_dangerous_patterns(command: str) -> None:
     for pattern in _DANGEROUS_PATTERNS:
         if re.search(pattern, command, re.IGNORECASE):
             raise ToolError(f"Command rejected \u2014 matches dangerous pattern: {pattern}")
+
+
+def _validate_shell_command(command: str) -> None:
+    """Validate each segment of a chained command independently.
+
+    First checks the full command string (catches pipe-based patterns like
+    curl | bash and base64 -d | sh), then splits on &&, ||, ;, | and
+    checks each segment independently.
+    """
+    # Check full command first — catches pipe-to-shell and base64-decode-pipe patterns
+    _check_dangerous_patterns(command)
+    # Also check each chained segment independently
+    segments = re.split(r"\s*(?:&&|\|\||;|\|)\s*", command)
+    for segment in segments:
+        segment = segment.strip()
+        if segment:
+            _check_dangerous_patterns(segment)
 
 
 @tool
@@ -91,7 +120,7 @@ async def shell(command: str) -> str:
     import asyncio
 
     logger.debug("shell: %s", command[:100])
-    _check_dangerous_patterns(command)
+    _validate_shell_command(command)
 
     proc = await asyncio.create_subprocess_shell(
         command,
@@ -129,7 +158,7 @@ def make_sandboxed_shell(sandbox: SandboxExecutor) -> Any:
         inherited environment variables (blocking ``$SHELL`` / env-var bypass).
         """
         logger.debug("shell (sandboxed): %s", command[:100])
-        _check_dangerous_patterns(command)
+        _validate_shell_command(command)
         stdout, stderr = await sandbox.execute(command)
         output = stdout
         if stderr.strip():
