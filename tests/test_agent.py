@@ -817,28 +817,6 @@ class TestAgentSkills:
         skill_pos = system_msg.content.index("## Skill: s")
         assert body_pos < skill_pos
 
-    def test_from_config_auto_discovers_skills_dir(self, tmp_path: Path) -> None:
-        """Skills in a 'skills/' directory next to the config are auto-discovered."""
-        skills_dir = tmp_path / "skills"
-        skills_dir.mkdir()
-        (skills_dir / "my-skill.md").write_text(
-            "---\nname: my-skill\ndescription: Test skill\n---\n\nSkill body.",
-            encoding="utf-8",
-        )
-
-        config_file = tmp_path / "AGENTS.md"
-        config_file.write_text(
-            "---\nname: test\nmodel: gpt-4o\n---\n",
-            encoding="utf-8",
-        )
-
-        agent = Agent.from_config(config_file)
-
-        assert len(agent.skills) == 1
-        assert agent.skills[0].name == "my-skill"
-        assert agent.skills[0].description == "Test skill"
-        assert "Skill body." in agent.skills[0].content
-
     def test_from_config_no_skills_dir_yields_empty(self, tmp_path: Path) -> None:
         """No auto-discovered skills when 'skills/' directory does not exist."""
         config_file = tmp_path / "AGENTS.md"
@@ -847,30 +825,6 @@ class TestAgentSkills:
         agent = Agent.from_config(config_file)
 
         assert agent.skills == []
-
-    def test_from_config_skills_dir_override(self, tmp_path: Path) -> None:
-        """skills_dir in frontmatter overrides auto-discovery."""
-        custom_dir = tmp_path / "custom_skills"
-        custom_dir.mkdir()
-        (custom_dir / "override-skill.md").write_text(
-            "---\nname: override-skill\n---\n\nOverride content.",
-            encoding="utf-8",
-        )
-        # Also create a default 'skills/' dir — should be ignored.
-        default_dir = tmp_path / "skills"
-        default_dir.mkdir()
-        (default_dir / "ignored.md").write_text("name: ignored\n\nIgnored.", encoding="utf-8")
-
-        config_file = tmp_path / "AGENTS.md"
-        config_file.write_text(
-            "---\nname: test\nmodel: gpt-4o\nskills_dir: custom_skills\n---\n",
-            encoding="utf-8",
-        )
-
-        agent = Agent.from_config(config_file)
-
-        assert len(agent.skills) == 1
-        assert agent.skills[0].name == "override-skill"
 
     def test_from_config_directory_per_skill(self, tmp_path: Path) -> None:
         """Skills stored as subdirectories (dir/skill.md) are loaded correctly."""

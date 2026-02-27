@@ -169,7 +169,6 @@ class AgentConfig(BaseModel):
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
     max_turns: int = 10
     model_params: ModelParams = Field(default_factory=ModelParams)
-    skills_dir: str | None = None
     skills: list[str] | None = None
     context: ContextConfig | None = None
     git: GitConfig | None = None

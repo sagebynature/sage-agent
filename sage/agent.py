@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar, cast, overload
 
@@ -136,18 +136,8 @@ class Agent:
         for sub_config in config.subagents:
             subagents[sub_config.name] = cls._from_agent_config(sub_config, base_dir)
 
-        # Resolve skills directory: explicit config takes priority, otherwise
-        # auto-discover a "skills/" directory next to the config file.
-        if config.skills_dir is not None:
-            resolved_skills_dir = base_dir / config.skills_dir
-            skills = load_skills_from_directory(resolved_skills_dir)
-        else:
-            default_skills_dir = base_dir / "skills"
-            skills = (
-                load_skills_from_directory(default_skills_dir)
-                if default_skills_dir.is_dir()
-                else []
-            )
+        skill_path = base_dir / "skills"
+        skills = load_skills_from_directory(skill_path) if skill_path.is_dir() else []
 
         # Build MCP clients from config.
         mcp_clients: list[MCPClient] = []
@@ -461,13 +451,20 @@ class Agent:
         self._context_window_limit = None
 
         # Delegate to the provider so agent.py never imports litellm directly.
-        if hasattr(self.provider, "get_context_window"):
-            self._context_window_limit = self.provider.get_context_window()
+        get_context_window = cast(
+            Callable[[], int] | None, getattr(self.provider, "get_context_window", None)
+        )
+        if callable(get_context_window):
+            self._context_window_limit = get_context_window()
 
     def _update_token_usage(self, messages: list[dict[str, Any]]) -> None:
         # Delegate to the provider so agent.py never imports litellm directly.
-        if hasattr(self.provider, "count_tokens"):
-            self._token_usage = self.provider.count_tokens(messages)
+        count_tokens = cast(
+            Callable[[list[dict[str, Any]]], int] | None,
+            getattr(self.provider, "count_tokens", None),
+        )
+        if callable(count_tokens):
+            self._token_usage = count_tokens(messages)
         else:
             self._token_usage = 0
 
@@ -783,9 +780,14 @@ class Agent:
                 await client.disconnect()
             except Exception as exc:
                 logger.debug("MCP disconnect error: %s", exc)
-        if self.memory is not None and hasattr(self.memory, "close"):
+        if self.memory is not None:
+            close_memory = cast(
+                Callable[[], Awaitable[None]] | None, getattr(self.memory, "close", None)
+            )
+            if not callable(close_memory):
+                return
             try:
-                await self.memory.close()
+                await close_memory()
             except (Exception, asyncio.CancelledError) as exc:
                 logger.debug("Memory close error: %s", exc)
             self._memory_initialized = False
@@ -799,8 +801,12 @@ class Agent:
         if self._memory_initialized or self.memory is None:
             return
         logger.info("Initializing memory for agent '%s'", self.name)
-        if hasattr(self.memory, "initialize"):
-            await self.memory.initialize()
+        initialize_memory = cast(
+            Callable[[], Awaitable[None]] | None,
+            getattr(self.memory, "initialize", None),
+        )
+        if callable(initialize_memory):
+            await initialize_memory()
         self._memory_initialized = True
         logger.info("Memory initialized for agent '%s'", self.name)
 
