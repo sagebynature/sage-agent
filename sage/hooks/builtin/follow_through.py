@@ -2,13 +2,14 @@
 
 import re
 import logging
+from collections.abc import Callable
 from typing import Any
 from sage.hooks.base import HookEvent
 
 logger = logging.getLogger(__name__)
 
 # Compiled patterns for bail-out language
-BAIL_OUT_PATTERNS: list[tuple[str, re.Pattern]] = [
+BAIL_OUT_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("cannot_execute", re.compile(r"(?i)I (can'?t|cannot) (do|perform|execute|complete)")),
     ("unable_to", re.compile(r"(?i)I'?m (unable|not able) to")),
     ("no_ability", re.compile(r"(?i)I don'?t have (the ability|access|permission)")),
@@ -33,7 +34,7 @@ def make_follow_through_hook(
     *,
     max_retries: int = 2,
     retry_prompt: str = "Please proceed with the action instead of describing what you would do.",
-):
+) -> Callable[..., Any]:
     """Factory returning a post_llm_call hook for detecting bail-outs.
 
     Hook behavior: if bail-out detected in assistant response, signal retry needed.

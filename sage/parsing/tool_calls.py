@@ -17,7 +17,7 @@ import json
 import re
 import uuid
 import xml.etree.ElementTree as ET
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from sage.models import ToolCall
 
@@ -27,7 +27,9 @@ def _new_id() -> str:
     return f"call_{uuid.uuid4().hex[:8]}"
 
 
-def _make_tool_call(name: str, arguments: dict | str, call_id: str | None = None) -> ToolCall:
+def _make_tool_call(
+    name: str, arguments: dict[str, Any] | str, call_id: str | None = None
+) -> ToolCall:
     """Build a ToolCall, coercing string arguments to dict when possible."""
     if isinstance(arguments, str):
         try:

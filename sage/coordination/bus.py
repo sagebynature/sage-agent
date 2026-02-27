@@ -127,7 +127,7 @@ class MessageBus:
                 inbox.clear()
             logger.debug("Cleared all inboxes")
         else:
-            inbox = self._inboxes.get(agent_name)
-            if inbox is not None:
-                inbox.clear()
+            _inbox = self._inboxes.get(agent_name)
+            if _inbox is not None:
+                _inbox.clear()
             logger.debug("Cleared inbox for %r", agent_name)

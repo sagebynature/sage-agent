@@ -2,6 +2,7 @@
 
 import re
 import logging
+from collections.abc import Callable
 from typing import Any
 from pydantic import BaseModel
 from sage.hooks.base import HookEvent
@@ -24,7 +25,7 @@ class QueryClassifier:
     def __init__(self, rules: list[ClassificationRule]):
         self.rules = sorted(rules, key=lambda r: r.priority, reverse=True)  # highest first
         # Pre-compile patterns
-        self._compiled: dict[int, list[re.Pattern]] = {
+        self._compiled: dict[int, list[re.Pattern[str]]] = {
             id(rule): [re.compile(p, re.IGNORECASE) for p in rule.patterns] for rule in self.rules
         }
 
@@ -47,7 +48,7 @@ class QueryClassifier:
         return None
 
 
-def make_query_classifier(rules: list[ClassificationRule]):
+def make_query_classifier(rules: list[ClassificationRule]) -> Callable[..., Any]:
     """Factory returning a pre_llm_call modifying hook for model routing."""
     classifier = QueryClassifier(rules=rules)
 
