@@ -1,4 +1,4 @@
-"""Per-session isolated state container."""
+"""Per-session isolated state container and lifecycle manager."""
 
 from __future__ import annotations
 
@@ -53,3 +53,49 @@ class SessionState(BaseModel):
         """Reset messages and tool_results; metadata is preserved."""
         self.messages.clear()
         self.tool_results.clear()
+
+
+class SessionManager:
+    """In-memory manager for concurrent session lifecycle."""
+
+    def __init__(self) -> None:
+        self._sessions: dict[str, SessionState] = {}
+
+    def create(
+        self,
+        agent_name: str,
+        *,
+        session_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> SessionState:
+        """Create a new session. Auto-generates session_id if not provided."""
+        sid = session_id if session_id is not None else uuid4().hex
+        session = SessionState(
+            session_id=sid,
+            agent_name=agent_name,
+            metadata=metadata or {},
+        )
+        self._sessions[sid] = session
+        return session
+
+    def get(self, session_id: str) -> SessionState | None:
+        """Retrieve session by ID."""
+        return self._sessions.get(session_id)
+
+    def list_sessions(self, *, agent_name: str | None = None) -> list[SessionState]:
+        """List all sessions, optionally filtered by agent_name."""
+        sessions = list(self._sessions.values())
+        if agent_name is not None:
+            sessions = [s for s in sessions if s.agent_name == agent_name]
+        return sessions
+
+    def destroy(self, session_id: str) -> bool:
+        """Remove session. Returns True if found, False if not found."""
+        if session_id in self._sessions:
+            del self._sessions[session_id]
+            return True
+        return False
+
+    def count(self) -> int:
+        """Return number of active sessions."""
+        return len(self._sessions)
