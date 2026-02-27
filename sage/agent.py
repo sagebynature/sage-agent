@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar, cast, overload
 
 from sage.config import AgentConfig, load_config
+from sage.hooks.base import HookEvent
+from sage.hooks.registry import HookRegistry
 from sage.main_config import load_main_config, resolve_and_apply_env, resolve_main_config_path
 from sage.tracing import setup_tracing, span
 
@@ -37,6 +39,47 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+
+
+def _build_hook_registry(
+    config: "AgentConfig", memory: "MemoryProtocol | None" = None
+) -> "HookRegistry":
+    """Build a HookRegistry from agent config, wiring built-in hooks."""
+    registry = HookRegistry()
+
+    if config.credential_scrubbing is not None and config.credential_scrubbing.enabled:
+        from sage.hooks.builtin.credential_scrubber import make_credential_scrubber
+
+        registry.register(HookEvent.POST_TOOL_EXECUTE, make_credential_scrubber())
+
+    if config.query_classification is not None and config.query_classification.rules:
+        from sage.hooks.builtin.query_classifier import ClassificationRule, make_query_classifier
+
+        rules = [
+            ClassificationRule(
+                keywords=[r.pattern],
+                patterns=[],
+                priority=r.priority,
+                target_model=r.model,
+            )
+            for r in config.query_classification.rules
+        ]
+        registry.register(HookEvent.PRE_LLM_CALL, make_query_classifier(rules))
+
+    if config.follow_through is not None and config.follow_through.enabled:
+        from sage.hooks.builtin.follow_through import make_follow_through_hook
+
+        registry.register(HookEvent.POST_LLM_CALL, make_follow_through_hook())
+
+    if config.memory is not None and config.memory.auto_load and memory is not None:
+        from sage.hooks.builtin.auto_memory import make_auto_memory_hook
+
+        registry.register(
+            HookEvent.PRE_LLM_CALL,
+            make_auto_memory_hook(memory, max_memories=config.memory.auto_load_top_k),
+        )
+
+    return registry
 
 
 class Agent:
@@ -84,6 +127,7 @@ class Agent:
         compaction_threshold: int = 50,
         parallel_tool_execution: bool = True,
         tool_timeout: float | None = None,
+        hook_registry: HookRegistry | None = None,
     ) -> None:
         self.name = name
         self.model = model
@@ -108,6 +152,10 @@ class Agent:
         self._git_config: Any | None = None
         self._memory_config: Any | None = None
         self.parallel_tool_execution: bool = parallel_tool_execution
+        self._hook_registry: HookRegistry = (
+            hook_registry if hook_registry is not None else HookRegistry()
+        )
+        self._last_compaction_strategy: str | None = None
 
         # Default to LiteLLM provider if none supplied.
         self.provider: ProviderProtocol = provider or LiteLLMProvider(model, **(model_params or {}))  # type: ignore[assignment]
@@ -193,6 +241,15 @@ class Agent:
             memory = SQLiteMemory(
                 path=config.memory.path, embedding=embedding, config=config.memory
             )
+        elif config.memory is not None and config.memory.backend == "file":
+            from sage.memory.file_backend import FileMemory
+
+            logger.info(
+                "Building file memory backend for '%s': path=%s",
+                config.name,
+                config.memory.path,
+            )
+            memory = FileMemory(config.memory.path)
 
         # Build permission handler from config.
         permission_handler = None
@@ -244,6 +301,9 @@ class Agent:
             except Exception as exc:
                 logger.warning("Failed to create TokenBudget: %s", exc)
 
+        # Build hook registry from config.
+        hook_registry = _build_hook_registry(config, memory)
+
         agent = cls(
             name=config.name,
             model=config.model,
@@ -260,6 +320,7 @@ class Agent:
             else 50,
             parallel_tool_execution=config.parallel_tool_execution,
             tool_timeout=config.tool_timeout,
+            hook_registry=hook_registry,
         )
 
         if config.permission is not None:
@@ -351,9 +412,14 @@ class Agent:
             for turn in range(self.max_turns):
                 logger.debug("Turn %d/%d", turn + 1, self.max_turns)
                 tool_schemas = self.tool_registry.get_schemas() or None
+                await self._emit(
+                    HookEvent.PRE_LLM_CALL,
+                    {"model": self.model, "messages": messages, "tool_schemas": tool_schemas},
+                )
                 result: CompletionResult = await self.provider.complete(
                     messages, tools=tool_schemas
                 )
+                await self._emit(HookEvent.POST_LLM_CALL, {"result": result, "turn": turn})
 
                 messages.append(result.message)
 
@@ -404,6 +470,10 @@ class Agent:
             for turn in range(self.max_turns):
                 logger.debug("Stream turn %d/%d", turn + 1, self.max_turns)
                 tool_schemas = self.tool_registry.get_schemas() or None
+                await self._emit(
+                    HookEvent.PRE_LLM_CALL,
+                    {"model": self.model, "messages": messages, "tool_schemas": tool_schemas},
+                )
 
                 # Accumulate the full assistant content and tool calls for this turn.
                 turn_content = ""
@@ -423,6 +493,10 @@ class Agent:
                     tool_calls=turn_tool_calls,
                 )
                 messages.append(assistant_msg)
+                await self._emit(
+                    HookEvent.POST_LLM_CALL,
+                    {"result": assistant_msg, "turn": turn},
+                )
 
                 # No tool calls means the model is done.
                 if not turn_tool_calls:
@@ -497,6 +571,7 @@ class Agent:
             subagent_name,
             task[:120],
         )
+        await self._emit(HookEvent.ON_DELEGATION, {"target": subagent_name, "input": task})
         subagent = self.subagents[subagent_name]
         try:
             result = await subagent.run(task)
@@ -526,6 +601,13 @@ class Agent:
         return Pipeline([self, other])
 
     # ── Private helpers ───────────────────────────────────────────────
+
+    async def _emit(self, event: HookEvent, data: dict[str, Any] | None = None) -> None:
+        """Emit a hook event, catching and logging any handler errors."""
+        try:
+            await self._hook_registry.emit_void(event, data or {})
+        except Exception as exc:
+            logger.debug("Hook emission error for %s: %s", event, exc)
 
     async def _pre_loop_setup(self, input: str) -> list[Message]:
         """MCP init, memory init, context window detection, memory recall, build initial messages list."""
@@ -604,7 +686,12 @@ class Agent:
 
             try:
                 result = await self.tool_registry.execute(tc.name, tc.arguments or {})
-                return tc.id, str(result)
+                result_str = str(result)
+                await self._emit(
+                    HookEvent.POST_TOOL_EXECUTE,
+                    {"tool_name": tc.name, "arguments": tc.arguments or {}, "result": result_str},
+                )
+                return tc.id, result_str
             except SagePermissionError:
                 raise  # Never swallow permission errors — re-raise so the agent loop can handle them
             except ToolError as exc:
@@ -828,30 +915,70 @@ class Agent:
             self._compacted_last_turn = False
             return False
 
-        from sage.memory.compaction import compact_messages
-
         before_count = len(self._conversation_history)
         logger.info(
             "Compacting history for agent '%s': %d messages before compaction",
             self.name,
             before_count,
         )
-        self._conversation_history = await compact_messages(
-            self._conversation_history,
-            self.provider,
-            threshold=self._compaction_threshold,
-            keep_recent=10,
-        )
+        compacted, strategy = await self._run_compaction_chain(self._conversation_history)
+        self._conversation_history = compacted
+        self._last_compaction_strategy = strategy
         logger.info(
-            "History compacted for agent '%s': %d -> %d messages",
+            "History compacted for agent '%s': %d -> %d messages (strategy: %s)",
             self.name,
             before_count,
             len(self._conversation_history),
+            strategy,
+        )
+        await self._emit(
+            HookEvent.ON_COMPACTION,
+            {
+                "before_count": before_count,
+                "after_count": len(self._conversation_history),
+                "strategy": strategy,
+            },
         )
         self._update_token_usage([message.model_dump() for message in self._build_messages("")])
         self._turns_since_compaction = 0
         self._compacted_last_turn = True
         return True
+
+    async def _run_compaction_chain(self, history: list[Message]) -> tuple[list[Message], str]:
+        """Try LLM summarization, fall back to emergency_drop, then deterministic_trim.
+
+        Returns (compacted_history, strategy_name).
+        """
+        from sage.memory.compaction import (
+            compact_messages,
+            deterministic_trim,
+            emergency_drop,
+        )
+
+        # Strategy 1: LLM summarization via compact_messages (with correct threshold)
+        try:
+            result = await compact_messages(
+                history,
+                self.provider,
+                threshold=self._compaction_threshold,
+                keep_recent=10,
+            )
+            if len(result) < len(history):
+                return result, "compact_messages"
+        except Exception as exc:
+            logger.warning("compact_messages failed, falling back to emergency_drop: %s", exc)
+
+        # Strategy 2: emergency drop (preserves system/last-user/tool results)
+        try:
+            result = emergency_drop(history)
+            if len(result) < len(history):
+                return result, "emergency_drop"
+        except Exception as exc:
+            logger.warning("emergency_drop failed, falling back to deterministic_trim: %s", exc)
+
+        # Strategy 3: deterministic trim (always succeeds)
+        result = deterministic_trim(history, target_count=self._compaction_threshold)
+        return result, "deterministic_trim"
 
     def clear_history(self) -> None:
         """Reset the conversation history for a fresh session."""

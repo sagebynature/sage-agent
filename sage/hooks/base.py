@@ -17,6 +17,8 @@ class HookEvent(str, enum.Enum):
     POST_COMPACTION = "post_compaction"
     PRE_MEMORY_RECALL = "pre_memory_recall"
     POST_MEMORY_STORE = "post_memory_store"
+    ON_DELEGATION = "on_delegation"
+    ON_COMPACTION = "on_compaction"
 
 
 @runtime_checkable
