@@ -1126,7 +1126,7 @@ async def check_for_update() -> str | None:
 
 **Priority:** P3 (Ongoing)
 **Effort:** Ongoing
-**Rationale:** sage-agent has strong architecture but zero community. Every successful tool (Goose 30K stars, Aider 39K stars, OpenCode 95K stars) invested heavily in community building.
+**Rationale:** sage-agent has strong architecture but zero community. Every successful tool (Goose 31K stars, Aider 41K stars, OpenCode 112K stars) invested heavily in community building.
 
 ### First 30 Days: Foundation
 
