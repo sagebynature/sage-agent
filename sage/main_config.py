@@ -55,10 +55,9 @@ class ConfigOverrides(BaseModel):
 
 
 class AgentOverrides(ConfigOverrides):
-    """Per-agent overrides — adds memory and skills_dir."""
+    """Per-agent overrides — adds memory and skills allowlist."""
 
     memory: MemoryConfig | None = None
-    skills_dir: str | None = None
     skills: list[str] | None = None
 
 
@@ -198,15 +197,22 @@ def merge_agent_config(
     if central is None:
         return metadata
 
+    effective_skills: list[str] | None = getattr(central.defaults, "skills", None)
+
     # Start with defaults (only explicitly-set fields)
     merged: dict[str, Any] = central.defaults.model_dump(exclude_none=True)
 
     # Layer agent-specific overrides
     if agent_name and agent_name in central.agents:
+        if central.agents[agent_name].skills is not None:
+            effective_skills = central.agents[agent_name].skills
         agent_overrides = central.agents[agent_name].model_dump(exclude_none=True)
         merged.update(agent_overrides)
 
     # Layer frontmatter values (highest priority)
     merged.update(metadata)
+
+    if effective_skills is not None:
+        merged["skills"] = effective_skills
 
     return merged

@@ -17,7 +17,7 @@ import yaml
 
 from sage.config import AgentConfig, MCPServerConfig, MemoryConfig, ModelParams, load_config
 from sage.exceptions import ConfigError
-from sage.main_config import AgentOverrides, MainConfig
+from sage.main_config import AgentOverrides, ConfigOverrides, MainConfig, merge_agent_config
 from pydantic import ValidationError
 
 
@@ -698,9 +698,11 @@ class TestModelParams:
 
 
 class TestSkillsConfig:
-    def test_skills_dir_defaults_to_none(self) -> None:
-        cfg = AgentConfig(name="test", model="gpt-4o")
-        assert cfg.skills_dir is None
+    def test_skills_dir_not_on_agent_config(self) -> None:
+        assert "skills_dir" not in set(AgentConfig.model_fields.keys())
+
+    def test_skills_dir_not_on_agent_overrides(self) -> None:
+        assert "skills_dir" not in set(AgentOverrides.model_fields.keys())
 
     def test_skills_defaults_to_none(self, tmp_path: Path) -> None:
         cfg_path = _write_md(
@@ -726,27 +728,11 @@ class TestSkillsConfig:
         config = load_config(cfg_path)
         assert config.skills == []
 
-    def test_skills_dir_set_from_md(self, tmp_path: Path) -> None:
-        cfg_path = _write_md(
-            tmp_path / "AGENTS.md",
-            {"name": "agent", "model": "gpt-4o", "skills_dir": "my_skills"},
-        )
-        config = load_config(cfg_path)
-        assert config.skills_dir == "my_skills"
-
-    def test_skills_dir_not_set_when_absent(self, tmp_path: Path) -> None:
-        cfg_path = _write_md(
-            tmp_path / "AGENTS.md",
-            {"name": "agent", "model": "gpt-4o"},
-        )
-        config = load_config(cfg_path)
-        assert config.skills_dir is None
-
 
 class TestMainConfigSkillsDir:
     def test_main_config_skills_dir_defaults_none(self) -> None:
-        config = MainConfig()
-        assert config.skills_dir is None
+        main_config = MainConfig()
+        assert main_config.skills_dir is None
 
     def test_main_config_skills_dir_from_toml(self, tmp_path: Path) -> None:
         toml_content = 'skills_dir = "/some/path"\n'
@@ -758,8 +744,8 @@ class TestMainConfigSkillsDir:
         with config_file.open("rb") as f:
             data = tomllib.load(f)
 
-        config = MainConfig(**data)
-        assert config.skills_dir == "/some/path"
+        main_config = MainConfig(**data)
+        assert main_config.skills_dir == "/some/path"
 
 
 class TestAgentOverridesSkills:
@@ -770,6 +756,38 @@ class TestAgentOverridesSkills:
     def test_agent_overrides_skills_from_dict(self) -> None:
         overrides = AgentOverrides(skills=["git-master"])
         assert overrides.skills == ["git-master"]
+
+
+class TestMergeAgentConfigSkills:
+    def test_merge_skills_from_toml_overrides_frontmatter(self) -> None:
+        metadata: dict[str, object] = {"name": "agent", "skills": ["a", "b"]}
+        central = MainConfig(
+            defaults=ConfigOverrides(model="gpt-4o"),
+            agents={"agent": AgentOverrides(skills=["c"])},
+        )
+        merged = merge_agent_config(metadata, central, "agent")
+        assert merged["skills"] == ["c"]
+
+    def test_merge_skills_from_frontmatter_when_toml_absent(self) -> None:
+        metadata: dict[str, object] = {"name": "agent", "skills": ["a"]}
+        central = MainConfig(defaults=ConfigOverrides(model="gpt-4o"))
+        merged = merge_agent_config(metadata, central, "agent")
+        assert merged["skills"] == ["a"]
+
+    def test_merge_skills_none_when_both_absent(self) -> None:
+        metadata: dict[str, object] = {"name": "agent"}
+        central = MainConfig(defaults=ConfigOverrides(model="gpt-4o"))
+        merged = merge_agent_config(metadata, central, "agent")
+        assert "skills" not in merged
+
+    def test_merge_skills_toml_empty_list_overrides_frontmatter(self) -> None:
+        metadata: dict[str, object] = {"name": "agent", "skills": ["a"]}
+        central = MainConfig(
+            defaults=ConfigOverrides(model="gpt-4o"),
+            agents={"agent": AgentOverrides(skills=[])},
+        )
+        merged = merge_agent_config(metadata, central, "agent")
+        assert merged["skills"] == []
 
 
 class TestConfigLogging:
