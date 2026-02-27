@@ -17,6 +17,7 @@ import yaml
 
 from sage.config import AgentConfig, MCPServerConfig, MemoryConfig, ModelParams, load_config
 from sage.exceptions import ConfigError
+from sage.main_config import AgentOverrides, MainConfig
 from pydantic import ValidationError
 
 
@@ -701,6 +702,30 @@ class TestSkillsConfig:
         cfg = AgentConfig(name="test", model="gpt-4o")
         assert cfg.skills_dir is None
 
+    def test_skills_defaults_to_none(self, tmp_path: Path) -> None:
+        cfg_path = _write_md(
+            tmp_path / "AGENTS.md",
+            {"name": "agent", "model": "gpt-4o"},
+        )
+        config = load_config(cfg_path)
+        assert config.skills is None
+
+    def test_skills_allowlist_set_from_md(self, tmp_path: Path) -> None:
+        cfg_path = _write_md(
+            tmp_path / "AGENTS.md",
+            {"name": "agent", "model": "gpt-4o", "skills": ["git-master", "terraform"]},
+        )
+        config = load_config(cfg_path)
+        assert config.skills == ["git-master", "terraform"]
+
+    def test_skills_empty_list_from_md(self, tmp_path: Path) -> None:
+        cfg_path = _write_md(
+            tmp_path / "AGENTS.md",
+            {"name": "agent", "model": "gpt-4o", "skills": []},
+        )
+        config = load_config(cfg_path)
+        assert config.skills == []
+
     def test_skills_dir_set_from_md(self, tmp_path: Path) -> None:
         cfg_path = _write_md(
             tmp_path / "AGENTS.md",
@@ -716,6 +741,35 @@ class TestSkillsConfig:
         )
         config = load_config(cfg_path)
         assert config.skills_dir is None
+
+
+class TestMainConfigSkillsDir:
+    def test_main_config_skills_dir_defaults_none(self) -> None:
+        config = MainConfig()
+        assert config.skills_dir is None
+
+    def test_main_config_skills_dir_from_toml(self, tmp_path: Path) -> None:
+        toml_content = 'skills_dir = "/some/path"\n'
+        config_file = tmp_path / "config.toml"
+        config_file.write_text(toml_content, encoding="utf-8")
+
+        import tomllib
+
+        with config_file.open("rb") as f:
+            data = tomllib.load(f)
+
+        config = MainConfig(**data)
+        assert config.skills_dir == "/some/path"
+
+
+class TestAgentOverridesSkills:
+    def test_agent_overrides_skills_defaults_none(self) -> None:
+        overrides = AgentOverrides()
+        assert overrides.skills is None
+
+    def test_agent_overrides_skills_from_dict(self) -> None:
+        overrides = AgentOverrides(skills=["git-master"])
+        assert overrides.skills == ["git-master"]
 
 
 class TestConfigLogging:

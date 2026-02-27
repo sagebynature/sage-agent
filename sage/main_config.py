@@ -59,6 +59,7 @@ class AgentOverrides(ConfigOverrides):
 
     memory: MemoryConfig | None = None
     skills_dir: str | None = None
+    skills: list[str] | None = None
 
 
 class MainConfig(BaseModel):
@@ -66,6 +67,7 @@ class MainConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    skills_dir: str | None = None
     env: dict[str, str] = Field(default_factory=dict)
     defaults: ConfigOverrides = Field(default_factory=ConfigOverrides)
     agents: dict[str, AgentOverrides] = Field(default_factory=dict)
