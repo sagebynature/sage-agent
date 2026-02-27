@@ -275,6 +275,71 @@ class SQLiteMemory:
             await self._db.execute("DELETE FROM memory_vec")  # type: ignore[union-attr]
         await self._db.commit()  # type: ignore[union-attr]
 
+    async def get(self, memory_id: str) -> MemoryEntry | None:
+        """Retrieve a single memory entry by *memory_id*, or None if not found."""
+        self._ensure_open()
+        cursor = await self._db.execute(  # type: ignore[union-attr]
+            "SELECT id, content, metadata, created_at FROM memories WHERE id = ?",
+            (memory_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return MemoryEntry(
+            id=row[0],
+            content=row[1],
+            metadata=json.loads(row[2]) if row[2] else {},
+            created_at=row[3],
+        )
+
+    async def list_entries(self, *, limit: int = 50, offset: int = 0) -> list[MemoryEntry]:
+        """Return a paginated list of memory entries ordered by most-recently created."""
+        self._ensure_open()
+        cursor = await self._db.execute(  # type: ignore[union-attr]
+            "SELECT id, content, metadata, created_at FROM memories ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (limit, offset),
+        )
+        rows = await cursor.fetchall()
+        return [
+            MemoryEntry(
+                id=row[0],
+                content=row[1],
+                metadata=json.loads(row[2]) if row[2] else {},
+                created_at=row[3],
+            )
+            for row in rows
+        ]
+
+    async def forget(self, memory_id: str) -> bool:
+        """Delete the entry with *memory_id*. Return True if found and deleted, False if not found."""
+        self._ensure_open()
+        cursor = await self._db.execute(  # type: ignore[union-attr]
+            "DELETE FROM memories WHERE id = ?",
+            (memory_id,),
+        )
+        await self._db.commit()  # type: ignore[union-attr]
+        return cursor.rowcount > 0
+
+    async def count(self) -> int:
+        """Return the total number of stored memory entries."""
+        self._ensure_open()
+        cursor = await self._db.execute(  # type: ignore[union-attr]
+            "SELECT COUNT(*) FROM memories"
+        )
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
+    async def health_check(self) -> dict[str, Any]:
+        """Return a health status dictionary with status, backend, count, and path."""
+        self._ensure_open()
+        entry_count = await self.count()
+        return {
+            "status": "ok",
+            "backend": "sqlite",
+            "count": entry_count,
+            "path": self._path,
+        }
+
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
