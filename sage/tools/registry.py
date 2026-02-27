@@ -6,7 +6,7 @@ import asyncio
 import importlib
 import inspect
 import logging
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Literal
 
 from sage.exceptions import PermissionError as SagePermissionError, ToolError
 from sage.models import ToolSchema
@@ -72,6 +72,7 @@ class ToolRegistry:
         self._mcp_tools: dict[str, MCPClient] = {}
         self._permission_handler: Any | None = None
         self._default_timeout: float | None = default_timeout
+        self._ask_policy: Literal["allow", "deny", "error"] = "error"
 
     def register(self, fn_or_instance: Callable[..., Any] | ToolBase) -> None:
         """Register a ``@tool``-decorated function or a ``ToolBase`` instance."""
@@ -107,6 +108,18 @@ class ToolRegistry:
         """Set a permission handler for pre-dispatch checks."""
         self._permission_handler = handler
 
+    def set_ask_policy(self, policy: Literal["allow", "deny", "error"]) -> None:
+        """Set how ASK-gated tool calls are handled in headless/CI mode.
+
+        Args:
+            policy: One of:
+                - ``"allow"``  — proceed as if the user approved.
+                - ``"deny"``   — raise :class:`SagePermissionError` immediately.
+                - ``"error"``  — raise with a verbose message asking the caller
+                              to wire an interactive permission handler (default).
+        """
+        self._ask_policy = policy
+
     def get_schemas(self) -> list[ToolSchema]:
         """Return schemas for all registered tools."""
         return list(self._schemas.values())
@@ -135,16 +148,20 @@ class ToolRegistry:
                 raise SagePermissionError(reason)
 
             if decision.action == PermissionAction.ASK:
-                # No interactive handler is wired — fail closed (deny).
-                # To enable interactive prompts, register a handler that
-                # resolves ASK decisions before reaching this point.
-                reason = (
-                    f"Permission ASK for tool {name!r} but no interactive handler "
-                    "is registered. Wire an interactive permission handler or change "
-                    "the policy to 'allow'/'deny' explicitly."
-                )
-                logger.error(reason)
-                raise SagePermissionError(reason)
+                if self._ask_policy == "allow":
+                    # Proceed as if the user approved — fall through to execute.
+                    pass
+                elif self._ask_policy == "deny":
+                    raise SagePermissionError(f"Permission denied (ASK auto-denied): {name!r}")
+                else:
+                    # Default "error" behaviour — fail with verbose guidance.
+                    reason = (
+                        f"Permission ASK for tool {name!r} but no interactive handler "
+                        "is registered. Wire an interactive permission handler or change "
+                        "the policy to 'allow'/'deny' explicitly."
+                    )
+                    logger.error(reason)
+                    raise SagePermissionError(reason)
 
         logger.debug("Executing tool: %s, args=%s", name, list(arguments.keys()))
         async with span("tool.execute", {"tool.name": name}) as tool_span:
