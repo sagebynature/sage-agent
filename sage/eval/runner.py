@@ -167,7 +167,11 @@ class EvalRunner:
             latency_ms = int((time.monotonic() - t0) * 1000)
 
             # Try to extract token / cost info from agent internals
-            if hasattr(agent, "_token_usage"):
+            if hasattr(agent, "cumulative_usage"):
+                cu = agent.cumulative_usage
+                tokens = cu.total_tokens
+                cost = cu.cost
+            elif hasattr(agent, "_token_usage"):
                 tokens = int(agent._token_usage)  # type: ignore[attr-defined]
 
         except asyncio.TimeoutError:

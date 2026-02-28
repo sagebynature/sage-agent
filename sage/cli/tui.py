@@ -238,6 +238,7 @@ class StatusBar(Static):
 
     _token_usage: int = 0
     _context_window_limit: int | None = None
+    _session_cost: float = 0.0
     _state: str = "Ready"
     _agent_name: str = ""
     _model: str = ""
@@ -247,6 +248,10 @@ class StatusBar(Static):
     def update_token_usage(self, token_usage: int, context_window_limit: int | None) -> None:
         self._token_usage = token_usage
         self._context_window_limit = context_window_limit
+        self._refresh()
+
+    def update_session_cost(self, cost: float) -> None:
+        self._session_cost = cost
         self._refresh()
 
     def set_state(
@@ -291,10 +296,12 @@ class StatusBar(Static):
             else:
                 token_colour = "green"
 
+        cost_str = f"  [green]${self._session_cost:.4f}[/green]" if self._session_cost > 0 else ""
+
         self.update(
             f"[{colour}]● {self._state}[/{colour}]  [bold]{self._agent_name}[/bold]"
             f" ([dim]{self._model}[/dim]){stream_badge}    "
-            f"[{token_colour}]{token_str}[/{token_colour}]    "
+            f"[{token_colour}]{token_str}[/{token_colour}]{cost_str}    "
             f"[dim]ctrl+s: stream  ctrl+l: clear  ctrl+q: quit[/dim]{hint}"
         )
 
@@ -550,10 +557,12 @@ class SageTUIApp(App[None]):
                 streaming_mode=self._streaming_mode,
             )
             stats = self._agent.get_usage_stats()
-            self.query_one(StatusBar).update_token_usage(
+            status_bar = self.query_one(StatusBar)
+            status_bar.update_token_usage(
                 stats["token_usage"],  # type: ignore[arg-type]
                 stats["context_window_limit"],  # type: ignore[arg-type]
             )
+            status_bar.update_session_cost(stats.get("cumulative_cost", 0.0))  # type: ignore[arg-type]
             if stats.get("compacted_this_turn"):
                 chat_log.write(
                     Text("⚡ Context compacted to reduce token usage", style="dim italic"),
@@ -574,10 +583,12 @@ class SageTUIApp(App[None]):
                 streaming_mode=self._streaming_mode,
             )
             stats = self._agent.get_usage_stats()
-            self.query_one(StatusBar).update_token_usage(
+            status_bar = self.query_one(StatusBar)
+            status_bar.update_token_usage(
                 stats["token_usage"],  # type: ignore[arg-type]
                 stats["context_window_limit"],  # type: ignore[arg-type]
             )
+            status_bar.update_session_cost(stats.get("cumulative_cost", 0.0))  # type: ignore[arg-type]
             if stats.get("compacted_this_turn"):
                 chat_log.write(
                     Text("⚡ Context compacted to reduce token usage", style="dim italic"),

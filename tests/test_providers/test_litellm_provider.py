@@ -23,6 +23,9 @@ def _make_response(
     tool_calls: list | None = None,
     prompt_tokens: int = 10,
     completion_tokens: int = 5,
+    cached_tokens: int = 0,
+    cache_creation_tokens: int = 0,
+    reasoning_tokens: int = 0,
 ) -> MagicMock:
     """Build a mock litellm response object."""
     func_mocks = []
@@ -37,10 +40,20 @@ def _make_response(
         tool_calls=func_mocks or None,
     )
     choice = SimpleNamespace(message=message, finish_reason="stop")
+
+    prompt_tokens_details = SimpleNamespace(
+        cached_tokens=cached_tokens,
+        cache_creation_tokens=cache_creation_tokens,
+    )
+    completion_tokens_details = SimpleNamespace(
+        reasoning_tokens=reasoning_tokens,
+    )
     usage = SimpleNamespace(
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
         total_tokens=prompt_tokens + completion_tokens,
+        prompt_tokens_details=prompt_tokens_details,
+        completion_tokens_details=completion_tokens_details,
     )
     return MagicMock(choices=[choice], usage=usage)
 
@@ -108,6 +121,74 @@ class TestLiteLLMProviderComplete:
 
         with pytest.raises(ProviderError, match="LiteLLM completion failed"):
             await provider.complete(messages)
+
+
+class TestCacheTokenExtraction:
+    @patch("sage.providers.litellm_provider.litellm")
+    async def test_cache_tokens_extracted(self, mock_litellm: MagicMock, provider: LiteLLMProvider):
+        resp = _make_response(
+            "Hi", cached_tokens=100, cache_creation_tokens=50, reasoning_tokens=25
+        )
+        mock_litellm.acompletion = AsyncMock(return_value=resp)
+        mock_litellm.completion_cost = MagicMock(return_value=0.005)
+        messages = [Message(role="user", content="Hello")]
+
+        result = await provider.complete(messages)
+
+        assert result.usage.cache_read_tokens == 100
+        assert result.usage.cache_creation_tokens == 50
+        assert result.usage.reasoning_tokens == 25
+
+    @patch("sage.providers.litellm_provider.litellm")
+    async def test_cost_calculated_via_litellm(
+        self, mock_litellm: MagicMock, provider: LiteLLMProvider
+    ):
+        resp = _make_response("Hi")
+        mock_litellm.acompletion = AsyncMock(return_value=resp)
+        mock_litellm.completion_cost = MagicMock(return_value=0.0042)
+        messages = [Message(role="user", content="Hello")]
+
+        result = await provider.complete(messages)
+
+        assert result.usage.cost == pytest.approx(0.0042)
+        mock_litellm.completion_cost.assert_called_once_with(completion_response=resp)
+
+    @patch("sage.providers.litellm_provider.litellm")
+    async def test_cost_fallback_to_zero_on_error(
+        self, mock_litellm: MagicMock, provider: LiteLLMProvider
+    ):
+        resp = _make_response("Hi")
+        mock_litellm.acompletion = AsyncMock(return_value=resp)
+        mock_litellm.completion_cost = MagicMock(side_effect=Exception("Unknown model"))
+        messages = [Message(role="user", content="Hello")]
+
+        result = await provider.complete(messages)
+
+        assert result.usage.cost == 0.0
+
+    @patch("sage.providers.litellm_provider.litellm")
+    async def test_missing_token_details_default_to_zero(
+        self, mock_litellm: MagicMock, provider: LiteLLMProvider
+    ):
+        """When prompt_tokens_details / completion_tokens_details are absent, fields default to 0."""
+        message = SimpleNamespace(content="Hi", role="assistant", tool_calls=None)
+        choice = SimpleNamespace(message=message, finish_reason="stop")
+        usage = SimpleNamespace(
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+        )
+        resp = MagicMock(choices=[choice], usage=usage)
+        mock_litellm.acompletion = AsyncMock(return_value=resp)
+        mock_litellm.completion_cost = MagicMock(return_value=0.001)
+        messages = [Message(role="user", content="Hello")]
+
+        result = await provider.complete(messages)
+
+        assert result.usage.cache_read_tokens == 0
+        assert result.usage.cache_creation_tokens == 0
+        assert result.usage.reasoning_tokens == 0
+        assert result.usage.cost == pytest.approx(0.001)
 
 
 class TestLiteLLMProviderStream:

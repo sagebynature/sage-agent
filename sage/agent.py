@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from sage.coordination.cancellation import CancellationToken
     from sage.main_config import MainConfig
 from sage.exceptions import MaxTurnsExceeded, PermissionError as SagePermissionError, ToolError
-from sage.models import CompletionResult, Message, ToolCall, ToolSchema
+from sage.models import CompletionResult, Message, ToolCall, ToolSchema, Usage
 from sage.providers.litellm_provider import LiteLLMProvider
 from sage.skills.loader import (
     Skill,
@@ -143,6 +143,7 @@ class Agent:
         self._conversation_history: list[Message] = []
         self._compaction_threshold: int = compaction_threshold
         self._token_usage: int = 0
+        self._cumulative_usage: Usage = Usage()
         self._context_window_limit: int | None = None
         self._token_compaction_threshold: float = 0.8
         self._turns_since_compaction: int = 0
@@ -419,6 +420,7 @@ class Agent:
                 result: CompletionResult = await self.provider.complete(
                     messages, tools=tool_schemas
                 )
+                self._cumulative_usage += result.usage
                 await self._emit(HookEvent.POST_LLM_CALL, {"result": result, "turn": turn})
 
                 messages.append(result.message)
@@ -478,6 +480,7 @@ class Agent:
                 # Accumulate the full assistant content and tool calls for this turn.
                 turn_content = ""
                 turn_tool_calls: list[ToolCall] | None = None
+                turn_usage: Usage | None = None
 
                 async for chunk in self.provider.stream(messages, tools=tool_schemas):  # type: ignore[attr-defined]
                     if chunk.delta:
@@ -485,6 +488,11 @@ class Agent:
                         yield chunk.delta
                     if chunk.tool_calls:
                         turn_tool_calls = chunk.tool_calls
+                    if chunk.usage is not None:
+                        turn_usage = chunk.usage
+
+                if turn_usage is not None:
+                    self._cumulative_usage += turn_usage
 
                 # Build the assistant message for the conversation history.
                 assistant_msg = Message(
@@ -546,16 +554,29 @@ class Agent:
         else:
             self._token_usage = 0
 
+    @property
+    def cumulative_usage(self) -> Usage:
+        """Return the cumulative token usage across all turns in this session."""
+        return self._cumulative_usage
+
     def get_usage_stats(self) -> dict[str, int | float | bool | None]:
         usage_percentage: float | None = None
         if self._context_window_limit and self._context_window_limit > 0:
             usage_percentage = min(1.0, self._token_usage / self._context_window_limit)
 
+        cu = self._cumulative_usage
         return {
             "token_usage": self._token_usage,
             "context_window_limit": self._context_window_limit,
             "usage_percentage": usage_percentage,
             "compacted_this_turn": self._compacted_last_turn,
+            "cumulative_prompt_tokens": cu.prompt_tokens,
+            "cumulative_completion_tokens": cu.completion_tokens,
+            "cumulative_total_tokens": cu.total_tokens,
+            "cumulative_cache_read_tokens": cu.cache_read_tokens,
+            "cumulative_cache_creation_tokens": cu.cache_creation_tokens,
+            "cumulative_reasoning_tokens": cu.reasoning_tokens,
+            "cumulative_cost": cu.cost,
         }
 
     async def delegate(self, subagent_name: str, task: str) -> str:

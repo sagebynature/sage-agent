@@ -103,6 +103,56 @@ class LiteLLMProvider:
 
         return result if result else None
 
+    # ── Usage extraction ─────────────────────────────────────────────
+
+    @staticmethod
+    def _extract_usage(raw_usage: object, response: object | None, model: str) -> Usage:
+        """Build a Usage from a litellm response, including cache tokens and cost."""
+        prompt_tokens = getattr(raw_usage, "prompt_tokens", 0) or 0
+        completion_tokens = getattr(raw_usage, "completion_tokens", 0) or 0
+        total_tokens = getattr(raw_usage, "total_tokens", 0) or 0
+
+        # Cache token details
+        prompt_details = getattr(raw_usage, "prompt_tokens_details", None)
+        cache_read_tokens = (
+            (getattr(prompt_details, "cached_tokens", 0) or 0) if prompt_details else 0
+        )
+        cache_creation_tokens = (
+            (getattr(prompt_details, "cache_creation_tokens", 0) or 0) if prompt_details else 0
+        )
+
+        # Reasoning token details
+        completion_details = getattr(raw_usage, "completion_tokens_details", None)
+        reasoning_tokens = (
+            (getattr(completion_details, "reasoning_tokens", 0) or 0) if completion_details else 0
+        )
+
+        # Cost calculation via litellm
+        cost = 0.0
+        try:
+            if response is not None:
+                cost = float(litellm.completion_cost(completion_response=response))
+            else:
+                cost = float(
+                    litellm.completion_cost(
+                        model=model,
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                    )
+                )
+        except Exception:
+            cost = 0.0
+
+        return Usage(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            cache_read_tokens=cache_read_tokens,
+            cache_creation_tokens=cache_creation_tokens,
+            reasoning_tokens=reasoning_tokens,
+            cost=cost,
+        )
+
     # ── Core provider methods ──────────────────────────────────────────
 
     async def complete(
@@ -141,11 +191,7 @@ class LiteLLMProvider:
             )
 
             raw_usage = getattr(response, "usage", None)
-            usage = Usage(
-                prompt_tokens=getattr(raw_usage, "prompt_tokens", 0) or 0,
-                completion_tokens=getattr(raw_usage, "completion_tokens", 0) or 0,
-                total_tokens=getattr(raw_usage, "total_tokens", 0) or 0,
-            )
+            usage = self._extract_usage(raw_usage, response, self.model)
 
             logger.debug(
                 "Completion response: finish_reason=%s, tokens=%d/%d",
@@ -156,6 +202,10 @@ class LiteLLMProvider:
 
             llm_span.set_attribute("prompt_tokens", usage.prompt_tokens)
             llm_span.set_attribute("completion_tokens", usage.completion_tokens)
+            llm_span.set_attribute("cache_read_tokens", usage.cache_read_tokens)
+            llm_span.set_attribute("cache_creation_tokens", usage.cache_creation_tokens)
+            llm_span.set_attribute("reasoning_tokens", usage.reasoning_tokens)
+            llm_span.set_attribute("cost", usage.cost)
 
             return CompletionResult(
                 message=message,
@@ -236,11 +286,7 @@ class LiteLLMProvider:
                     raw_usage = getattr(chunk, "usage", None)
                     chunk_usage: Usage | None = None
                     if raw_usage is not None:
-                        chunk_usage = Usage(
-                            prompt_tokens=getattr(raw_usage, "prompt_tokens", 0) or 0,
-                            completion_tokens=getattr(raw_usage, "completion_tokens", 0) or 0,
-                            total_tokens=getattr(raw_usage, "total_tokens", 0) or 0,
-                        )
+                        chunk_usage = self._extract_usage(raw_usage, None, self.model)
                     yield StreamChunk(
                         delta=content,
                         finish_reason=finish_reason,

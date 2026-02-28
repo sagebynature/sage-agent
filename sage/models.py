@@ -21,6 +21,31 @@ class Usage(BaseModel):
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
+    reasoning_tokens: int = 0
+    cost: float = 0.0
+
+    def __add__(self, other: "Usage") -> "Usage":
+        return Usage(
+            prompt_tokens=self.prompt_tokens + other.prompt_tokens,
+            completion_tokens=self.completion_tokens + other.completion_tokens,
+            total_tokens=self.total_tokens + other.total_tokens,
+            cache_read_tokens=self.cache_read_tokens + other.cache_read_tokens,
+            cache_creation_tokens=self.cache_creation_tokens + other.cache_creation_tokens,
+            reasoning_tokens=self.reasoning_tokens + other.reasoning_tokens,
+            cost=self.cost + other.cost,
+        )
+
+    def __iadd__(self, other: "Usage") -> "Usage":
+        self.prompt_tokens += other.prompt_tokens
+        self.completion_tokens += other.completion_tokens
+        self.total_tokens += other.total_tokens
+        self.cache_read_tokens += other.cache_read_tokens
+        self.cache_creation_tokens += other.cache_creation_tokens
+        self.reasoning_tokens += other.reasoning_tokens
+        self.cost += other.cost
+        return self
 
 
 class Message(BaseModel):
