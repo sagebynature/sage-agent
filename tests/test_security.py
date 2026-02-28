@@ -15,11 +15,13 @@ import pytest
 from sage.exceptions import ToolError
 from sage.tools._security import ResolvedURL, validate_and_resolve_url, validate_url
 from sage.tools.builtins import (
+    DANGEROUS_PATTERN_GROUPS,
     _validate_shell_command,
     file_read,
     file_write,
     http_request,
     make_shell,
+    resolve_allowed_patterns,
     shell,
 )
 from sage.tools.file_tools import file_edit
@@ -57,15 +59,22 @@ class TestCommandInjectionPrevention:
 
 
 class TestShellAllowPatterns:
-    """Verify shell_allow_patterns lets specific dangerous patterns through."""
+    """Verify dangerous-pattern groups let specific patterns through."""
+
+    def test_resolve_known_group(self) -> None:
+        allowed = resolve_allowed_patterns(["python_exec"])
+        assert r"\bpython[23]?\s+-c\s+" in allowed
+
+    def test_resolve_unknown_group_ignored(self) -> None:
+        allowed = resolve_allowed_patterns(["nonexistent_group"])
+        assert len(allowed) == 0
 
     def test_allowed_pattern_skipped(self) -> None:
-        allowed = frozenset([r"\bpython[23]?\s+-c\s+"])
-        # Should not raise
+        allowed = resolve_allowed_patterns(["python_exec"])
         _validate_shell_command('python3 -c "print(1)"', allowed_patterns=allowed)
 
     def test_other_patterns_still_blocked(self) -> None:
-        allowed = frozenset([r"\bpython[23]?\s+-c\s+"])
+        allowed = resolve_allowed_patterns(["python_exec"])
         with pytest.raises(ToolError, match="Command rejected"):
             _validate_shell_command("rm -rf /", allowed_patterns=allowed)
 
@@ -74,16 +83,25 @@ class TestShellAllowPatterns:
             _validate_shell_command('python3 -c "print(1)"')
 
     async def test_make_shell_with_allowed_patterns(self) -> None:
-        allowed = frozenset([r"\bpython[23]?\s+-c\s+"])
+        allowed = resolve_allowed_patterns(["python_exec"])
         custom_shell = make_shell(allowed_patterns=allowed)
         result = await custom_shell(command='python3 -c "print(42)"')
         assert "42" in result
 
     async def test_make_shell_still_blocks_other_patterns(self) -> None:
-        allowed = frozenset([r"\bpython[23]?\s+-c\s+"])
+        allowed = resolve_allowed_patterns(["python_exec"])
         custom_shell = make_shell(allowed_patterns=allowed)
         with pytest.raises(ToolError, match="Command rejected"):
             await custom_shell(command="eval 'echo hi'")
+
+    def test_all_groups_reference_valid_patterns(self) -> None:
+        """Every pattern in every group must exist in _DANGEROUS_PATTERNS."""
+        from sage.tools.builtins import _DANGEROUS_PATTERNS
+
+        all_patterns = set(_DANGEROUS_PATTERNS)
+        for group_name, patterns in DANGEROUS_PATTERN_GROUPS.items():
+            for p in patterns:
+                assert p in all_patterns, f"Group {group_name!r} has unknown pattern: {p!r}"
 
 
 class TestPathTraversalPrevention:

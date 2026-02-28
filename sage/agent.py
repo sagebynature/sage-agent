@@ -259,20 +259,29 @@ class Agent:
             from sage.permissions.policy import CategoryPermissionRule, PolicyPermissionHandler
             from sage.tools.registry import CATEGORY_TOOLS
 
+            from sage.tools.builtins import DANGEROUS_PATTERN_GROUPS
+
             rules: list[CategoryPermissionRule] = []
             for category in CATEGORY_TOOLS:
                 category_permission = getattr(config.permission, category, None)
                 if category_permission is None:
                     continue
                 if isinstance(category_permission, dict):
+                    # Separate dangerous-pattern group names from tool-name
+                    # patterns.  A "default" key sets the base category action;
+                    # recognised DANGEROUS_PATTERN_GROUPS keys are handled
+                    # later when building the shell tool.
+                    base_action = PermissionAction(category_permission.get("default", "ask"))
+                    tool_patterns = {
+                        k: PermissionAction(v)
+                        for k, v in category_permission.items()
+                        if k != "default" and k not in DANGEROUS_PATTERN_GROUPS
+                    }
                     rules.append(
                         CategoryPermissionRule(
                             category=category,
-                            action=PermissionAction.ASK,
-                            patterns={
-                                pattern: PermissionAction(action)
-                                for pattern, action in category_permission.items()
-                            },
+                            action=base_action,
+                            patterns=tool_patterns if tool_patterns else {},
                         )
                     )
                     continue
@@ -344,10 +353,21 @@ class Agent:
         if permission_handler is not None:
             agent.tool_registry.set_permission_handler(permission_handler)
 
-        # Build allowed shell patterns from permission config.
+        # Extract allowed dangerous-pattern groups from the dict form of
+        # ``permission.shell``.  Keys that match a group name in
+        # DANGEROUS_PATTERN_GROUPS and are set to "allow" are resolved to
+        # the corresponding regex patterns.
         shell_allow: frozenset[str] | None = None
-        if config.permission is not None and config.permission.shell_allow_patterns:
-            shell_allow = frozenset(config.permission.shell_allow_patterns)
+        if config.permission is not None and isinstance(config.permission.shell, dict):
+            from sage.tools.builtins import DANGEROUS_PATTERN_GROUPS, resolve_allowed_patterns
+
+            group_names = [
+                k
+                for k, v in config.permission.shell.items()
+                if k in DANGEROUS_PATTERN_GROUPS and v == "allow"
+            ]
+            if group_names:
+                shell_allow = resolve_allowed_patterns(group_names)
 
         # Wire sandbox: replace the module-level shell tool with a per-agent
         # sandboxed version when sandbox config is present.

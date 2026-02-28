@@ -75,7 +75,9 @@ def test_devtools_agent_permissions() -> None:
     assert config.permission is not None
     assert config.permission.read == "allow"
     assert config.permission.edit == "allow"
-    assert config.permission.shell == "allow"
+    assert isinstance(config.permission.shell, dict)
+    assert config.permission.shell["default"] == "allow"
+    assert config.permission.shell["python_exec"] == "allow"
     assert config.permission.web == "allow"
 
 

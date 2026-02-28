@@ -152,7 +152,6 @@ class Permission(BaseModel):
     memory: PermissionValue | None = None
     task: PermissionValue | None = None
     git: PermissionValue | None = None
-    shell_allow_patterns: list[str] = Field(default_factory=list)
 
 
 class ContextConfig(BaseModel):

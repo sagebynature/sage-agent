@@ -84,6 +84,33 @@ _DANGEROUS_PATTERNS: list[str] = [
     r"\benv\s+.*\brm\b",
 ]
 
+# Named groups of dangerous patterns.  Used with the dict form of
+# ``permission.shell`` — setting a group name to ``"allow"`` exempts those
+# patterns for that agent.
+DANGEROUS_PATTERN_GROUPS: dict[str, list[str]] = {
+    "python_exec": [r"\bpython[23]?\s+-c\s+"],
+    "perl_exec": [r"\bperl\s+-e\s+"],
+    "ruby_exec": [r"\bruby\s+-e\s+"],
+    "node_exec": [r"\bnode\s+-e\s+", r"\bnodejs\s+-e\s+"],
+    "eval_exec": [r"\beval\s+", r"\bbash\s+-c\s+", r"\bsh\s+-c\s+"],
+    "git_force_push": [r"\bgit\s+push\s+.*--force\b", r"\bgit\s+push\s+.*-f\b"],
+    "git_reset_hard": [r"\bgit\s+reset\s+--hard\b"],
+    "git_clean": [r"\bgit\s+clean\s+-[fd]"],
+    "git_rebase": [r"\bgit\s+rebase\b"],
+    "git_push_main": [r"\bgit\s+push\s+.*\bmain\b", r"\bgit\s+push\s+.*\bmaster\b"],
+    "git_branch_delete": [r"\bgit\s+branch\s+-D\b"],
+    "git_checkout_dot": [r"\bgit\s+checkout\s+\.\s*$"],
+}
+
+
+def resolve_allowed_patterns(group_names: list[str]) -> frozenset[str]:
+    """Convert a list of pattern group names to a frozenset of regex strings."""
+    patterns: set[str] = set()
+    for name in group_names:
+        if name in DANGEROUS_PATTERN_GROUPS:
+            patterns.update(DANGEROUS_PATTERN_GROUPS[name])
+    return frozenset(patterns)
+
 
 def _check_dangerous_patterns(command: str, allowed_patterns: frozenset[str] | None = None) -> None:
     """Raise ToolError if *command* matches any dangerous pattern.

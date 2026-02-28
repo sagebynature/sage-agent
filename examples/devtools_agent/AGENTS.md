@@ -5,11 +5,11 @@ description: Full-featured development assistant with file editing, git, and web
 permission:
   read: allow
   edit: allow
-  shell: allow
+  shell:
+    default: allow
+    python_exec: allow
   web: allow
   git: allow
-  shell_allow_patterns:
-    - '\bpython[23]?\s+-c\s+'
 max_turns: 20
 model_params:
   temperature: 0
