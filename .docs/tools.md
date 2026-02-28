@@ -732,7 +732,39 @@ The `shell` tool blocks commands matching these patterns:
 | System control | `shutdown`, `reboot`, `systemctl halt\|poweroff\|reboot` |
 | Command substitution | `$(rm ...)`, `` `rm ...` `` |
 | Eval/exec | `eval`, `bash -c`, `sh -c` |
+| Interpreter bypass | `python -c`, `python3 -c`, `perl -e`, `ruby -e`, `node -e` |
 | Data exfiltration | `curl` with data flags (`-d`, `--data`), `wget --post-file` |
+| Git destructive | `git push --force`, `git reset --hard`, `git clean`, `git rebase`, `git branch -D`, `git push ... main` |
+| Pipe to shell | `curl ... \| bash`, `base64 -d ... \|` |
+
+#### Bypassing the Blocklist for Specific Commands
+
+When `permission.shell` uses the **dict form**, any key set to `"allow"`
+(other than the catch-all `"*"`) doubles as an fnmatch pattern that bypasses
+the blocklist for matching commands. This lets you selectively unblock
+commands that the agent legitimately needs while keeping all other checks
+in place.
+
+```yaml
+permission:
+  shell:
+    "*": allow            # base permission — allow all shell calls
+    "python *": allow     # also bypass blocklist for python commands
+    "python3 *": allow    # including python3
+```
+
+In this example, `"*": allow` sets the default permission action (allow all
+shell calls through the permission system) but does **not** disable the
+blocklist — the catch-all `"*"` is explicitly excluded from bypass logic.
+The specific patterns `"python *"` and `"python3 *"` both grant permission
+**and** skip the blocklist for commands starting with `python` or `python3`.
+
+Commands that don't match any specific allow pattern are still checked
+against the full blocklist. For instance, `eval 'echo hi'` would still be
+rejected even with the config above.
+
+See the [Pattern Matching](#pattern-matching) section for the full fnmatch
+syntax reference.
 
 ### Path Sandboxing
 
