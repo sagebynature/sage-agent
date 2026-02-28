@@ -1,6 +1,6 @@
 ---
 name: devops-assistant
-model: azure_ai/Kimi-K2.5
+model: azure_ai/kimi-k2.5
 description: A DevOps assistant augmented with skills that give it real-world capabilities no LLM has natively
 permission:
   shell: allow

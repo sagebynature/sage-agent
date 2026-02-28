@@ -3,7 +3,7 @@ description: "Comprehensive regression tests across all devtools capabilities"
 agent: "../examples/devtools_agent/AGENTS.md"
 
 settings:
-  models: [ "azure_ai/kimi-k2.5" ] #, "azure_ai/claude-sonnet-4-6", "azure_ai/gpt-5.2", "azure_ai/opus-4-6" ]
+  models: [ "azure_ai/kimi-k2.5", "azure_ai/claude-sonnet-4-6", "azure_ai/gpt-5.2", "azure_ai/opus-4-6" ]
   runs_per_case: 1
   timeout: 90.0
   max_turns: 10

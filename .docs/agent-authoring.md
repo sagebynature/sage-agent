@@ -1140,7 +1140,7 @@ compaction_threshold = 0.75
 reserve_tokens = 4096
 
 [agents.researcher]
-model = "azure_ai/Kimi-K2.5"
+model = "azure_ai/kimi-k2.5"
 max_turns = 20
 
 [agents.researcher.model_params]
@@ -1476,7 +1476,7 @@ and git history. Shell access is restricted to git commands.
 ```markdown
 ---
 name: safe-coder
-model: azure_ai/Kimi-K2.5
+model: azure_ai/kimi-k2.5
 description: A coding assistant with permissions and token budget management
 permission:
   read: allow

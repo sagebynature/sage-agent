@@ -1,6 +1,6 @@
 ---
 name: safe-coder
-model: azure_ai/Kimi-K2.5
+model: azure_ai/kimi-k2.5
 description: A coding assistant with permissions and token budget management
 permission:
   read: allow

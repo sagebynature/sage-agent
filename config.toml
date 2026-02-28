@@ -18,15 +18,15 @@
 # Resolution order: config.toml [env] > .env file > os.environ
 # Unresolved ${VAR} references cause a startup error.
 [env]
-AZURE_AI_API_KEY = "${ANTHROPIC_FOUNDRY_API_KEY}"
-AZURE_AI_API_BASE = "https://${ANTHROPIC_FOUNDRY_RESOURCE}.services.ai.azure.com"
+AZURE_AI_API_KEY = "${AZURE_AI_API_KEY}"
+AZURE_AI_API_BASE = "${AZURE_AI_API_BASE}"
 
 
 # ─── Global Defaults ──────────────────────────────────────────────────────────
 [defaults]
 
 # LLM model identifier (provider/model format)
-model = "azure_ai/Kimi-K2.5"
+model = "azure_ai/kimi-k2.5"
 
 # Maximum agentic turns before stopping
 max_turns = 10
@@ -92,7 +92,7 @@ args = ["-y", "@modelcontextprotocol/server-sequential-thinking@latest"]
 # The <name> must match the agent's "name" field in its .md frontmatter.
 
 [agents.researcher]
-model = "azure_ai/Kimi-K2.5"
+model = "azure_ai/kimi-k2.5"
 max_turns = 20
 
 [agents.researcher.model_params]
