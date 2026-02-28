@@ -1,0 +1,48 @@
+name: "devtools-smoke"
+description: "Quick sanity checks — one test per capability area"
+agent: "../examples/devtools_agent/AGENTS.md"
+
+settings:
+  models: ["azure_ai/Kimi-K2.5", "gpt-4o", "anthropic/claude-3-5-sonnet-20240620"]
+  runs_per_case: 1
+  timeout: 90.0
+  max_turns: 10
+
+test_cases:
+  - id: "smoke-file-read"
+    input: "Read the file fixtures/sample.py and summarize what each function does."
+    context_files: ["./fixtures/sample.py"]
+    assertions:
+      - type: "tool_calls"
+        expected: ["file_read"]
+      - type: "contains"
+        value: "greet"
+    tags: ["smoke", "file-ops"]
+
+  - id: "smoke-edit"
+    input: "Add a one-line docstring to the greet function in fixtures/sample.py. The docstring should say 'Return a greeting for the given name.'"
+    context_files: ["./fixtures/sample.py"]
+    assertions:
+      - type: "tool_calls"
+        expected: ["file_read", "file_edit"]
+      - type: "not_contains"
+        value: "I cannot"
+    tags: ["smoke", "editing"]
+
+  - id: "smoke-git"
+    input: "Show me the current git status of this repository."
+    assertions:
+      - type: "tool_calls"
+        expected: ["git_status"]
+      - type: "turns_under"
+        max_turns: 3
+    tags: ["smoke", "git"]
+
+  - id: "smoke-web"
+    input: "Search the web for when Python 3.12 was released and tell me the release date."
+    assertions:
+      - type: "tool_calls"
+        expected: ["web_search"]
+      - type: "contains"
+        value: "2023"
+    tags: ["smoke", "web"]
