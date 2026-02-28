@@ -13,6 +13,19 @@
 
 # skills_dir = "${HOME}/.agents/skills/"  # Global skills directory. If unset, waterfall: $cwd/skills -> ~/.agents/skills -> ~/.claude/skills
 
+# ─── Agent Discovery ──────────────────────────────────────────────────────
+# Where to find agent .md files (relative to CWD).
+agent_path = "agents/"
+
+# Primary agent (entry point for CLI commands when no agent is specified).
+# primary = "assistant"
+
+# Secondary agents available for delegation.
+# [[secondary]]
+# name = "researcher"
+# [[secondary]]
+# name = "summarizer"
+
 # ─── Environment Variables ──────────────────────────────────────────────────
 # Resolved at startup. Values can reference env vars with ${VAR} syntax.
 # Resolution order: config.toml [env] > .env file > os.environ
@@ -30,6 +43,9 @@ model = "azure_ai/kimi-k2.5"
 
 # Maximum agentic turns before stopping
 max_turns = 10
+
+# Maximum delegation depth (prevents infinite recursion)
+max_depth = 3
 
 # Custom tool extensions (list of Python module paths)
 # extensions = ["myapp.tools"]

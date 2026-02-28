@@ -48,6 +48,7 @@ class ConfigOverrides(BaseModel):
     model: str | None = None
     model_params: ModelParams | None = None
     max_turns: int | None = None
+    max_depth: int | None = None
     permission: Permission | None = None
     context: ContextConfig | None = None
     extensions: list[str] | None = None
@@ -67,6 +68,9 @@ class MainConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     skills_dir: str | None = None
+    agent_path: str = "agents/"
+    primary: str | None = None
+    secondary: list[dict[str, str]] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
     defaults: ConfigOverrides = Field(default_factory=ConfigOverrides)
     agents: dict[str, AgentOverrides] = Field(default_factory=dict)

@@ -1024,3 +1024,63 @@ class TestGitConfig:
         )
         config = load_config(str(config_file))
         assert config.git is None
+
+
+class TestIdentityConfig:
+    def test_identity_config_defaults(self) -> None:
+        from sage.config import IdentityConfig
+
+        cfg = IdentityConfig()
+        assert cfg.format == "none"
+        assert cfg.file is None
+
+    def test_identity_config_aieos(self) -> None:
+        from sage.config import IdentityConfig
+
+        cfg = IdentityConfig(format="aieos", file="persona.aieos.json")
+        assert cfg.format == "aieos"
+        assert cfg.file == "persona.aieos.json"
+
+    def test_identity_config_invalid_format_rejected(self) -> None:
+        from sage.config import IdentityConfig
+
+        with pytest.raises(ValidationError):
+            IdentityConfig(format="invalid")  # type: ignore[arg-type]
+
+    def test_agent_config_max_depth_default(self, tmp_path: Path) -> None:
+        config_file = _write_md(
+            tmp_path / "AGENTS.md",
+            {"name": "test", "model": "gpt-4o"},
+        )
+        config = load_config(str(config_file))
+        assert config.max_depth == 3
+
+    def test_agent_config_max_depth_custom(self, tmp_path: Path) -> None:
+        config_file = _write_md(
+            tmp_path / "AGENTS.md",
+            {"name": "test", "model": "gpt-4o", "max_depth": 5},
+        )
+        config = load_config(str(config_file))
+        assert config.max_depth == 5
+
+    def test_agent_config_identity_field(self, tmp_path: Path) -> None:
+        config_file = _write_md(
+            tmp_path / "AGENTS.md",
+            {
+                "name": "test",
+                "model": "gpt-4o",
+                "identity": {"format": "aieos", "file": "persona.aieos.json"},
+            },
+        )
+        config = load_config(str(config_file))
+        assert config.identity is not None
+        assert config.identity.format == "aieos"
+        assert config.identity.file == "persona.aieos.json"
+
+    def test_agent_config_identity_default_none(self, tmp_path: Path) -> None:
+        config_file = _write_md(
+            tmp_path / "AGENTS.md",
+            {"name": "test", "model": "gpt-4o"},
+        )
+        config = load_config(str(config_file))
+        assert config.identity is None

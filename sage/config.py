@@ -184,6 +184,13 @@ class TracingConfig(BaseModel):
     exporter: Literal["none", "console", "otlp"] = "none"
 
 
+class IdentityConfig(BaseModel):
+    """Configuration for optional AIEOS identity / persona."""
+
+    format: Literal["aieos", "none"] = "none"
+    file: str | None = None
+
+
 class AgentConfig(BaseModel):
     """Top-level configuration for a Sage agent.
 
@@ -221,6 +228,7 @@ class AgentConfig(BaseModel):
     subagents: list[AgentConfig] = Field(default_factory=list)
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
     max_turns: int = 10
+    max_depth: int = 3
     model_params: ModelParams = Field(default_factory=ModelParams)
     skills: list[str] | None = None
     context: ContextConfig | None = None
@@ -234,6 +242,7 @@ class AgentConfig(BaseModel):
     research: ResearchConfig | None = None
     follow_through: FollowThroughConfig | None = None
     session: SessionConfig | None = None
+    identity: IdentityConfig | None = None
 
     @field_validator("subagents", mode="before")
     @classmethod

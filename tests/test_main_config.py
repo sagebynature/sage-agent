@@ -585,3 +585,44 @@ class TestResolveAndApplyEnv:
         cfg = MainConfig(env={"API_KEY": "${API_KEY}"})
         resolve_and_apply_env(cfg)
         assert os.environ["API_KEY"] == "from_dotenv"
+
+
+class TestMainConfigNewFields:
+    def test_agent_path_default(self) -> None:
+        cfg = MainConfig()
+        assert cfg.agent_path == "agents/"
+
+    def test_agent_path_custom(self) -> None:
+        cfg = MainConfig(agent_path="custom/agents/")
+        assert cfg.agent_path == "custom/agents/"
+
+    def test_primary_default_none(self) -> None:
+        cfg = MainConfig()
+        assert cfg.primary is None
+
+    def test_primary_set(self) -> None:
+        cfg = MainConfig(primary="main-agent")
+        assert cfg.primary == "main-agent"
+
+    def test_secondary_default_empty(self) -> None:
+        cfg = MainConfig()
+        assert cfg.secondary == []
+
+    def test_secondary_set(self) -> None:
+        cfg = MainConfig(secondary=[{"name": "helper", "role": "backup"}])
+        assert cfg.secondary == [{"name": "helper", "role": "backup"}]
+
+
+class TestConfigOverridesMaxDepth:
+    def test_max_depth_default_none(self) -> None:
+        overrides = ConfigOverrides()
+        assert overrides.max_depth is None
+
+    def test_max_depth_set(self) -> None:
+        overrides = ConfigOverrides(max_depth=5)
+        assert overrides.max_depth == 5
+
+    def test_max_depth_in_model_dump(self) -> None:
+        overrides = ConfigOverrides(max_depth=7)
+        dumped = overrides.model_dump(exclude_none=True)
+        assert dumped["max_depth"] == 7

@@ -120,6 +120,8 @@ class Agent:
         subagents: dict[str, Agent] | None = None,
         provider: ProviderProtocol | None = None,
         max_turns: int = 10,
+        max_depth: int = 3,
+        _current_depth: int = 0,
         body: str = "",
         model_params: dict[str, Any] | None = None,
         skills: list[Skill] | None = None,
@@ -134,6 +136,8 @@ class Agent:
         self.description = description
         self._body = body
         self.max_turns = max_turns
+        self.max_depth = max_depth
+        self._current_depth = _current_depth
         self.memory = memory
         self.subagents = subagents or {}
         self.skills: list[Skill] = skills or []
@@ -157,6 +161,7 @@ class Agent:
         self._hook_registry: HookRegistry = (
             hook_registry if hook_registry is not None else HookRegistry()
         )
+        self._identity_prompt: str = ""
         self._last_compaction_strategy: str | None = None
 
         # Default to LiteLLM provider if none supplied.
@@ -315,6 +320,7 @@ class Agent:
             model=config.model,
             description=config.description,
             max_turns=config.max_turns,
+            max_depth=config.max_depth,
             subagents=subagents,
             body=config._body,
             model_params=config.model_params.to_kwargs() or None,
@@ -377,6 +383,27 @@ class Agent:
         agent._token_budget = token_budget
         agent._git_config = config.git
         agent._memory_config = config.memory
+
+        # Load AIEOS identity if configured.
+        if (
+            config.identity is not None
+            and config.identity.format == "aieos"
+            and config.identity.file
+        ):
+            try:
+                from sage.identity.aieos import format_identity_prompt, load_identity
+
+                identity_path = (
+                    base_dir / config.identity.file
+                    if not Path(config.identity.file).is_absolute()
+                    else Path(config.identity.file)
+                )
+                identity = load_identity(identity_path)
+                agent._identity_prompt = format_identity_prompt(identity)
+            except Exception as exc:
+                logger.warning(
+                    "Failed to load AIEOS identity from %s: %s", config.identity.file, exc
+                )
 
         if config.tracing is not None:
             setup_tracing(config.tracing)
@@ -606,6 +633,12 @@ class Agent:
         """
         if subagent_name not in self.subagents:
             raise ToolError(f"Unknown subagent: {subagent_name}")
+        # Enforce max delegation depth.
+        if self._current_depth >= self.max_depth:
+            raise ToolError(
+                f"Max delegation depth ({self.max_depth}) exceeded — "
+                f"cannot delegate to '{subagent_name}'"
+            )
         logger.debug(
             "Delegating to subagent '%s': %s",
             subagent_name,
@@ -613,6 +646,8 @@ class Agent:
         )
         await self._emit(HookEvent.ON_DELEGATION, {"target": subagent_name, "input": task})
         subagent = self.subagents[subagent_name]
+        # Propagate depth to subagent.
+        subagent._current_depth = self._current_depth + 1
         try:
             result = await subagent.run(task)
         except KeyboardInterrupt:
@@ -935,6 +970,8 @@ class Agent:
         system_parts: list[str] = []
         if self._body:
             system_parts.append(self._body)
+        if self._identity_prompt:
+            system_parts.append(self._identity_prompt)
         if self.skills:
             catalog_lines = [
                 "## Available Skills",
