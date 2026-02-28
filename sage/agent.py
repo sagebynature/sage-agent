@@ -344,6 +344,11 @@ class Agent:
         if permission_handler is not None:
             agent.tool_registry.set_permission_handler(permission_handler)
 
+        # Build allowed shell patterns from permission config.
+        shell_allow: frozenset[str] | None = None
+        if config.permission is not None and config.permission.shell_allow_patterns:
+            shell_allow = frozenset(config.permission.shell_allow_patterns)
+
         # Wire sandbox: replace the module-level shell tool with a per-agent
         # sandboxed version when sandbox config is present.
         if config.sandbox is not None:
@@ -351,8 +356,12 @@ class Agent:
             from sage.tools.builtins import make_sandboxed_shell
 
             sandbox = build_sandbox(config.sandbox)
-            sandboxed_shell = make_sandboxed_shell(sandbox)
+            sandboxed_shell = make_sandboxed_shell(sandbox, allowed_patterns=shell_allow)
             agent.tool_registry.register(sandboxed_shell)
+        elif shell_allow is not None:
+            from sage.tools.builtins import make_shell
+
+            agent.tool_registry.register(make_shell(allowed_patterns=shell_allow))
 
         # Store token budget for later use.
         agent._token_budget = token_budget

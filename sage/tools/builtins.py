@@ -85,14 +85,19 @@ _DANGEROUS_PATTERNS: list[str] = [
 ]
 
 
-def _check_dangerous_patterns(command: str) -> None:
-    """Raise ToolError if *command* matches any dangerous pattern."""
+def _check_dangerous_patterns(command: str, allowed_patterns: frozenset[str] | None = None) -> None:
+    """Raise ToolError if *command* matches any dangerous pattern.
+
+    Patterns listed in *allowed_patterns* are skipped.
+    """
     for pattern in _DANGEROUS_PATTERNS:
+        if allowed_patterns and pattern in allowed_patterns:
+            continue
         if re.search(pattern, command, re.IGNORECASE):
             raise ToolError(f"Command rejected \u2014 matches dangerous pattern: {pattern}")
 
 
-def _validate_shell_command(command: str) -> None:
+def _validate_shell_command(command: str, allowed_patterns: frozenset[str] | None = None) -> None:
     """Validate each segment of a chained command independently.
 
     First checks the full command string (catches pipe-based patterns like
@@ -100,13 +105,13 @@ def _validate_shell_command(command: str) -> None:
     checks each segment independently.
     """
     # Check full command first — catches pipe-to-shell and base64-decode-pipe patterns
-    _check_dangerous_patterns(command)
+    _check_dangerous_patterns(command, allowed_patterns)
     # Also check each chained segment independently
     segments = re.split(r"\s*(?:&&|\|\||;|\|)\s*", command)
     for segment in segments:
         segment = segment.strip()
         if segment:
-            _check_dangerous_patterns(segment)
+            _check_dangerous_patterns(segment, allowed_patterns)
 
 
 @tool
@@ -137,7 +142,47 @@ async def shell(command: str) -> str:
     return output.strip()
 
 
-def make_sandboxed_shell(sandbox: SandboxExecutor) -> Any:
+def make_shell(allowed_patterns: frozenset[str] | None = None) -> Any:
+    """Build a ``@tool``-decorated ``shell`` function with custom allowed patterns.
+
+    Returns a ``@tool``-decorated async callable that can be passed directly
+    to ``ToolRegistry.register()``.  Registering it under the same name
+    ``"shell"`` replaces the module-level default.
+    """
+
+    @tool
+    async def shell(command: str) -> str:  # noqa: F811
+        """Run a shell command and return combined stdout and stderr.
+
+        Security: Commands are checked against a blocklist of dangerous patterns
+        (destructive operations, data exfiltration, command substitution wrapping).
+        This is defense-in-depth — not a substitute for OS-level sandboxing.
+        """
+        import asyncio
+
+        logger.debug("shell: %s", command[:100])
+        _validate_shell_command(command, allowed_patterns)
+
+        proc = await asyncio.create_subprocess_shell(
+            command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+
+        output = stdout.decode(errors="replace")
+        if stderr:
+            err_text = stderr.decode(errors="replace")
+            if err_text:
+                output += f"\n[stderr]\n{err_text}"
+        return output.strip()
+
+    return shell
+
+
+def make_sandboxed_shell(
+    sandbox: SandboxExecutor, allowed_patterns: frozenset[str] | None = None
+) -> Any:
     """Build a ``@tool``-decorated ``shell`` function bound to *sandbox*.
 
     This factory creates a per-agent ``shell`` tool that executes commands
@@ -158,7 +203,7 @@ def make_sandboxed_shell(sandbox: SandboxExecutor) -> Any:
         inherited environment variables (blocking ``$SHELL`` / env-var bypass).
         """
         logger.debug("shell (sandboxed): %s", command[:100])
-        _validate_shell_command(command)
+        _validate_shell_command(command, allowed_patterns)
         stdout, stderr = await sandbox.execute(command)
         output = stdout
         if stderr.strip():

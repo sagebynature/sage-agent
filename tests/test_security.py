@@ -14,7 +14,14 @@ import pytest
 
 from sage.exceptions import ToolError
 from sage.tools._security import ResolvedURL, validate_and_resolve_url, validate_url
-from sage.tools.builtins import file_read, file_write, http_request, shell
+from sage.tools.builtins import (
+    _validate_shell_command,
+    file_read,
+    file_write,
+    http_request,
+    make_shell,
+    shell,
+)
 from sage.tools.file_tools import file_edit
 from sage.tools.web_tools import web_fetch
 
@@ -47,6 +54,36 @@ class TestCommandInjectionPrevention:
     async def test_blocked(self, cmd: str, description: str) -> None:
         with pytest.raises(ToolError, match="Command rejected"):
             await shell(command=cmd)
+
+
+class TestShellAllowPatterns:
+    """Verify shell_allow_patterns lets specific dangerous patterns through."""
+
+    def test_allowed_pattern_skipped(self) -> None:
+        allowed = frozenset([r"\bpython[23]?\s+-c\s+"])
+        # Should not raise
+        _validate_shell_command('python3 -c "print(1)"', allowed_patterns=allowed)
+
+    def test_other_patterns_still_blocked(self) -> None:
+        allowed = frozenset([r"\bpython[23]?\s+-c\s+"])
+        with pytest.raises(ToolError, match="Command rejected"):
+            _validate_shell_command("rm -rf /", allowed_patterns=allowed)
+
+    def test_no_allowed_patterns_blocks_all(self) -> None:
+        with pytest.raises(ToolError, match="Command rejected"):
+            _validate_shell_command('python3 -c "print(1)"')
+
+    async def test_make_shell_with_allowed_patterns(self) -> None:
+        allowed = frozenset([r"\bpython[23]?\s+-c\s+"])
+        custom_shell = make_shell(allowed_patterns=allowed)
+        result = await custom_shell(command='python3 -c "print(42)"')
+        assert "42" in result
+
+    async def test_make_shell_still_blocks_other_patterns(self) -> None:
+        allowed = frozenset([r"\bpython[23]?\s+-c\s+"])
+        custom_shell = make_shell(allowed_patterns=allowed)
+        with pytest.raises(ToolError, match="Command rejected"):
+            await custom_shell(command="eval 'echo hi'")
 
 
 class TestPathTraversalPrevention:
