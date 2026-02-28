@@ -3,6 +3,7 @@
 from __future__ import annotations
 import asyncio
 import logging
+import os
 import shutil
 import tempfile
 import time
@@ -74,7 +75,11 @@ class EvalRunner:
         case_results: list[CaseResult] = []
         for test_case in self.suite.test_cases:
             for _ in range(runs_per_case):
-                result = await self._run_case(test_case)
+                # Run each case in its own asyncio Task to fully isolate
+                # cancellation scopes — the MCP library uses anyio, and
+                # cancel scopes from one case's cleanup can leak into the
+                # next case if they share the same Task.
+                result = await asyncio.ensure_future(self._run_case(test_case))
                 case_results.append(result)
 
         completed_at = datetime.now(timezone.utc).isoformat()
@@ -108,63 +113,81 @@ class EvalRunner:
         tokens = 0
         cost = 0.0
         error: str | None = None
+        agent: Agent | None = None
+        tmp_dir: str | None = None
+        original_cwd: str | None = None
 
+        # --- Phase 1: run the agent ---
         try:
             agent = Agent.from_config(self.suite.agent)
             # Override model
             agent.model = self.model
 
-            # Set up working directory with context files
-            tmp_dir: str | None = None
-            if test_case.context_files:
-                tmp_dir = tempfile.mkdtemp()
-                for file_path in test_case.context_files:
-                    src = Path(file_path)
-                    if src.exists():
-                        shutil.copy2(src, Path(tmp_dir) / src.name)
-                    else:
-                        logger.warning("Context file not found: %s", file_path)
-                if hasattr(agent, "cwd"):
-                    agent.cwd = tmp_dir  # type: ignore[assignment]
+            # Always run each case in its own temp directory so that file
+            # writes are isolated (especially important when models run in
+            # parallel).  Copy any context_files into the temp dir preserving
+            # relative directory structure so paths in the test input resolve.
+            tmp_dir = tempfile.mkdtemp()
+            original_cwd = os.getcwd()
+            suite_dir = Path(self.suite.suite_dir)
+            for file_path in test_case.context_files:
+                src = Path(file_path)
+                if src.exists():
+                    try:
+                        rel = src.relative_to(suite_dir)
+                    except ValueError:
+                        rel = Path(src.name)
+                    dest = Path(tmp_dir) / rel
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src, dest)
+                else:
+                    logger.warning("Context file not found: %s", file_path)
+
+            os.chdir(tmp_dir)
 
             # Capture tool calls via a hook on the tool registry
-            original_dispatch: Any = None
-            if hasattr(agent, "tool_registry") and hasattr(agent.tool_registry, "dispatch"):
-                original_dispatch = agent.tool_registry.dispatch
+            original_execute: Any = None
+            if hasattr(agent, "tool_registry") and hasattr(agent.tool_registry, "execute"):
+                original_execute = agent.tool_registry.execute
 
-                async def _tracking_dispatch(
-                    tool_name: str, args: dict[str, Any], *a: Any, **kw: Any
-                ) -> Any:
-                    tool_calls_made.append(tool_name)
-                    return await original_dispatch(tool_name, args, *a, **kw)
+                async def _tracking_execute(
+                    name: str,
+                    arguments: dict[str, Any],
+                ) -> str:
+                    tool_calls_made.append(name)
+                    return await original_execute(name, arguments)
 
-                agent.tool_registry.dispatch = _tracking_dispatch  # type: ignore[method-assign]
+                agent.tool_registry.execute = _tracking_execute  # type: ignore[method-assign]
 
-            try:
-                t0 = time.monotonic()
-                output = await asyncio.wait_for(
-                    agent.run(test_case.input),
-                    timeout=self.suite.settings.timeout,
-                )
-                latency_ms = int((time.monotonic() - t0) * 1000)
+            t0 = time.monotonic()
+            output = await asyncio.wait_for(
+                agent.run(test_case.input),
+                timeout=self.suite.settings.timeout,
+            )
+            latency_ms = int((time.monotonic() - t0) * 1000)
 
-                # Try to extract token / cost info from agent internals
-                if hasattr(agent, "_token_usage"):
-                    tokens = int(agent._token_usage)  # type: ignore[attr-defined]
-
-            finally:
-                await agent.close()
-                if tmp_dir:
-                    shutil.rmtree(tmp_dir, ignore_errors=True)
+            # Try to extract token / cost info from agent internals
+            if hasattr(agent, "_token_usage"):
+                tokens = int(agent._token_usage)  # type: ignore[attr-defined]
 
         except asyncio.TimeoutError:
             error = f"Timeout after {self.suite.settings.timeout}s"
             logger.warning("Case %s timed out", test_case.id)
+        except asyncio.CancelledError:
+            error = f"Cancelled during case {test_case.id}"
+            logger.warning("Case %s cancelled", test_case.id)
         except Exception as exc:
             error = str(exc)
             logger.warning("Case %s failed: %s", test_case.id, exc)
+        finally:
+            # Restore working directory before anything else.
+            if original_cwd is not None:
+                os.chdir(original_cwd)
 
-        # Run assertions
+        # --- Phase 2: run assertions BEFORE closing the agent ---
+        # agent.close() uses anyio internally; its cancel scopes leak across
+        # asyncio Task boundaries and cancel unrelated awaits.  By running
+        # assertions first, there is nothing left to interfere with.
         assertion_results: list[AssertionResult] = []
         if not error:
             for assertion in test_case.assertions:
@@ -189,6 +212,15 @@ class EvalRunner:
                             message=f"Assertion error: {exc}",
                         )
                     )
+
+        # --- Phase 3: close agent, then clean up temp dir ---
+        if agent is not None:
+            try:
+                await agent.close()
+            except (asyncio.CancelledError, Exception) as exc:
+                logger.debug("Agent close error (safe to ignore): %s", exc)
+        if tmp_dir:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
         # A case passes if all assertions pass (or there are no assertions)
         all_passed = (

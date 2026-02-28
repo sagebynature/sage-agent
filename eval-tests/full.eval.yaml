@@ -3,89 +3,89 @@ description: "Comprehensive regression tests across all devtools capabilities"
 agent: "../examples/devtools_agent/AGENTS.md"
 
 settings:
-  models: ["azure_ai/Kimi-K2.5", "gpt-4o", "anthropic/claude-3-5-sonnet-20240620"]
+  models: [ "azure_ai/kimi-k2.5" ] #, "azure_ai/claude-sonnet-4-6", "azure_ai/gpt-5.2", "azure_ai/opus-4-6" ]
   runs_per_case: 1
   timeout: 90.0
   max_turns: 10
 
 test_cases:
-  - id: "full-grep-search"
-    input: "Search fixtures/sample.py for all function definitions that accept more than one parameter. List them."
-    context_files: ["./fixtures/sample.py"]
-    assertions:
-      - type: "tool_calls"
-        expected: ["grep_search"]
-      - type: "regex"
-        pattern: "parse_csv|add"
-    tags: ["full", "file-ops"]
+- id: "full-grep-search"
+  input: "Search fixtures/sample.py for all function definitions that accept more than one parameter. List them."
+  context_files: [ "./fixtures/sample.py" ]
+  assertions:
+  - type: "tool_calls"
+    expected: [ "file_read" ]
+  - type: "regex"
+    pattern: "parse_csv|add"
+  tags: [ "full", "file-ops" ]
 
-  - id: "full-glob-discover"
-    input: "List all Python files in the fixtures directory."
-    context_files: ["./fixtures/sample.py", "./fixtures/buggy.py"]
-    assertions:
-      - type: "tool_calls"
-        expected: ["glob_find"]
-      - type: "contains"
-        value: ".py"
-    tags: ["full", "file-ops"]
+- id: "full-glob-discover"
+  input: "List all Python files in the fixtures directory."
+  context_files: [ "./fixtures/sample.py", "./fixtures/buggy.py" ]
+  assertions:
+  - type: "tool_calls"
+    expected: [ "shell" ]
+  - type: "contains"
+    value: ".py"
+  tags: [ "full", "file-ops" ]
 
-  - id: "full-fix-bug"
-    input: |
-      The function sum_range in fixtures/buggy.py is supposed to sum all integers
-      from start to end inclusive, but it has a bug. Find the bug and fix it.
-    context_files: ["./fixtures/buggy.py"]
-    assertions:
-      - type: "tool_calls"
-        expected: ["file_read", "file_edit"]
-      - type: "llm_judge"
-        rubric: "code_generation"
-        min_score: 3.0
-    tags: ["full", "editing", "debugging"]
+- id: "full-fix-bug"
+  input: |
+    The function sum_range in fixtures/buggy.py is supposed to sum all integers
+    from start to end inclusive, but it has a bug. Find the bug and fix it.
+  context_files: [ "./fixtures/buggy.py" ]
+  assertions:
+  - type: "tool_calls"
+    expected: [ "file_read", "file_edit" ]
+  - type: "llm_judge"
+    rubric: "code_generation"
+    min_score: 3.0
+  tags: [ "full", "editing", "debugging" ]
 
-  - id: "full-git-log"
-    input: "Show the last 3 commits in this repository and summarize what changed in each."
-    assertions:
-      - type: "tool_calls"
-        expected: ["git_log"]
-      - type: "llm_judge"
-        rubric: "qa"
-        min_score: 3.0
-    tags: ["full", "git"]
+- id: "full-git-log"
+  input: "Show the last 3 commits in this repository and summarize what changed in each."
+  assertions:
+  - type: "tool_calls"
+    expected: [ "git_log" ]
+  - type: "llm_judge"
+    rubric: "qa"
+    min_score: 3.0
+  tags: [ "full", "git" ]
 
-  - id: "full-git-diff-review"
-    input: "Review the current git diff and explain what changes are staged or unstaged."
-    assertions:
-      - type: "tool_calls"
-        expected: ["git_diff"]
-      - type: "not_contains"
-        value: "I don't know"
-    tags: ["full", "git"]
+- id: "full-git-diff-review"
+  input: "Review the current git diff and explain what changes are staged or unstaged."
+  assertions:
+  - type: "tool_calls"
+    expected: [ "git_diff" ]
+  - type: "not_contains"
+    value: "I don't know"
+  tags: [ "full", "git" ]
 
-  - id: "full-web-fetch"
-    input: "Search for the Python PEP 8 style guide, fetch the page, and summarize the 5 most important rules about indentation and naming."
-    assertions:
-      - type: "tool_calls"
-        expected: ["web_search"]
-      - type: "contains"
-        value: "indent"
-    tags: ["full", "web"]
+- id: "full-web-fetch"
+  input: "Search for the Python PEP 8 style guide, fetch the page, and summarize the 5 most important rules about indentation and naming."
+  assertions:
+  - type: "tool_calls"
+    expected: [ "web_search" ]
+  - type: "contains"
+    value: "indent"
+  tags: [ "full", "web" ]
 
-  - id: "full-multi-tool"
-    input: "Read fixtures/pyproject.toml to find the project name, then search the fixtures directory for any file that references that project name."
-    context_files: ["./fixtures/pyproject.toml", "./fixtures/sample.py", "./fixtures/buggy.py"]
-    assertions:
-      - type: "tool_calls"
-        expected: ["file_read"]
-      - type: "turns_under"
-        max_turns: 8
-    tags: ["full", "multi-tool"]
+- id: "full-multi-tool"
+  input: "Read fixtures/pyproject.toml to find the project name, then search the fixtures directory for any file that references that project name."
+  context_files: [ "./fixtures/pyproject.toml", "./fixtures/sample.py", "./fixtures/buggy.py" ]
+  assertions:
+  - type: "tool_calls"
+    expected: [ "file_read" ]
+  - type: "turns_under"
+    max_turns: 8
+  tags: [ "full", "multi-tool" ]
 
-  - id: "full-write-file"
-    input: "Create a new Python file called hello.py with a main() function that prints 'Hello, World!' and an if __name__ == '__main__' guard that calls main()."
-    assertions:
-      - type: "tool_calls"
-        expected: ["file_write"]
-      - type: "python"
-        code: |
-          result = 1.0 if "hello.py" in output.lower() or "file_write" in output.lower() else 0.0
-    tags: ["full", "editing"]
+- id: "full-write-file"
+  input: "Create a new Python file called hello.py with a main() function that prints 'Hello, World!' and an if __name__ == '__main__' guard that calls main()."
+  assertions:
+  - type: "tool_calls"
+    expected: [ "file_write" ]
+  - type: "python"
+    code: |
+      result = 1.0 if "hello.py" in output.lower() or "file_write" in output.lower() else 0.0
+  tags: [ "full", "editing" ]

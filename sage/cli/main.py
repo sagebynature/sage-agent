@@ -502,6 +502,21 @@ def eval_run(
         sys.exit(1)
 
 
+def _run_single_model(suite_yaml: str, model: str, runs_per_case: int) -> str:
+    """Run eval for a single model in a separate process.
+
+    Returns the EvalRunResult serialised as JSON to avoid pickle
+    compatibility issues across process boundaries.
+    """
+    from sage.eval.runner import EvalRunner
+    from sage.eval.suite import load_suite
+
+    suite = load_suite(suite_yaml)
+    runner = EvalRunner(suite, model=model)
+    result = asyncio.run(runner.run(runs_per_case=runs_per_case))
+    return result.model_dump_json()
+
+
 async def _eval_run(
     suite_yaml: str,
     model: str | None,
@@ -509,29 +524,65 @@ async def _eval_run(
     output_format: str,
     min_pass_rate: float | None,
 ) -> None:
+    from concurrent.futures import ProcessPoolExecutor
+
     from sage.eval.history import EvalHistory
     from sage.eval.report import format_run_json, format_run_text
-    from sage.eval.runner import EvalRunner
+    from sage.eval.runner import EvalRunner, EvalRunResult
     from sage.eval.suite import load_suite
 
     suite = load_suite(suite_yaml)
-    runner = EvalRunner(suite, model=model)
-    result = await runner.run(runs_per_case=runs_per_case)
 
-    if output_format == "json":
-        click.echo(format_run_json(result))
+    # When a specific model is given via --model, run only that model.
+    # Otherwise, run every model listed in the suite settings.
+    models = [model] if model else suite.settings.models
+
+    # Run each model.  When there are multiple models, use separate
+    # processes so that os.chdir() calls in the runner don't race.
+    if len(models) == 1:
+        runner = EvalRunner(suite, model=models[0])
+        results: list[EvalRunResult | Exception] = [await runner.run(runs_per_case=runs_per_case)]
     else:
-        click.echo(format_run_text(result))
+        loop = asyncio.get_running_loop()
+        with ProcessPoolExecutor(max_workers=len(models)) as pool:
+            futures = [
+                loop.run_in_executor(pool, _run_single_model, suite_yaml, m, runs_per_case)
+                for m in models
+            ]
+            raw = await asyncio.gather(*futures, return_exceptions=True)
+
+        results = []
+        for m, r in zip(models, raw):
+            if isinstance(r, Exception):
+                click.echo(f"Error running model {m}: {r}", err=True)
+                results.append(r)
+            else:
+                results.append(EvalRunResult.model_validate_json(r))
 
     history = EvalHistory()
     await history.init_db()
-    await history.save_run(result)
 
-    if min_pass_rate is not None and result.pass_rate < min_pass_rate:
-        click.echo(
-            f"Pass rate {result.pass_rate:.1%} below threshold {min_pass_rate:.1%}",
-            err=True,
-        )
+    failed = False
+    for m, result in zip(models, results):
+        if isinstance(result, Exception):
+            failed = True
+            continue
+
+        if output_format == "json":
+            click.echo(format_run_json(result))
+        else:
+            click.echo(format_run_text(result))
+
+        await history.save_run(result)
+
+        if min_pass_rate is not None and result.pass_rate < min_pass_rate:
+            click.echo(
+                f"Pass rate {result.pass_rate:.1%} below threshold {min_pass_rate:.1%} for model {m}",
+                err=True,
+            )
+            failed = True
+
+    if failed:
         sys.exit(1)
 
 
