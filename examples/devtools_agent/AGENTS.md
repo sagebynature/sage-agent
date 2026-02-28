@@ -6,8 +6,9 @@ permission:
   read: allow
   edit: allow
   shell:
-    default: allow
-    python_exec: allow
+    "*": allow
+    "python *": allow
+    "python3 *": allow
   web: allow
   git: allow
 max_turns: 20

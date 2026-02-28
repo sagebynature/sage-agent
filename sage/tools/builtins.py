@@ -84,61 +84,37 @@ _DANGEROUS_PATTERNS: list[str] = [
     r"\benv\s+.*\brm\b",
 ]
 
-# Named groups of dangerous patterns.  Used with the dict form of
-# ``permission.shell`` — setting a group name to ``"allow"`` exempts those
-# patterns for that agent.
-DANGEROUS_PATTERN_GROUPS: dict[str, list[str]] = {
-    "python_exec": [r"\bpython[23]?\s+-c\s+"],
-    "perl_exec": [r"\bperl\s+-e\s+"],
-    "ruby_exec": [r"\bruby\s+-e\s+"],
-    "node_exec": [r"\bnode\s+-e\s+", r"\bnodejs\s+-e\s+"],
-    "eval_exec": [r"\beval\s+", r"\bbash\s+-c\s+", r"\bsh\s+-c\s+"],
-    "git_force_push": [r"\bgit\s+push\s+.*--force\b", r"\bgit\s+push\s+.*-f\b"],
-    "git_reset_hard": [r"\bgit\s+reset\s+--hard\b"],
-    "git_clean": [r"\bgit\s+clean\s+-[fd]"],
-    "git_rebase": [r"\bgit\s+rebase\b"],
-    "git_push_main": [r"\bgit\s+push\s+.*\bmain\b", r"\bgit\s+push\s+.*\bmaster\b"],
-    "git_branch_delete": [r"\bgit\s+branch\s+-D\b"],
-    "git_checkout_dot": [r"\bgit\s+checkout\s+\.\s*$"],
-}
 
-
-def resolve_allowed_patterns(group_names: list[str]) -> frozenset[str]:
-    """Convert a list of pattern group names to a frozenset of regex strings."""
-    patterns: set[str] = set()
-    for name in group_names:
-        if name in DANGEROUS_PATTERN_GROUPS:
-            patterns.update(DANGEROUS_PATTERN_GROUPS[name])
-    return frozenset(patterns)
-
-
-def _check_dangerous_patterns(command: str, allowed_patterns: frozenset[str] | None = None) -> None:
-    """Raise ToolError if *command* matches any dangerous pattern.
-
-    Patterns listed in *allowed_patterns* are skipped.
-    """
+def _check_dangerous_patterns(command: str) -> None:
+    """Raise ToolError if *command* matches any dangerous pattern."""
     for pattern in _DANGEROUS_PATTERNS:
-        if allowed_patterns and pattern in allowed_patterns:
-            continue
         if re.search(pattern, command, re.IGNORECASE):
             raise ToolError(f"Command rejected \u2014 matches dangerous pattern: {pattern}")
 
 
-def _validate_shell_command(command: str, allowed_patterns: frozenset[str] | None = None) -> None:
+def _validate_shell_command(command: str, allowed_commands: frozenset[str] | None = None) -> None:
     """Validate each segment of a chained command independently.
 
-    First checks the full command string (catches pipe-based patterns like
-    curl | bash and base64 -d | sh), then splits on &&, ||, ;, | and
-    checks each segment independently.
+    When *allowed_commands* contains fnmatch patterns (from the dict form of
+    ``permission.shell``), any command matching an explicit "allow" pattern
+    bypasses the dangerous-pattern blocklist.  The ``"*"`` wildcard is
+    excluded so that a broad default doesn't accidentally disable all checks.
     """
+    import fnmatch
+
+    if allowed_commands:
+        for pat in allowed_commands:
+            if fnmatch.fnmatch(command, pat):
+                return  # Explicitly allowed by permission config — skip blocklist
+
     # Check full command first — catches pipe-to-shell and base64-decode-pipe patterns
-    _check_dangerous_patterns(command, allowed_patterns)
+    _check_dangerous_patterns(command)
     # Also check each chained segment independently
     segments = re.split(r"\s*(?:&&|\|\||;|\|)\s*", command)
     for segment in segments:
         segment = segment.strip()
         if segment:
-            _check_dangerous_patterns(segment, allowed_patterns)
+            _check_dangerous_patterns(segment)
 
 
 @tool
@@ -169,8 +145,12 @@ async def shell(command: str) -> str:
     return output.strip()
 
 
-def make_shell(allowed_patterns: frozenset[str] | None = None) -> Any:
-    """Build a ``@tool``-decorated ``shell`` function with custom allowed patterns.
+def make_shell(allowed_commands: frozenset[str] | None = None) -> Any:
+    """Build a ``@tool``-decorated ``shell`` with explicit command allowlist.
+
+    *allowed_commands* are fnmatch patterns extracted from the dict form of
+    ``permission.shell``.  Commands matching these patterns bypass the
+    dangerous-pattern blocklist.
 
     Returns a ``@tool``-decorated async callable that can be passed directly
     to ``ToolRegistry.register()``.  Registering it under the same name
@@ -188,7 +168,7 @@ def make_shell(allowed_patterns: frozenset[str] | None = None) -> Any:
         import asyncio
 
         logger.debug("shell: %s", command[:100])
-        _validate_shell_command(command, allowed_patterns)
+        _validate_shell_command(command, allowed_commands)
 
         proc = await asyncio.create_subprocess_shell(
             command,
@@ -208,7 +188,7 @@ def make_shell(allowed_patterns: frozenset[str] | None = None) -> Any:
 
 
 def make_sandboxed_shell(
-    sandbox: SandboxExecutor, allowed_patterns: frozenset[str] | None = None
+    sandbox: SandboxExecutor, allowed_commands: frozenset[str] | None = None
 ) -> Any:
     """Build a ``@tool``-decorated ``shell`` function bound to *sandbox*.
 
@@ -230,7 +210,7 @@ def make_sandboxed_shell(
         inherited environment variables (blocking ``$SHELL`` / env-var bypass).
         """
         logger.debug("shell (sandboxed): %s", command[:100])
-        _validate_shell_command(command, allowed_patterns)
+        _validate_shell_command(command, allowed_commands)
         stdout, stderr = await sandbox.execute(command)
         output = stdout
         if stderr.strip():
