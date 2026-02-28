@@ -6,6 +6,7 @@ import json
 from sage.eval.assertions import AssertionResult
 from sage.eval.report import format_comparison_text, format_run_json, format_run_text
 from sage.eval.runner import CaseResult, EvalRunResult
+from sage.models import Usage
 
 
 # ---------------------------------------------------------------------------
@@ -219,6 +220,96 @@ def test_format_comparison_text_error() -> None:
     text = format_comparison_text(comparison)
     assert "error" in text.lower()
     assert "missing-id" in text
+
+
+def test_format_run_text_token_breakdown() -> None:
+    usage = Usage(
+        prompt_tokens=800,
+        completion_tokens=200,
+        total_tokens=1000,
+        cache_read_tokens=300,
+        cache_creation_tokens=50,
+        reasoning_tokens=0,
+        cost=0.004,
+    )
+    case = CaseResult(
+        case_id="tc-tokens",
+        passed=True,
+        score=1.0,
+        output="answer",
+        assertion_results=[
+            AssertionResult(type="contains", passed=True, score=1.0),
+        ],
+        tool_calls_made=[],
+        latency_ms=500,
+        tokens=1000,
+        cost=0.004,
+        usage=usage,
+    )
+    run = EvalRunResult(
+        run_id="run-tok",
+        suite_name="token-suite",
+        model="gpt-4o",
+        started_at="2026-01-01T00:00:00+00:00",
+        completed_at="2026-01-01T00:01:00+00:00",
+        pass_rate=1.0,
+        avg_score=1.0,
+        total_cost=0.004,
+        total_tokens=1000,
+        total_usage=usage,
+        results=[case],
+    )
+    text = format_run_text(run)
+    # Summary-level token breakdown
+    assert "Input:" in text
+    assert "Output:" in text
+    assert "800" in text
+    assert "200" in text
+    assert "Cache read:" in text
+    assert "Cache write:" in text
+    # Per-case token line
+    assert "in=800" in text
+    assert "out=200" in text
+    assert "cache_read=300" in text
+    assert "cache_write=50" in text
+
+
+def test_format_run_json_includes_usage() -> None:
+    usage = Usage(
+        prompt_tokens=100,
+        completion_tokens=50,
+        total_tokens=150,
+        cost=0.001,
+    )
+    case = CaseResult(
+        case_id="tc-1",
+        passed=True,
+        score=1.0,
+        output="ok",
+        assertion_results=[],
+        tool_calls_made=[],
+        latency_ms=100,
+        tokens=150,
+        cost=0.001,
+        usage=usage,
+    )
+    run = EvalRunResult(
+        run_id="run-json-usage",
+        suite_name="suite",
+        model="gpt-4o",
+        started_at="2026-01-01T00:00:00+00:00",
+        completed_at="2026-01-01T00:01:00+00:00",
+        pass_rate=1.0,
+        avg_score=1.0,
+        total_cost=0.001,
+        total_tokens=150,
+        total_usage=usage,
+        results=[case],
+    )
+    parsed = json.loads(format_run_json(run))
+    assert parsed["total_usage"]["prompt_tokens"] == 100
+    assert parsed["total_usage"]["completion_tokens"] == 50
+    assert parsed["results"][0]["usage"]["prompt_tokens"] == 100
 
 
 def test_format_comparison_text_delta_shown() -> None:

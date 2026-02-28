@@ -58,6 +58,15 @@ class EvalHistory:
         async with aiosqlite.connect(str(self.db_path)) as db:
             await db.execute(_CREATE_RUNS_TABLE)
             await db.execute(_CREATE_RESULTS_TABLE)
+            # Migrate: add token_usage columns if they don't exist yet.
+            for table, col in [
+                ("eval_runs", "total_token_usage"),
+                ("eval_results", "token_usage"),
+            ]:
+                try:
+                    await db.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT DEFAULT '{{}}'")
+                except Exception:
+                    pass  # column already exists
             await db.commit()
 
     async def save_run(self, run: EvalRunResult) -> None:
@@ -67,8 +76,9 @@ class EvalHistory:
                 """
                 INSERT OR REPLACE INTO eval_runs
                   (id, suite_name, model, started_at, completed_at,
-                   pass_rate, avg_score, total_cost, total_tokens, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   pass_rate, avg_score, total_cost, total_tokens, metadata,
+                   total_token_usage)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run.run_id,
@@ -81,6 +91,7 @@ class EvalHistory:
                     run.total_cost,
                     run.total_tokens,
                     "{}",
+                    run.total_usage.model_dump_json(),
                 ),
             )
             for case_result in run.results:
@@ -88,8 +99,9 @@ class EvalHistory:
                     """
                     INSERT OR REPLACE INTO eval_results
                       (id, run_id, test_case_id, passed, score, output,
-                       assertion_results, tool_calls_made, latency_ms, tokens, cost)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       assertion_results, tool_calls_made, latency_ms, tokens, cost,
+                       token_usage)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         str(uuid.uuid4()),
@@ -103,6 +115,7 @@ class EvalHistory:
                         case_result.latency_ms,
                         case_result.tokens,
                         case_result.cost,
+                        case_result.usage.model_dump_json(),
                     ),
                 )
             await db.commit()
@@ -146,6 +159,13 @@ class EvalHistory:
                 return None
 
             run_data = dict(run_row)
+            # Deserialize token usage
+            try:
+                run_data["total_token_usage"] = json.loads(
+                    run_data.get("total_token_usage") or "{}"
+                )
+            except json.JSONDecodeError:
+                run_data["total_token_usage"] = {}
 
             cursor = await db.execute("SELECT * FROM eval_results WHERE run_id = ?", (run_id,))
             result_rows = await cursor.fetchall()
@@ -165,6 +185,10 @@ class EvalHistory:
                     )
                 except json.JSONDecodeError:
                     row_dict["tool_calls_made"] = []
+                try:
+                    row_dict["token_usage"] = json.loads(row_dict.get("token_usage") or "{}")
+                except json.JSONDecodeError:
+                    row_dict["token_usage"] = {}
                 results.append(row_dict)
 
             run_data["results"] = results

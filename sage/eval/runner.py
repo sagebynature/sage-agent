@@ -12,10 +12,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from sage.eval.assertions import AssertionResult, run_assertion
 from sage.eval.suite import TestCase, TestSuite
+from sage.models import Usage
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,7 @@ class CaseResult(BaseModel):
     latency_ms: int
     tokens: int
     cost: float
+    usage: Usage = Field(default_factory=Usage)
     error: str | None = None
 
 
@@ -52,6 +54,7 @@ class EvalRunResult(BaseModel):
     avg_score: float
     total_cost: float
     total_tokens: int
+    total_usage: Usage = Field(default_factory=Usage)
     results: list[CaseResult]
 
 
@@ -89,6 +92,9 @@ class EvalRunner:
         avg_score = sum(r.score for r in case_results) / len(case_results) if case_results else 0.0
         total_cost = sum(r.cost for r in case_results)
         total_tokens = sum(r.tokens for r in case_results)
+        total_usage = Usage()
+        for r in case_results:
+            total_usage += r.usage
 
         return EvalRunResult(
             run_id=run_id,
@@ -100,6 +106,7 @@ class EvalRunner:
             avg_score=avg_score,
             total_cost=total_cost,
             total_tokens=total_tokens,
+            total_usage=total_usage,
             results=case_results,
         )
 
@@ -112,6 +119,7 @@ class EvalRunner:
         latency_ms = 0
         tokens = 0
         cost = 0.0
+        usage = Usage()
         error: str | None = None
         agent: Agent | None = None
         tmp_dir: str | None = None
@@ -171,6 +179,7 @@ class EvalRunner:
                 cu = agent.cumulative_usage
                 tokens = cu.total_tokens
                 cost = cu.cost
+                usage = cu.model_copy()
             elif hasattr(agent, "_token_usage"):
                 tokens = int(agent._token_usage)  # type: ignore[attr-defined]
 
@@ -194,6 +203,7 @@ class EvalRunner:
         # assertions first, there is nothing left to interfere with.
         assertion_results: list[AssertionResult] = []
         if not error:
+            judge_model = self.suite.settings.judge_model or self.model
             for assertion in test_case.assertions:
                 try:
                     result = await run_assertion(
@@ -202,7 +212,7 @@ class EvalRunner:
                         tool_calls_made=tool_calls_made,
                         cost=cost,
                         turns=0,  # turns not tracked yet
-                        judge_model=self.model,
+                        judge_model=judge_model,
                         rubric_name=self.suite.rubric,
                     )
                     assertion_results.append(result)
@@ -246,5 +256,6 @@ class EvalRunner:
             latency_ms=latency_ms,
             tokens=tokens,
             cost=cost,
+            usage=usage,
             error=error,
         )

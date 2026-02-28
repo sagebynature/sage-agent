@@ -6,6 +6,27 @@ from typing import Any
 from sage.eval.runner import EvalRunResult
 
 
+def _format_usage_lines(usage: object, indent: str = "  ") -> list[str]:
+    """Format token usage breakdown lines."""
+    lines = []
+    prompt = getattr(usage, "prompt_tokens", 0)
+    completion = getattr(usage, "completion_tokens", 0)
+    cache_read = getattr(usage, "cache_read_tokens", 0)
+    cache_write = getattr(usage, "cache_creation_tokens", 0)
+    reasoning = getattr(usage, "reasoning_tokens", 0)
+    total = getattr(usage, "total_tokens", 0)
+    if total > 0:
+        lines.append(f"{indent}  Input:        {prompt:>8}")
+        lines.append(f"{indent}  Output:       {completion:>8}")
+        if cache_read:
+            lines.append(f"{indent}  Cache read:   {cache_read:>8}")
+        if cache_write:
+            lines.append(f"{indent}  Cache write:  {cache_write:>8}")
+        if reasoning:
+            lines.append(f"{indent}  Reasoning:    {reasoning:>8}")
+    return lines
+
+
 def format_run_text(run: EvalRunResult) -> str:
     """Human-readable text report."""
     lines = [
@@ -18,9 +39,9 @@ def format_run_text(run: EvalRunResult) -> str:
         f"  Avg score:  {run.avg_score:.3f}",
         f"  Total cost: ${run.total_cost:.4f}",
         f"  Tokens:     {run.total_tokens}",
-        "",
-        "Case results:",
     ]
+    lines.extend(_format_usage_lines(run.total_usage, indent="  "))
+    lines.extend(["", "Case results:"])
 
     for result in run.results:
         status = "PASS" if result.passed else "FAIL"
@@ -28,6 +49,17 @@ def format_run_text(run: EvalRunResult) -> str:
             f"  [{status}] {result.case_id}  score={result.score:.3f}  "
             f"latency={result.latency_ms}ms"
         )
+        if result.usage.total_tokens > 0:
+            u = result.usage
+            token_parts = [f"in={u.prompt_tokens}  out={u.completion_tokens}"]
+            if u.cache_read_tokens:
+                token_parts.append(f"cache_read={u.cache_read_tokens}")
+            if u.cache_creation_tokens:
+                token_parts.append(f"cache_write={u.cache_creation_tokens}")
+            if u.reasoning_tokens:
+                token_parts.append(f"reasoning={u.reasoning_tokens}")
+            token_parts.append(f"cost=${u.cost:.4f}")
+            lines.append(f"         tokens: {' '.join(token_parts)}")
         if result.error:
             lines.append(f"         Error: {result.error}")
         for ar in result.assertion_results:

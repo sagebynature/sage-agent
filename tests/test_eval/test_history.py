@@ -5,6 +5,7 @@ from pathlib import Path
 from sage.eval.assertions import AssertionResult
 from sage.eval.history import EvalHistory
 from sage.eval.runner import CaseResult, EvalRunResult
+from sage.models import Usage
 
 
 # ---------------------------------------------------------------------------
@@ -198,3 +199,68 @@ async def test_compare_runs_both_missing(tmp_path: Path) -> None:
 
     comparison = await history.compare_runs("x", "y")
     assert "error" in comparison
+
+
+# ---------------------------------------------------------------------------
+# token_usage persistence
+# ---------------------------------------------------------------------------
+
+
+async def test_token_usage_persisted(tmp_path: Path) -> None:
+    history = EvalHistory(db_path=tmp_path / "eval.db")
+    await history.init_db()
+
+    usage = Usage(
+        prompt_tokens=1000,
+        completion_tokens=200,
+        total_tokens=1200,
+        cache_read_tokens=500,
+        cache_creation_tokens=100,
+        reasoning_tokens=50,
+        cost=0.005,
+    )
+    case = CaseResult(
+        case_id="tc-1",
+        passed=True,
+        score=0.9,
+        output="hello",
+        assertion_results=[
+            AssertionResult(type="contains", passed=True, score=1.0),
+        ],
+        tool_calls_made=[],
+        latency_ms=100,
+        tokens=1200,
+        cost=0.005,
+        usage=usage,
+    )
+    run = EvalRunResult(
+        run_id="run-usage",
+        suite_name="test-suite",
+        model="gpt-4o",
+        started_at="2026-01-01T00:00:00+00:00",
+        completed_at="2026-01-01T00:01:00+00:00",
+        pass_rate=1.0,
+        avg_score=0.9,
+        total_cost=0.005,
+        total_tokens=1200,
+        total_usage=usage,
+        results=[case],
+    )
+    await history.save_run(run)
+
+    retrieved = await history.get_run("run-usage")
+    assert retrieved is not None
+
+    # Check run-level token usage
+    tu = retrieved["total_token_usage"]
+    assert tu["prompt_tokens"] == 1000
+    assert tu["completion_tokens"] == 200
+    assert tu["cache_read_tokens"] == 500
+    assert tu["cache_creation_tokens"] == 100
+    assert tu["reasoning_tokens"] == 50
+
+    # Check case-level token usage
+    case_tu = retrieved["results"][0]["token_usage"]
+    assert case_tu["prompt_tokens"] == 1000
+    assert case_tu["completion_tokens"] == 200
+    assert case_tu["cache_read_tokens"] == 500

@@ -29,6 +29,7 @@ class EvalSettings(BaseModel):
     """Settings for running an eval suite."""
 
     models: list[str] = Field(default_factory=lambda: ["gpt-4o"])
+    judge_model: str | None = None  # None = use the test model
     runs_per_case: int = 1
     timeout: float = 60.0
     max_turns: int = 10
