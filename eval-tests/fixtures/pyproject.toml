@@ -1,0 +1,10 @@
+[project]
+name = "demo-project"
+version = "0.1.0"
+description = "A demo project for eval testing"
+requires-python = ">=3.10"
+dependencies = [
+    "requests>=2.31.0",
+    "click>=8.1.0",
+    "pydantic>=2.0",
+]
