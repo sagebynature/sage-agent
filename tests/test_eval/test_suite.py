@@ -84,7 +84,8 @@ def test_load_suite_minimal(tmp_path) -> None:
 
     suite = load_suite(suite_file)
     assert suite.name == "example-suite"
-    assert suite.agent == "AGENTS.md"
+    assert suite.agent == str((tmp_path / "AGENTS.md").resolve())
+    assert suite.suite_dir == str(tmp_path.resolve())
     assert len(suite.test_cases) == 1
     assert suite.test_cases[0].id == "tc-1"
 
@@ -134,6 +135,32 @@ def test_load_suite_invalid_yaml(tmp_path) -> None:
 
     with pytest.raises(Exception):
         load_suite(bad_file)
+
+
+def test_load_suite_resolves_relative_paths(tmp_path) -> None:
+    """Relative agent and context_files paths resolve against the YAML directory."""
+    sub = tmp_path / "evals"
+    sub.mkdir()
+    data = {
+        "name": "rel-suite",
+        "agent": "../agents/AGENTS.md",
+        "test_cases": [
+            {
+                "id": "tc-1",
+                "input": "test",
+                "context_files": ["./fixtures/sample.py", "../data/extra.py"],
+            },
+        ],
+    }
+    suite_file = sub / "suite.yaml"
+    suite_file.write_text(yaml.dump(data))
+
+    suite = load_suite(suite_file)
+    assert suite.agent == str((tmp_path / "agents" / "AGENTS.md").resolve())
+    assert suite.test_cases[0].context_files == [
+        str((sub / "fixtures" / "sample.py").resolve()),
+        str((tmp_path / "data" / "extra.py").resolve()),
+    ]
 
 
 def test_load_suite_nonexistent_file(tmp_path) -> None:
