@@ -7,6 +7,7 @@ permission:
   edit: allow
   shell: allow
   web: allow
+  git: allow
 max_turns: 20
 model_params:
   temperature: 0
