@@ -917,7 +917,7 @@ class Agent:
             return skill.content
 
         # Constrain the name parameter to valid skill names.
-        use_skill.__tool_schema__.parameters["properties"]["name"]["enum"] = sorted(skill_map)  # type: ignore[attr-defined]
+        use_skill.__tool_schema__.parameters["properties"]["name"]["enum"] = sorted(skill_map)
         self.tool_registry.register(use_skill)
 
     def _build_messages(self, input: str, memory_context: str | None = None) -> list[Message]:
