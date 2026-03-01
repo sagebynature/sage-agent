@@ -59,6 +59,44 @@ def _get_main_config(ctx: click.Context) -> MainConfig | None:
     return obj.get("main_config")
 
 
+def _resolve_primary_agent(main_config: MainConfig | None) -> str:
+    """Resolve the primary agent config path from MainConfig.
+
+    Uses ``agents_dir`` and ``primary`` to locate the agent file.
+    Falls back to ``agents_dir/AGENTS.md`` when ``primary`` is not set.
+    """
+    if main_config is None:
+        raise ConfigError(
+            "No config.toml found. Provide --agent-config or create a config.toml with a 'primary' field."
+        )
+
+    agents_dir = Path(main_config.agents_dir)
+
+    if main_config.primary:
+        # Try <agents_dir>/<primary>.md first
+        candidate = agents_dir / f"{main_config.primary}.md"
+        if candidate.exists():
+            return str(candidate)
+        # Then try <agents_dir>/<primary>/AGENTS.md
+        candidate = agents_dir / main_config.primary / "AGENTS.md"
+        if candidate.exists():
+            return str(candidate)
+        raise ConfigError(
+            f"Primary agent '{main_config.primary}' not found at "
+            f"'{agents_dir / (main_config.primary + '.md')}' or "
+            f"'{agents_dir / main_config.primary / 'AGENTS.md'}'"
+        )
+
+    # No primary set — fall back to agents_dir/AGENTS.md
+    candidate = agents_dir / "AGENTS.md"
+    if candidate.exists():
+        return str(candidate)
+    raise ConfigError(
+        f"No 'primary' set in config.toml and no AGENTS.md found in '{agents_dir}'. "
+        "Provide --agent-config or set 'primary' in config.toml."
+    )
+
+
 @click.group()
 @click.option(
     "--config",
@@ -100,14 +138,21 @@ def agent() -> None:
 
 
 @agent.command("run")
-@click.argument("config_path", type=click.Path(exists=True))
+@click.argument("config_path", type=click.Path(exists=True), default=None, required=False)
 @click.option("--input", "-i", "user_input", required=True, help="Input to send to the agent")
 @click.option("--stream", "use_stream", is_flag=True, help="Stream the response")
 @click.pass_context
-def agent_run(ctx: click.Context, config_path: str, user_input: str, use_stream: bool) -> None:
-    """Run an agent from a config file."""
+def agent_run(
+    ctx: click.Context, config_path: str | None, user_input: str, use_stream: bool
+) -> None:
+    """Run an agent from a config file.
+
+    If CONFIG_PATH is omitted, the primary agent is inferred from config.toml.
+    """
     try:
         main_config = _get_main_config(ctx)
+        if config_path is None:
+            config_path = _resolve_primary_agent(main_config)
         asyncio.run(_agent_run(config_path, user_input, use_stream, main_config))
     except ConfigError as e:
         click.echo(f"Error: {e}", err=True)
@@ -294,16 +339,22 @@ Be concise and accurate in your responses.
     "--agent-config",
     "-c",
     "config_path",
-    required=True,
+    required=False,
+    default=None,
     type=click.Path(exists=True),
-    help="Path to AGENTS.md or directory containing AGENTS.md",
+    help="Path to AGENTS.md or directory containing AGENTS.md (inferred from config.toml if omitted)",
 )
 @click.pass_context
-def tui(ctx: click.Context, config_path: str) -> None:
-    """Launch the interactive TUI for an agent config."""
+def tui(ctx: click.Context, config_path: str | None) -> None:
+    """Launch the interactive TUI for an agent config.
+
+    If --agent-config is omitted, the primary agent is inferred from config.toml.
+    """
     from sage.cli.tui import SageTUIApp
 
     main_config = _get_main_config(ctx)
+    if config_path is None:
+        config_path = _resolve_primary_agent(main_config)
     path = Path(config_path)
     if path.is_dir():
         path = path / "AGENTS.md"

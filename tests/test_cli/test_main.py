@@ -5,9 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from click.testing import CliRunner
 
-from sage.cli.main import cli
+from sage.cli.main import _resolve_primary_agent, cli
+from sage.exceptions import ConfigError
+from sage.main_config import MainConfig
 
 
 def _write_valid_config(tmp_path: Path) -> Path:
@@ -186,6 +189,51 @@ class TestInit:
         assert "already exists" in result.output
 
 
+class TestResolvePrimaryAgent:
+    def test_none_main_config_raises(self) -> None:
+        with pytest.raises(ConfigError, match="No config.toml found"):
+            _resolve_primary_agent(None)
+
+    def test_primary_flat_md(self, tmp_path: Path, monkeypatch: object) -> None:
+        monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "orchestrator.md").write_text("---\nname: orchestrator\n---\n")
+        mc = MainConfig(agents_dir="agents/", primary="orchestrator")
+        assert _resolve_primary_agent(mc) == "agents/orchestrator.md"
+
+    def test_primary_subdirectory(self, tmp_path: Path, monkeypatch: object) -> None:
+        monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
+        agents_dir = tmp_path / "agents"
+        sub = agents_dir / "orchestrator"
+        sub.mkdir(parents=True)
+        (sub / "AGENTS.md").write_text("---\nname: orchestrator\n---\n")
+        mc = MainConfig(agents_dir="agents/", primary="orchestrator")
+        assert _resolve_primary_agent(mc) == "agents/orchestrator/AGENTS.md"
+
+    def test_primary_not_found_raises(self, tmp_path: Path, monkeypatch: object) -> None:
+        monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
+        (tmp_path / "agents").mkdir()
+        mc = MainConfig(agents_dir="agents/", primary="missing")
+        with pytest.raises(ConfigError, match="Primary agent 'missing' not found"):
+            _resolve_primary_agent(mc)
+
+    def test_no_primary_fallback_agents_md(self, tmp_path: Path, monkeypatch: object) -> None:
+        monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "AGENTS.md").write_text("---\nname: default\n---\n")
+        mc = MainConfig(agents_dir="agents/")
+        assert _resolve_primary_agent(mc) == "agents/AGENTS.md"
+
+    def test_no_primary_no_agents_md_raises(self, tmp_path: Path, monkeypatch: object) -> None:
+        monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
+        (tmp_path / "agents").mkdir()
+        mc = MainConfig(agents_dir="agents/")
+        with pytest.raises(ConfigError, match="No 'primary' set"):
+            _resolve_primary_agent(mc)
+
+
 class TestAgentRun:
     def test_run_basic(self, tmp_path: Path) -> None:
         config_path = _write_valid_config(tmp_path)
@@ -275,3 +323,34 @@ class TestAgentRun:
             )
             assert result.exit_code == 0
             assert "Hello from dir!" in result.output
+
+    def test_run_infers_primary_from_config(self, tmp_path: Path, monkeypatch: object) -> None:
+        """agent run without config_path resolves primary from config.toml."""
+        monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        agent_file = agents_dir / "my-agent.md"
+        agent_file.write_text("---\nname: my-agent\nmodel: gpt-4o\n---\n\nHello.\n")
+
+        # Write config.toml
+        config_toml = tmp_path / "config.toml"
+        config_toml.write_text('agents_dir = "agents/"\nprimary = "my-agent"\n')
+
+        mock_agent = MagicMock()
+        mock_agent.run = AsyncMock(return_value="Inferred!")
+        mock_agent.close = AsyncMock()
+
+        mock_cls = MagicMock()
+        mock_cls.from_config.return_value = mock_agent
+
+        with patch.dict(
+            "sys.modules",
+            {"sage.agent": MagicMock(Agent=mock_cls)},
+        ):
+            runner = CliRunner()
+            result = runner.invoke(
+                cli,
+                ["--config", str(config_toml), "agent", "run", "-i", "Hello"],
+            )
+            assert result.exit_code == 0
+            assert "Inferred!" in result.output
