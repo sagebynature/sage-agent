@@ -588,13 +588,13 @@ class TestResolveAndApplyEnv:
 
 
 class TestMainConfigNewFields:
-    def test_agent_path_default(self) -> None:
+    def test_agents_dir_default(self) -> None:
         cfg = MainConfig()
-        assert cfg.agent_path == "agents/"
+        assert cfg.agents_dir == "agents/"
 
-    def test_agent_path_custom(self) -> None:
-        cfg = MainConfig(agent_path="custom/agents/")
-        assert cfg.agent_path == "custom/agents/"
+    def test_agents_dir_custom(self) -> None:
+        cfg = MainConfig(agents_dir="custom/agents/")
+        assert cfg.agents_dir == "custom/agents/"
 
     def test_primary_default_none(self) -> None:
         cfg = MainConfig()

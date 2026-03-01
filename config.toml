@@ -15,7 +15,7 @@
 
 # ─── Agent Discovery ──────────────────────────────────────────────────────
 # Where to find agent .md files (relative to CWD).
-agent_path = "agents/"
+agents_dir = "agents/"
 
 # Primary agent (entry point for CLI commands when no agent is specified).
 # primary = "assistant"

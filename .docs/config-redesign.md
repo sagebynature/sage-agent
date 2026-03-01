@@ -26,8 +26,8 @@ Redesign how sage-agent is configured and how agents are composed.
 1. Each agent is defined by the AIEOS spec (https://aieos.org/)
 2. sage-agent has 1 primary agent
 3. sage-agent can optionally define secondary agents
-4. Each agent is referenced by filename from a base `agent_path`
-5. `agent_path` is specified in `config.toml`; defaults to `agents/` from CWD
+4. Each agent is referenced by filename from a base `agents_dir`
+5. `agents_dir` is specified in `config.toml`; defaults to `agents/` from CWD
 
 ---
 
@@ -59,7 +59,7 @@ AIEOS v1.2 is an **identity and persona specification**, not a runtime agent con
 - Tool definitions or allowed tools
 - System prompts or prompt templates
 - Parent/child relationships or orchestration semantics
-- `agent_path`, `max_depth`, `max_iterations`
+- `agents_dir`, `max_depth`, `max_iterations`
 - Sandbox or security configuration
 - Permission models
 
@@ -94,7 +94,7 @@ agents/
 
 **Key patterns:**
 
-- **Profile slug = directory name** = agent reference (this is the `agent_path` equivalent)
+- **Profile slug = directory name** = agent reference (this is the `agents_dir` equivalent)
 - **4-tier resolution**: project `.a0proj/agents/<profile>/` → project root → `usr/agents/<profile>/` → built-in `agents/<profile>/`
 - **`AgentConfig` dataclass**: `chat_model`, `utility_model`, `embeddings_model`, `browser_model`, `mcp_servers`, `profile` (slug), `memory_subdir`, `knowledge_subdirs`
 - **Per-profile settings**: `settings.json` inside profile dir overrides model/MCP config
@@ -204,8 +204,8 @@ type AgentConfig = {
 | 1 | Each agent defined by AIEOS | ⚠️ **Partially valid** — AIEOS covers identity only. All comparables separate identity from runtime config. | AIEOS schema lacks model, provider, tools, prompts, temperature, max_depth. zeroclaw/nullclaw/openclaw all treat AIEOS as an optional identity format, not the complete agent definition. |
 | 2 | 1 primary agent | ✅ **Validated** | agent-zero: Agent 0; zeroclaw: top-level defaults; nullclaw: `agents.defaults`; openclaw: `default: true` flag |
 | 3 | Optional secondary agents | ✅ **Validated** | zeroclaw: `[agents]` HashMap; nullclaw: `agents.list[]`; openclaw: agent list with bindings; agent-zero: named directory profiles |
-| 4 | Referenced by filename from `agent_path` | ✅ **Validated** | agent-zero: `agents/<slug>/agent.json`; others use string keys/IDs but file-based approach is proven |
-| 5 | `agent_path` in config.toml, default `agents/` from CWD | ✅ **Reasonable** | agent-zero has 4-tier resolution (project → user → default); zeroclaw uses workspace env → marker → home. Single path is sufficient for now. |
+| 4 | Referenced by filename from `agents_dir` | ✅ **Validated** | agent-zero: `agents/<slug>/agent.json`; others use string keys/IDs but file-based approach is proven |
+| 5 | `agents_dir` in config.toml, default `agents/` from CWD | ✅ **Reasonable** | agent-zero has 4-tier resolution (project → user → default); zeroclaw uses workspace env → marker → home. Single path is sufficient for now. |
 
 ---
 
@@ -273,7 +273,7 @@ agents/
 
 ```toml
 [agents]
-agent_path = "agents/"       # default: agents/ from CWD
+agents_dir = "agents/"       # default: agents/ from CWD
 primary = "assistant"        # filename stem (loads agents/assistant.md), required
 
 [[agents.secondary]]
@@ -303,7 +303,7 @@ max_depth: 2                  # NEW: per-agent override
 # Optional AIEOS identity (loaded if file exists)
 identity:
   format: aieos               # "aieos" | "none"
-  file: researcher.aieos.json # relative to agent_path
+  file: researcher.aieos.json # relative to agents_dir
 
 permission:
   read: allow
@@ -345,8 +345,8 @@ Confirmed decisions from design discussion:
 | Async spawn | **Skip for now** | `Orchestrator.run_parallel()` covers programmatic use case. Additive later. |
 | Pipeline/Parallel/Race | **Keep** | Unique advantage over all comparables. |
 | New: `max_depth` | **Add** | zeroclaw and nullclaw both have this. Prevents infinite delegation. Default 3. |
-| Resolution tiers | **Single `agent_path`** | Sufficient for now. Can add multi-tier resolution later. |
-| `agent_path` default | **`agents/` from CWD** | Matches agent-zero's directory-based approach. |
+| Resolution tiers | **Single `agents_dir`** | Sufficient for now. Can add multi-tier resolution later. |
+| `agents_dir` default | **`agents/` from CWD** | Matches agent-zero's directory-based approach. |
 
 ### Implementation Checklist
 
@@ -355,9 +355,9 @@ Confirmed decisions from design discussion:
 - [ ] Enforce `max_depth` in `Agent.delegate()` — track current depth, raise `ToolError` if exceeded
 - [ ] Add `identity` config to `AgentConfig` (optional `IdentityConfig` model)
 - [ ] Create AIEOS loader in `sage/identity/` — parse `.aieos.json`, extract linguistics/psychology for system prompt injection
-- [ ] Add `agent_path` to main config schema
+- [ ] Add `agents_dir` to main config schema
 - [ ] Add `primary` and `secondary` agent references to main config schema
-- [ ] Update `Agent.from_config()` to resolve agents from `agent_path`
+- [ ] Update `Agent.from_config()` to resolve agents from `agents_dir`
 - [ ] Update `config.toml` discovery to read `[agents]` section
 - [ ] Write tests for all new config paths
 - [ ] Write tests for `max_depth` enforcement
@@ -369,7 +369,7 @@ Confirmed decisions from design discussion:
 | File | Change |
 |------|--------|
 | `sage/config.py` | Add `max_depth`, `IdentityConfig` to `AgentConfig` |
-| `sage/main_config.py` | Add `agent_path`, `primary`, `secondary` to main config schema; add `max_depth` to defaults |
+| `sage/main_config.py` | Add `agents_dir`, `primary`, `secondary` to main config schema; add `max_depth` to defaults |
 | `sage/agent.py` | Enforce `max_depth` in `delegate()`; pass depth counter to subagents; load AIEOS identity into system prompt |
 | `sage/identity/__init__.py` | New module |
 | `sage/identity/aieos.py` | AIEOS v1.2 parser — extract relevant fields for system prompt |

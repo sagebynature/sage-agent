@@ -64,9 +64,9 @@ def load_suite(path: str | Path) -> TestSuite:
     suite.suite_dir = str(suite_dir)
 
     # Resolve agent path relative to the YAML file's directory.
-    agent_path = Path(suite.agent)
-    if not agent_path.is_absolute():
-        suite.agent = str((suite_dir / agent_path).resolve())
+    agents_dir = Path(suite.agent)
+    if not agents_dir.is_absolute():
+        suite.agent = str((suite_dir / agents_dir).resolve())
 
     # Resolve context_files paths relative to the YAML file's directory.
     for tc in suite.test_cases:

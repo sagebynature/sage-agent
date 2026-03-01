@@ -68,7 +68,7 @@ class MainConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     skills_dir: str | None = None
-    agent_path: str = "agents/"
+    agents_dir: str = "agents/"
     primary: str | None = None
     secondary: list[dict[str, str]] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
