@@ -174,6 +174,10 @@ class Agent:
         if self.subagents:
             self._register_delegation_tools()
 
+        # Auto-register skill tool when skills are present.
+        if self.skills:
+            self._register_skill_tool()
+
     # ── Factory methods ───────────────────────────────────────────────
 
     @classmethod
@@ -893,6 +897,42 @@ class Agent:
         self.tool_registry.register(memory_recall)
         self.tool_registry.register(memory_forget)
 
+    def _register_skill_tool(self) -> None:
+        """Register ``use_skill`` tool when the agent has skills.
+
+        The tool returns a skill's full markdown content on first invocation
+        and a short "already loaded" message on subsequent calls for the same
+        skill.  This implements two-phase skill loading: only the lightweight
+        catalog (name + description) lives in the system prompt; full content
+        is loaded on demand.
+        """
+        if not self.skills:
+            return
+
+        from sage.tools.decorator import tool as _tool
+
+        skill_map = {s.name: s for s in self.skills}
+        loaded: set[str] = set()
+
+        @_tool
+        async def use_skill(name: str) -> str:
+            """Load a skill's full instructions by name.
+
+            Use this when a task matches one of the available skills listed
+            in your system prompt.  Returns the skill's complete markdown
+            instructions for you to follow.
+            """
+            if name not in skill_map:
+                available = ", ".join(sorted(skill_map))
+                return f"Unknown skill '{name}'. Available: {available}"
+            if name in loaded:
+                return f"Skill '{name}' is already loaded in this conversation."
+            loaded.add(name)
+            skill = skill_map[name]
+            return skill.content
+
+        self.tool_registry.register(use_skill)
+
     def _build_messages(self, input: str, memory_context: str | None = None) -> list[Message]:
         """Build the full message list including conversation history.
 
@@ -904,15 +944,22 @@ class Agent:
         """
         messages: list[Message] = []
 
-        # System message from description/body + skills.
+        # System message from description/body + skill catalog.
         system_parts: list[str] = []
         if self._body:
             system_parts.append(self._body)
-        for skill in self.skills:
-            header = f"## Skill: {skill.name}"
-            if skill.description:
-                header += f"\n_{skill.description}_"
-            system_parts.append(f"{header}\n\n{skill.content}")
+        if self.skills:
+            catalog_lines = [
+                "## Available Skills",
+                "Use the `use_skill` tool to load a skill's full instructions.",
+                "",
+            ]
+            for skill in self.skills:
+                line = f"- **{skill.name}**"
+                if skill.description:
+                    line += f": {skill.description}"
+                catalog_lines.append(line)
+            system_parts.append("\n".join(catalog_lines))
         if system_parts:
             messages.append(Message(role="system", content="\n\n".join(system_parts)))
 
