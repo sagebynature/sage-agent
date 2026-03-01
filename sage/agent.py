@@ -702,26 +702,8 @@ class Agent:
         tool_names = [tc.name for tc in tool_calls]
         logger.debug("Dispatching tools: %s", tool_names)
 
-        # Build a quick lookup for skill-name matching.
-        skill_names = {s.name for s in self.skills}
-
         async def _safe_execute(tc: ToolCall) -> tuple[str, str]:
-            # Log whether this tool dispatch is skill-driven.
-            if tc.name == "delegate":
-                # Delegation is logged inside delegate(); skip here.
-                pass
-            elif tc.name == "shell" and skill_names:
-                cmd = (tc.arguments or {}).get("command", "")
-                matched = [sn for sn in skill_names if sn in cmd]
-                if matched:
-                    logger.debug(
-                        "Delegating to skill '%s' via shell: %s",
-                        matched[0],
-                        cmd[:120],
-                    )
-                else:
-                    logger.debug("Executing tool '%s': %s", tc.name, str(tc.arguments)[:120])
-            else:
+            if tc.name != "delegate":
                 logger.debug("Executing tool '%s': %s", tc.name, str(tc.arguments)[:120])
 
             try:
