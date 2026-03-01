@@ -137,6 +137,7 @@ class Agent:
         self.memory = memory
         self.subagents = subagents or {}
         self.skills: list[Skill] = skills or []
+        self._loaded_skills: set[str] = set()
         self.mcp_clients: list[MCPClient] = mcp_clients or []
         self._mcp_initialized = False
         self._memory_initialized = False
@@ -912,7 +913,7 @@ class Agent:
         from sage.tools.decorator import tool as _tool
 
         skill_map = {s.name: s for s in self.skills}
-        loaded: set[str] = set()
+        loaded = self._loaded_skills
 
         @_tool
         async def use_skill(name: str) -> str:
@@ -926,18 +927,22 @@ class Agent:
                 available = ", ".join(sorted(skill_map))
                 return f"Unknown skill '{name}'. Available: {available}"
             if name in loaded:
+                logger.debug("Skill '%s' already loaded, returning cached notice", name)
                 return f"Skill '{name}' is already loaded in this conversation."
             loaded.add(name)
+            logger.debug("Loaded skill '%s'", name)
             skill = skill_map[name]
             return skill.content
 
+        # Constrain the name parameter to valid skill names.
+        use_skill.__tool_schema__.parameters["properties"]["name"]["enum"] = sorted(skill_map)  # type: ignore[attr-defined]
         self.tool_registry.register(use_skill)
 
     def _build_messages(self, input: str, memory_context: str | None = None) -> list[Message]:
         """Build the full message list including conversation history.
 
         The returned list contains, in order:
-          1. System messages (body + skills)
+          1. System message (body + skill catalog)
           2. Memory-context system message (if any)
           3. Prior conversation history (user/assistant turns)
           4. The new user message
@@ -1065,6 +1070,7 @@ class Agent:
     def clear_history(self) -> None:
         """Reset the conversation history for a fresh session."""
         self._conversation_history.clear()
+        self._loaded_skills.clear()
 
     async def close(self) -> None:
         """Release resources held by the agent (MCP connections, memory DB, etc.).
