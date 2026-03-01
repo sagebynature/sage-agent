@@ -127,9 +127,9 @@ class BubblewrapSandbox:
 
         # Hide sensitive paths with empty tmpfs
         for sensitive in self._deny_read:
-            expanded = Path(sensitive).expanduser()
-            if expanded.exists():
-                bwrap_args += ["--tmpfs", str(expanded.resolve())]
+            expanded_path = Path(sensitive).expanduser()
+            if expanded_path.exists():
+                bwrap_args += ["--tmpfs", str(expanded_path.resolve())]
 
         # Standard namespace options
         bwrap_args += [

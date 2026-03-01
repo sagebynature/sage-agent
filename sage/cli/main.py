@@ -315,7 +315,7 @@ def tui(ctx: click.Context, config_path: str) -> None:
 # Lazy exception imports for exec_cmd error handlers
 # ---------------------------------------------------------------------------
 try:
-    from sage.exceptions import PermissionError as _PermissionError  # type: ignore[assignment]
+    from sage.exceptions import PermissionError as _PermissionError
     from sage.exceptions import MaxTurnsExceeded as _MaxTurnsExceeded
     from sage.exceptions import ToolError as _ToolError
     from sage.exceptions import ProviderError as _ProviderError
@@ -557,6 +557,7 @@ async def _eval_run(
                 click.echo(f"Error running model {m}: {r}", err=True)
                 results.append(r)
             else:
+                assert isinstance(r, str)
                 results.append(EvalRunResult.model_validate_json(r))
 
     history = EvalHistory()

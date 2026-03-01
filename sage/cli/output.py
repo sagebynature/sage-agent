@@ -15,7 +15,7 @@ class OutputWriter(Protocol):
     synchronous calls — they do *not* need to be awaited.
     """
 
-    def write_event(self, event: str, data: dict) -> None:
+    def write_event(self, event: str, data: dict[str, object]) -> None:
         """Emit a structured lifecycle event."""
         ...
 
@@ -43,7 +43,7 @@ class JSONLWriter:
     def __init__(self, stream: IO[str] = sys.stdout) -> None:
         self._stream = stream
 
-    def write_event(self, event: str, data: dict) -> None:
+    def write_event(self, event: str, data: dict[str, object]) -> None:
         line = json.dumps({"event": event, "data": data}, ensure_ascii=False)
         self._stream.write(line + "\n")
         self._stream.flush()
@@ -65,7 +65,7 @@ class TextWriter:
     def __init__(self, stream: IO[str] = sys.stdout) -> None:
         self._stream = stream
 
-    def write_event(self, event: str, data: dict) -> None:  # noqa: ARG002
+    def write_event(self, event: str, data: dict[str, object]) -> None:  # noqa: ARG002
         pass  # Intentionally silent — events not shown in text mode.
 
     def write_result(self, result: str) -> None:
@@ -83,7 +83,7 @@ class QuietWriter:
     tests, health checks).
     """
 
-    def write_event(self, event: str, data: dict) -> None:  # noqa: ARG002
+    def write_event(self, event: str, data: dict[str, object]) -> None:  # noqa: ARG002
         pass
 
     def write_result(self, result: str) -> None:  # noqa: ARG002

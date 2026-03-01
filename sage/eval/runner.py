@@ -163,7 +163,7 @@ class EvalRunner:
                     arguments: dict[str, Any],
                 ) -> str:
                     tool_calls_made.append(name)
-                    return await original_execute(name, arguments)
+                    return str(await original_execute(name, arguments))
 
                 agent.tool_registry.execute = _tracking_execute  # type: ignore[method-assign]
 
@@ -181,7 +181,7 @@ class EvalRunner:
                 cost = cu.cost
                 usage = cu.model_copy()
             elif hasattr(agent, "_token_usage"):
-                tokens = int(agent._token_usage)  # type: ignore[attr-defined]
+                tokens = int(agent._token_usage)  # noqa: SLF001
 
         except asyncio.TimeoutError:
             error = f"Timeout after {self.suite.settings.timeout}s"

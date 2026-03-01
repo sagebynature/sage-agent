@@ -1,10 +1,12 @@
 """SQLite-backed history store for eval runs."""
 
 from __future__ import annotations
+
 import json
 import logging
 import uuid
 from pathlib import Path
+from typing import Any
 
 import aiosqlite
 
@@ -120,7 +122,9 @@ class EvalHistory:
                 )
             await db.commit()
 
-    async def list_runs(self, suite_name: str | None = None, last: int = 20) -> list[dict]:
+    async def list_runs(
+        self, suite_name: str | None = None, last: int = 20
+    ) -> list[dict[str, Any]]:
         """Return run summaries (id, suite_name, model, started_at, pass_rate, avg_score)."""
         async with aiosqlite.connect(str(self.db_path)) as db:
             db.row_factory = aiosqlite.Row
@@ -148,7 +152,7 @@ class EvalHistory:
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
-    async def get_run(self, run_id: str) -> dict | None:
+    async def get_run(self, run_id: str) -> dict[str, Any] | None:
         """Return full run data including case results."""
         async with aiosqlite.connect(str(self.db_path)) as db:
             db.row_factory = aiosqlite.Row
@@ -194,7 +198,7 @@ class EvalHistory:
             run_data["results"] = results
             return run_data
 
-    async def compare_runs(self, run_id_1: str, run_id_2: str) -> dict:
+    async def compare_runs(self, run_id_1: str, run_id_2: str) -> dict[str, Any]:
         """Return side-by-side comparison of two runs."""
         run1 = await self.get_run(run_id_1)
         run2 = await self.get_run(run_id_2)
