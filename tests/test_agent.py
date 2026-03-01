@@ -792,8 +792,8 @@ class TestAgentSkills:
         assert agent.skills == []
 
     @pytest.mark.asyncio
-    async def test_skill_injected_into_system_message(self) -> None:
-        """A skill's content appears in the system message sent to the provider."""
+    async def test_skill_catalog_in_system_message(self) -> None:
+        """Skills appear as a compact catalog in the system message, not full content."""
         from sage.skills.loader import Skill
 
         skill = Skill(
@@ -814,18 +814,19 @@ class TestAgentSkills:
 
         messages = provider.call_args[0]["messages"]
         system_msg = next(m for m in messages if m.role == "system")
-        assert "## Skill: my-skill" in system_msg.content
-        assert "_Does something useful_" in system_msg.content
-        assert "Always start with step 1." in system_msg.content
+        assert "## Available Skills" in system_msg.content
+        assert "**my-skill**: Does something useful" in system_msg.content
+        # Full content must NOT be in system message.
+        assert "Always start with step 1." not in system_msg.content
 
     @pytest.mark.asyncio
-    async def test_multiple_skills_all_injected(self) -> None:
-        """All skills are appended to the system message."""
+    async def test_multiple_skills_catalog_entries(self) -> None:
+        """All skills appear as catalog entries in the system message."""
         from sage.skills.loader import Skill
 
         skills = [
-            Skill(name="skill-a", content="Content A."),
-            Skill(name="skill-b", content="Content B."),
+            Skill(name="skill-a", description="Desc A", content="Content A."),
+            Skill(name="skill-b", description="Desc B", content="Content B."),
         ]
         provider = MockProvider([_text_result("ok")])
         agent = Agent(name="test", model="m", skills=skills, provider=provider)
@@ -834,17 +835,18 @@ class TestAgentSkills:
 
         messages = provider.call_args[0]["messages"]
         system_msg = next(m for m in messages if m.role == "system")
-        assert "## Skill: skill-a" in system_msg.content
-        assert "Content A." in system_msg.content
-        assert "## Skill: skill-b" in system_msg.content
-        assert "Content B." in system_msg.content
+        assert "**skill-a**: Desc A" in system_msg.content
+        assert "**skill-b**: Desc B" in system_msg.content
+        # Full content must NOT be in system message.
+        assert "Content A." not in system_msg.content
+        assert "Content B." not in system_msg.content
 
     @pytest.mark.asyncio
-    async def test_skills_appended_after_persona(self) -> None:
-        """Skills appear after body content in the system message."""
+    async def test_skill_catalog_appended_after_persona(self) -> None:
+        """Skill catalog appears after body content in the system message."""
         from sage.skills.loader import Skill
 
-        skill = Skill(name="s", content="Skill content.")
+        skill = Skill(name="s", description="desc", content="Skill content.")
         provider = MockProvider([_text_result("ok")])
         agent = Agent(
             name="test",
@@ -859,8 +861,8 @@ class TestAgentSkills:
         messages = provider.call_args[0]["messages"]
         system_msg = next(m for m in messages if m.role == "system")
         body_pos = system_msg.content.index("My body.")
-        skill_pos = system_msg.content.index("## Skill: s")
-        assert body_pos < skill_pos
+        catalog_pos = system_msg.content.index("## Available Skills")
+        assert body_pos < catalog_pos
 
     def test_from_config_resolves_global_skills(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1104,6 +1106,93 @@ class TestAgentSkills:
         agent = Agent.from_config(config_file, central=central)
 
         assert [s.name for s in agent.skills] == ["beta"]
+
+    def test_use_skill_tool_registered_when_skills_present(self) -> None:
+        """use_skill tool is auto-registered when agent has skills."""
+        from sage.skills.loader import Skill
+
+        skill = Skill(name="s", content="c")
+        provider = MockProvider([])
+        agent = Agent(name="test", model="m", skills=[skill], provider=provider)
+        assert "use_skill" in agent.tool_registry._tools
+
+    def test_use_skill_tool_not_registered_when_no_skills(self) -> None:
+        """use_skill tool is NOT registered when agent has no skills."""
+        provider = MockProvider([])
+        agent = Agent(name="test", model="m", provider=provider)
+        assert "use_skill" not in agent.tool_registry._tools
+
+    @pytest.mark.asyncio
+    async def test_use_skill_returns_content(self) -> None:
+        """use_skill tool returns the full skill content on first call."""
+        from sage.skills.loader import Skill
+
+        skill = Skill(name="my-skill", description="desc", content="Full instructions here.")
+        provider = MockProvider(
+            [
+                _tool_call_result(
+                    [ToolCall(id="1", name="use_skill", arguments={"name": "my-skill"})]
+                ),
+                _text_result("done"),
+            ]
+        )
+        agent = Agent(name="test", model="m", skills=[skill], provider=provider)
+
+        await agent.run("hi")
+
+        # The second call should have the tool result in conversation history.
+        second_call_messages = provider.call_args[1]["messages"]
+        tool_msg = next(m for m in second_call_messages if m.role == "tool")
+        assert tool_msg.content == "Full instructions here."
+
+    @pytest.mark.asyncio
+    async def test_use_skill_already_loaded(self) -> None:
+        """use_skill tool returns short message on repeat call for same skill."""
+        from sage.skills.loader import Skill
+
+        skill = Skill(name="my-skill", description="desc", content="Full instructions.")
+        provider = MockProvider(
+            [
+                _tool_call_result(
+                    [ToolCall(id="1", name="use_skill", arguments={"name": "my-skill"})]
+                ),
+                _tool_call_result(
+                    [ToolCall(id="2", name="use_skill", arguments={"name": "my-skill"})]
+                ),
+                _text_result("done"),
+            ]
+        )
+        agent = Agent(name="test", model="m", skills=[skill], provider=provider)
+
+        await agent.run("hi")
+
+        third_call_messages = provider.call_args[2]["messages"]
+        tool_msgs = [m for m in third_call_messages if m.role == "tool"]
+        last_tool_msg = tool_msgs[-1]
+        assert "already loaded" in last_tool_msg.content
+
+    @pytest.mark.asyncio
+    async def test_use_skill_unknown_name(self) -> None:
+        """use_skill tool returns error with available names for unknown skill."""
+        from sage.skills.loader import Skill
+
+        skill = Skill(name="real-skill", description="desc", content="Content.")
+        provider = MockProvider(
+            [
+                _tool_call_result(
+                    [ToolCall(id="1", name="use_skill", arguments={"name": "fake-skill"})]
+                ),
+                _text_result("done"),
+            ]
+        )
+        agent = Agent(name="test", model="m", skills=[skill], provider=provider)
+
+        await agent.run("hi")
+
+        second_call_messages = provider.call_args[1]["messages"]
+        tool_msg = next(m for m in second_call_messages if m.role == "tool")
+        assert "Unknown skill" in tool_msg.content
+        assert "real-skill" in tool_msg.content
 
 
 class TestAgentLogging:
