@@ -815,6 +815,7 @@ class TestAgentSkills:
         messages = provider.call_args[0]["messages"]
         system_msg = next(m for m in messages if m.role == "system")
         assert "## Available Skills" in system_msg.content
+        assert "Use the `use_skill` tool" in system_msg.content
         assert "**my-skill**: Does something useful" in system_msg.content
         # Full content must NOT be in system message.
         assert "Always start with step 1." not in system_msg.content
