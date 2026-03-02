@@ -220,6 +220,55 @@ class HistoryInput(Input):
                 event.stop()
 
 
+# ── Chat entry widgets ────────────────────────────────────────────────────────
+
+
+class UserEntry(Widget):
+    """A single user message in the chat scroll view."""
+
+    DEFAULT_CSS = """
+    UserEntry {
+        height: auto;
+        padding: 0 1;
+        margin-bottom: 1;
+    }
+    """
+
+    def __init__(self, text: str) -> None:
+        super().__init__()
+        self._text = text
+
+    def compose(self) -> ComposeResult:
+        yield Static(f"[bold cyan]You[/bold cyan]  [dim]╷[/dim]  {self._text}")
+
+
+class ThinkingEntry(Widget):
+    """Animated thinking indicator — removed when the response starts."""
+
+    DEFAULT_CSS = """
+    ThinkingEntry {
+        height: 1;
+        padding: 0 1;
+        margin-bottom: 1;
+    }
+    """
+
+    _FRAMES = ["◌", "◎", "●", "◎"]
+
+    def compose(self) -> ComposeResult:
+        yield Static("[dim]◌ Thinking…[/dim]", id="thinking-label")
+
+    def on_mount(self) -> None:
+        self._frame = 0
+        self.set_interval(0.25, self._tick)
+
+    def _tick(self) -> None:
+        self._frame = (self._frame + 1) % len(self._FRAMES)
+        self.query_one("#thinking-label", Static).update(
+            f"[dim]{self._FRAMES[self._frame]} Thinking…[/dim]"
+        )
+
+
 # ── Widgets ───────────────────────────────────────────────────────────────────
 
 

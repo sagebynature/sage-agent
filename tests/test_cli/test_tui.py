@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from textual.app import App, ComposeResult
 
-from sage.cli.tui import HistoryInput
+from sage.cli.tui import HistoryInput, ThinkingEntry, UserEntry
 
 
 class _HistoryApp(App[None]):
@@ -73,3 +73,25 @@ async def test_history_up_on_empty_history_is_noop() -> None:
         inp = app.query_one(HistoryInput)
         await pilot.press("up")  # empty history, no crash
         assert inp.value == ""
+
+
+async def test_user_entry_renders_message() -> None:
+    class _App(App[None]):
+        def compose(self) -> ComposeResult:
+            yield UserEntry("hello world")
+
+    app = _App()
+    async with app.run_test():
+        widget = app.query_one(UserEntry)
+        assert widget is not None
+
+
+async def test_thinking_entry_is_mounted() -> None:
+    class _App(App[None]):
+        def compose(self) -> ComposeResult:
+            yield ThinkingEntry()
+
+    app = _App()
+    async with app.run_test():
+        widget = app.query_one(ThinkingEntry)
+        assert widget is not None
