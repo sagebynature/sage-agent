@@ -374,6 +374,7 @@ class ChatPanel(Widget):
     }
     ChatPanel #chat-scroll {
         height: 1fr;
+        scrollbar-size-vertical: 1;
     }
     ChatPanel HistoryInput {
         dock: bottom;
@@ -388,16 +389,20 @@ class ChatPanel(Widget):
 
     # -- Public API used by SageTUIApp ----------------------------------------
 
+    def _scroll_end(self) -> None:
+        """Scroll the chat to the bottom — safe to call before layout settles."""
+        self.query_one("#chat-scroll", VerticalScroll).scroll_end(animate=False)
+
     def append_user_message(self, text: str) -> None:
         scroll = self.query_one("#chat-scroll", VerticalScroll)
         scroll.mount(UserEntry(text))
-        scroll.scroll_end(animate=False)
+        self.call_after_refresh(self._scroll_end)
 
     def start_turn(self) -> None:
         """Show the animated thinking indicator."""
         scroll = self.query_one("#chat-scroll", VerticalScroll)
         scroll.mount(ThinkingEntry(id="thinking"))
-        scroll.scroll_end(animate=False)
+        self.call_after_refresh(self._scroll_end)
 
     def add_tool_call(self, tool_name: str, arguments: dict[str, Any]) -> ToolEntry:
         """Append a ToolEntry (yellow/running) and return it for later update."""
@@ -407,7 +412,7 @@ class ChatPanel(Widget):
             thinking.first().remove()
         entry = ToolEntry(tool_name, arguments)
         scroll.mount(entry)
-        scroll.scroll_end(animate=False)
+        self.call_after_refresh(self._scroll_end)
         return entry
 
     def start_response(self) -> AssistantEntry:
@@ -418,7 +423,7 @@ class ChatPanel(Widget):
         scroll = self.query_one("#chat-scroll", VerticalScroll)
         entry = AssistantEntry()
         scroll.mount(entry)
-        scroll.scroll_end(animate=False)
+        self.call_after_refresh(self._scroll_end)
         return entry
 
     def clear_entries(self) -> None:
@@ -590,18 +595,39 @@ class LogPanel(Widget):
     }
     """
 
+    _MAX_BUFFER = 500
+
+    def __init__(self, **kwargs: object) -> None:
+        super().__init__(**kwargs)  # type: ignore[arg-type]
+        self._buffer: list[logging.LogRecord] = []
+
     def compose(self) -> ComposeResult:
         yield Label("LOGS", id="log-label")
         yield RichLog(id="log-output", wrap=True, markup=True, highlight=False)
 
     def toggle_visibility(self) -> None:
         self.display = not self.display
+        if self.display:
+            # Flush buffered records that arrived while the panel was hidden.
+            rich_log = self.query_one("#log-output", RichLog)
+            for record in self._buffer:
+                self._render(rich_log, record)
+            self._buffer.clear()
 
     def write_record(self, record: logging.LogRecord) -> None:
+        if not self.display:
+            # Don't touch the RichLog while hidden — writing to it triggers
+            # refresh() which causes a visible flash on every log event.
+            if len(self._buffer) < self._MAX_BUFFER:
+                self._buffer.append(record)
+            return
+        self._render(self.query_one("#log-output", RichLog), record)
+
+    def _render(self, rich_log: RichLog, record: logging.LogRecord) -> None:
         color = _LOG_COLORS.get(record.levelno, "white")
         msg = _LOG_FMT.format(record)
         safe_msg = msg.replace("[", "\\[")
-        self.query_one("#log-output", RichLog).write(f"[{color}]{safe_msg}[/{color}]")
+        rich_log.write(f"[{color}]{safe_msg}[/{color}]")
 
 
 class StatusBar(Static):
@@ -970,9 +996,11 @@ class SageTUIApp(App[None]):
         self.query_one(StatusPanel).set_active_delegation(event.target, event.task)
 
     def on_stream_chunk_received(self, event: StreamChunkReceived) -> None:
+        chat = self.query_one(ChatPanel)
         if self._current_response is None:
-            self._current_response = self.query_one(ChatPanel).start_response()
+            self._current_response = chat.start_response()
         self._current_response.append_chunk(event.text)
+        chat.call_after_refresh(chat._scroll_end)
 
     def on_stream_finished(self, event: StreamFinished) -> None:
         if self._current_response is None and not self._had_tool_calls_in_turn:
