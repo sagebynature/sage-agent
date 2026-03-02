@@ -65,3 +65,11 @@ async def test_history_down_at_bottom_is_noop() -> None:
         inp = app.query_one(HistoryInput)
         await pilot.press("down")  # empty history, no crash
         assert inp.value == ""
+
+
+async def test_history_up_on_empty_history_is_noop() -> None:
+    app = _HistoryApp()
+    async with app.run_test() as pilot:
+        inp = app.query_one(HistoryInput)
+        await pilot.press("up")  # empty history, no crash
+        assert inp.value == ""

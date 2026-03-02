@@ -198,7 +198,7 @@ class HistoryInput(Input):
         self._history_idx = len(self._history)
         self._draft = ""
 
-    def _on_key(self, event: events.Key) -> None:
+    async def _on_key(self, event: events.Key) -> None:
         if event.key == "up":
             if self._history_idx > 0:
                 if self._history_idx == len(self._history):
