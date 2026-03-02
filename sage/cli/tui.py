@@ -828,6 +828,7 @@ class SageTUIApp(App[None]):
         self._streaming_mode: bool = True
         self._current_response: AssistantEntry | None = None
         self._pending_tools: dict[str, list[ToolEntry]] = {}
+        self._had_tool_calls_in_turn: bool = False
         self._log_handler: TUILogHandler | None = None
         self._sage_logger_level: int = logging.NOTSET
 
@@ -895,6 +896,7 @@ class SageTUIApp(App[None]):
         agent = self._agent
         self._pending_tools.clear()
         self._current_response = None
+        self._had_tool_calls_in_turn = False
 
         if self._streaming_mode:
             self.query_one(StatusBar).set_state(
@@ -940,6 +942,10 @@ class SageTUIApp(App[None]):
     # ── Message handlers ──────────────────────────────────────────────────────
 
     def on_tool_call_started(self, event: ToolCallStarted) -> None:
+        # Close the current AssistantEntry so any post-tool text creates a new
+        # one *after* the ToolEntry, preventing text from sandwiching the tool.
+        self._current_response = None
+        self._had_tool_calls_in_turn = True
         chat = self.query_one(ChatPanel)
         entry = chat.add_tool_call(event.tool_name, event.arguments)
         self._pending_tools.setdefault(event.tool_name, []).append(entry)
@@ -969,9 +975,12 @@ class SageTUIApp(App[None]):
         self._current_response.append_chunk(event.text)
 
     def on_stream_finished(self, event: StreamFinished) -> None:
-        if self._current_response is None:
-            entry = self.query_one(ChatPanel).start_response()
-            entry.set_text(event.full_text)
+        if self._current_response is None and not self._had_tool_calls_in_turn:
+            # Fallback: no StreamChunkReceived arrived (e.g. tool-only turn with
+            # no text output).  full_text holds everything so use it directly.
+            if event.full_text:
+                entry = self.query_one(ChatPanel).start_response()
+                entry.set_text(event.full_text)
         self._current_response = None
         self._finish_turn()
 
