@@ -1374,18 +1374,22 @@ class SageTUIApp(App[None]):
         try:
             from sage.models import Message as SageMessage
 
+            snippet = context[:500]
             result = await self._agent.provider.complete(
                 [
                     SageMessage(
                         role="system",
                         content=(
-                            "Generate a concise title (max 50 chars, single line) "
-                            "that captures the user's intent or goal. Focus on WHAT "
-                            "the user wants to accomplish, not the specific details. "
-                            "Return ONLY the title text, no quotes, no punctuation at the end."
+                            "Your ONLY job is to generate a short title. "
+                            "Given a user's message to an AI coding assistant, "
+                            "produce a concise title (max 50 chars, single line) "
+                            "that captures the user's intent or goal.\n\n"
+                            f'The user said: """{snippet}"""\n\n'
+                            "Respond with ONLY the title. No quotes, no explanation, "
+                            "no punctuation at the end."
                         ),
                     ),
-                    SageMessage(role="user", content=context[:500]),
+                    SageMessage(role="user", content="Generate the title."),
                 ]
             )
             title = (result.message.content or "").strip()[:50]
