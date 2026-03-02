@@ -3,8 +3,8 @@
 Provides the ``SageTUIApp`` class launched by ``sage tui --config=<path>``.
 The app offers a split-screen layout:
 
-- **Chat panel** (left, 65 %): conversation history with inline collapsible tool calls and message input.
-- **Status panel** (right, 35 %): agent info, skills, token usage, context window, and active agents.
+- **Chat panel** (left, flexible): conversation history with inline collapsible tool calls and message input.
+- **Status panel** (right, fixed 40 cols): agent info, skills, token usage, context window, and active agents.
 - **Log panel** (bottom, hidden): togglable log viewer (ctrl+l).
 - **Status bar** (bottom): agent name, model, current state, keyboard hints.
 
@@ -28,7 +28,7 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widget import Widget
-from textual.widgets import Button, Collapsible, Input, Label, Markdown, RichLog, Static
+from textual.widgets import Button, Collapsible, Input, Label, Markdown, RichLog, Static, TextArea
 
 from sage.agent import Agent
 from sage.orchestrator.parallel import Orchestrator
@@ -181,14 +181,54 @@ def _fmt_args(arguments: dict[str, Any]) -> str:
 # ── HistoryInput ──────────────────────────────────────────────────────────────
 
 
-class HistoryInput(Input):
-    """Input widget with up/down arrow message history, like a shell prompt."""
+class HistoryInput(TextArea):
+    """Multiline input: Enter submits, Shift+Enter / Ctrl+J inserts newline.
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+    Supports up/down arrow history navigation when the content is a single line.
+    """
+
+    class Submitted(Message):
+        """Emitted when the user presses Enter to submit."""
+
+        def __init__(self, input: "HistoryInput", value: str) -> None:
+            super().__init__()
+            self.input = input
+            self.value = value
+
+        @property
+        def control(self) -> "HistoryInput":
+            return self.input
+
+    DEFAULT_CSS = """
+    HistoryInput {
+        height: auto;
+        max-height: 8;
+    }
+    """
+
+    def __init__(self, placeholder: str = "", **kwargs: object) -> None:
+        super().__init__(
+            show_line_numbers=False,
+            soft_wrap=True,
+            language=None,
+            tab_behavior="focus",
+            compact=True,
+            highlight_cursor_line=False,
+            placeholder=placeholder,
+            **kwargs,  # type: ignore[arg-type]
+        )
         self._history: list[str] = []
         self._history_idx: int = 0
         self._draft: str = ""
+
+    # -- compatibility property ------------------------------------------------
+
+    @property
+    def value(self) -> str:
+        """Alias for ``self.text`` so call-sites that used ``Input.value`` still work."""
+        return self.text
+
+    # -- public helpers (same API surface the app already uses) ----------------
 
     def append_history(self, value: str) -> None:
         """Add a submitted message to history and reset cursor to end."""
@@ -197,26 +237,50 @@ class HistoryInput(Input):
         self._history_idx = len(self._history)
         self._draft = ""
 
+    # -- key handling ----------------------------------------------------------
+
     async def _on_key(self, event: events.Key) -> None:
-        if event.key == "up":
-            if self._history_idx > 0:
+        if event.key == "enter":
+            # Submit on plain Enter.
+            event.prevent_default()
+            event.stop()
+            value = self.text.strip()
+            if value:
+                self.post_message(self.Submitted(self, value))
+            return
+
+        if event.key in ("shift+enter", "ctrl+j"):
+            # Insert a newline.
+            event.prevent_default()
+            event.stop()
+            self.insert("\n")
+            return
+
+        # History navigation — only when content is a single line.
+        if "\n" not in self.text:
+            if event.key == "up" and self._history_idx > 0:
                 if self._history_idx == len(self._history):
-                    self._draft = self.value
+                    self._draft = self.text
                 self._history_idx -= 1
-                self.value = self._history[self._history_idx]
-                self.cursor_position = len(self.value)
+                self.load_text(self._history[self._history_idx])
+                self.move_cursor(self.document.end)
                 event.prevent_default()
                 event.stop()
-        elif event.key == "down":
-            if self._history_idx < len(self._history):
+                return
+            if event.key == "down" and self._history_idx < len(self._history):
                 self._history_idx += 1
-                if self._history_idx == len(self._history):
-                    self.value = self._draft
-                else:
-                    self.value = self._history[self._history_idx]
-                self.cursor_position = len(self.value)
+                text = (
+                    self._draft
+                    if self._history_idx == len(self._history)
+                    else self._history[self._history_idx]
+                )
+                self.load_text(text)
+                self.move_cursor(self.document.end)
                 event.prevent_default()
                 event.stop()
+                return
+
+        await super()._on_key(event)
 
 
 # ── Chat entry widgets ────────────────────────────────────────────────────────
@@ -238,7 +302,12 @@ class UserEntry(Widget):
         self._text = text
 
     def compose(self) -> ComposeResult:
-        yield Static(f"[bold cyan]You[/bold cyan]  [dim]╷[/dim]  {self._text}")
+        lines = self._text.split("\n")
+        # "You  ╷  " prefix is 8 visible chars; indent continuation lines to align.
+        formatted = lines[0]
+        if len(lines) > 1:
+            formatted += "\n" + "\n".join("         " + ln for ln in lines[1:])
+        yield Static(f"[bold cyan]You[/bold cyan]  [dim]╷[/dim]  {formatted}")
 
 
 class ThinkingEntry(Widget):
@@ -362,7 +431,7 @@ class ChatPanel(Widget):
 
     DEFAULT_CSS = """
     ChatPanel {
-        width: 80%;
+        width: 1fr;
         height: 100%;
         border-right: solid $primary;
     }
@@ -385,7 +454,9 @@ class ChatPanel(Widget):
     def compose(self) -> ComposeResult:
         yield Label("CHAT", id="chat-label")
         yield VerticalScroll(id="chat-scroll")
-        yield HistoryInput(placeholder="> Type a message and press Enter…", id="chat-input")
+        yield HistoryInput(
+            placeholder="> Type a message… Enter to send, Shift+Enter for newline", id="chat-input"
+        )
 
     # -- Scroll-pin logic ------------------------------------------------------
     # Auto-scroll follows output only while the user is "pinned" to the bottom.
@@ -459,7 +530,7 @@ class StatusPanel(Widget):
 
     DEFAULT_CSS = """
     StatusPanel {
-        width: 20%;
+        width: 40;
         height: 100%;
         overflow-y: auto;
         padding: 1;
@@ -635,7 +706,7 @@ class LogPanel(Widget):
             # Flush buffered records that arrived while the panel was hidden.
             rich_log = self.query_one("#log-output", RichLog)
             for record in self._buffer:
-                self._render(rich_log, record)
+                self._render_record(rich_log, record)
             self._buffer.clear()
 
     def write_record(self, record: logging.LogRecord) -> None:
@@ -645,9 +716,9 @@ class LogPanel(Widget):
             if len(self._buffer) < self._MAX_BUFFER:
                 self._buffer.append(record)
             return
-        self._render(self.query_one("#log-output", RichLog), record)
+        self._render_record(self.query_one("#log-output", RichLog), record)
 
-    def _render(self, rich_log: RichLog, record: logging.LogRecord) -> None:
+    def _render_record(self, rich_log: RichLog, record: logging.LogRecord) -> None:
         color = _LOG_COLORS.get(record.levelno, "white")
         msg = _LOG_FMT.format(record)
         safe_msg = msg.replace("[", "\\[")
@@ -734,6 +805,109 @@ class StatusBar(Static):
             f"[{token_colour}]{token_str}[/{token_colour}]{cost_str}    "
             f"[dim]ctrl+s: stream  ctrl+l: logs  ctrl+L: clear  ctrl+q: quit[/dim]{hint}"
         )
+
+
+# ── Permission modal ─────────────────────────────────────────────────────────
+
+
+class PermissionScreen(ModalScreen[bool]):
+    """Modal asking the user to approve or deny a tool execution."""
+
+    DEFAULT_CSS = """
+    PermissionScreen {
+        align: center middle;
+    }
+    #perm-body {
+        width: 72;
+        height: auto;
+        max-height: 60%;
+        background: $surface;
+        border: double $warning;
+        padding: 1 2;
+    }
+    #perm-title {
+        text-style: bold;
+        margin-bottom: 1;
+    }
+    #perm-detail {
+        margin-bottom: 1;
+    }
+    #perm-buttons {
+        height: 3;
+        align: right middle;
+    }
+    """
+
+    BINDINGS = [
+        Binding("y", "approve", "Allow", show=True),
+        Binding("n", "deny_action", "Deny", show=True),
+        Binding("escape", "deny_action", "Deny"),
+    ]
+
+    def __init__(self, tool_name: str, arguments: dict[str, Any]) -> None:
+        super().__init__()
+        self.tool_name = tool_name
+        self.arguments = arguments
+
+    def compose(self) -> ComposeResult:
+        detail = self._format_detail()
+        with Vertical(id="perm-body"):
+            yield Static("[bold yellow]Permission Required[/bold yellow]", id="perm-title")
+            yield Static(f"Tool: [bold]{self.tool_name}[/bold]")
+            yield Static(f"[dim]{detail}[/dim]", id="perm-detail")
+            with Horizontal(id="perm-buttons"):
+                yield Button("Allow (y)", id="allow-btn", variant="success")
+                yield Button("Deny (n)", id="deny-btn", variant="error")
+
+    def _format_detail(self) -> str:
+        for key in ("command", "url", "path", "file_path"):
+            if key in self.arguments:
+                return f"{key}: {self.arguments[key]}"
+        if self.arguments:
+            return str(self.arguments)
+        return ""
+
+    def action_approve(self) -> None:
+        self.dismiss(True)
+
+    def action_deny_action(self) -> None:
+        self.dismiss(False)
+
+    @on(Button.Pressed, "#allow-btn")
+    def on_allow_pressed(self) -> None:
+        self.dismiss(True)
+
+    @on(Button.Pressed, "#deny-btn")
+    def on_deny_pressed(self) -> None:
+        self.dismiss(False)
+
+
+def _wire_interactive_permissions(agent: Agent, app: App) -> None:  # type: ignore[type-arg]
+    """Replace ASK-policy permission handlers with interactive ones on *agent* and all subagents.
+
+    This allows the TUI to prompt the user via a modal dialog when a tool
+    requires approval, instead of raising a ``PermissionError``.
+    """
+    from sage.permissions.interactive import InteractivePermissionHandler
+    from sage.permissions.policy import PolicyPermissionHandler
+
+    async def ask_callback(tool_name: str, arguments: dict[str, Any]) -> bool:
+        screen = PermissionScreen(tool_name, arguments)
+        return await app.push_screen_wait(screen)
+
+    def _upgrade(target: Agent) -> None:
+        handler = target.tool_registry._permission_handler
+        if isinstance(handler, PolicyPermissionHandler):
+            interactive = InteractivePermissionHandler(
+                rules=handler.rules,
+                default=handler.default,
+                ask_callback=ask_callback,
+            )
+            target.tool_registry.set_permission_handler(interactive)
+        for sub in target.subagents.values():
+            _upgrade(sub)
+
+    _upgrade(agent)
 
 
 # ── Orchestration modal ───────────────────────────────────────────────────────
@@ -906,6 +1080,7 @@ class SageTUIApp(App[None]):
         sage_logger.addHandler(self._log_handler)
 
         agent = Agent.from_config(self.config_path, central=self._central)
+        _wire_interactive_permissions(agent, self)
         self._agent = agent
         instrument_agent(agent, self)
 
@@ -936,8 +1111,8 @@ class SageTUIApp(App[None]):
 
     # ── Input handling ────────────────────────────────────────────────────────
 
-    @on(Input.Submitted, "#chat-input")
-    def handle_chat_input(self, event: Input.Submitted) -> None:
+    @on(HistoryInput.Submitted, "#chat-input")
+    def handle_chat_input(self, event: HistoryInput.Submitted) -> None:
         query = event.value.strip()
         if not query or self._agent is None:
             return

@@ -70,7 +70,6 @@ class MainConfig(BaseModel):
     skills_dir: str | None = None
     agents_dir: str = "agents/"
     primary: str | None = None
-    secondary: list[dict[str, str]] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
     defaults: ConfigOverrides = Field(default_factory=ConfigOverrides)
     agents: dict[str, AgentOverrides] = Field(default_factory=dict)

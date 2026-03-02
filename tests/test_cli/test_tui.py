@@ -347,6 +347,132 @@ def test_tui_log_handler_emit_calls_post_message() -> None:
     mock_app.post_message.assert_called_once()
 
 
+# ── Permission modal tests ────────────────────────────────────────────────────
+
+
+async def test_permission_screen_approve_via_button() -> None:
+    from sage.cli.tui import PermissionScreen
+
+    class _App(App[bool | None]):
+        def on_mount(self) -> None:
+            self.push_screen(PermissionScreen("shell", {"command": "rm -rf /"}), self._on_result)
+
+        def _on_result(self, result: bool) -> None:
+            self._result = result
+            self.exit()
+
+    app = _App()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.click("#allow-btn")
+        await pilot.pause()
+    assert app._result is True  # type: ignore[attr-defined]
+
+
+async def test_permission_screen_deny_via_button() -> None:
+    from sage.cli.tui import PermissionScreen
+
+    class _App(App[bool | None]):
+        def on_mount(self) -> None:
+            self.push_screen(PermissionScreen("shell", {"command": "rm -rf /"}), self._on_result)
+
+        def _on_result(self, result: bool) -> None:
+            self._result = result
+            self.exit()
+
+    app = _App()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.click("#deny-btn")
+        await pilot.pause()
+    assert app._result is False  # type: ignore[attr-defined]
+
+
+async def test_permission_screen_approve_via_keybinding() -> None:
+    from sage.cli.tui import PermissionScreen
+
+    class _App(App[bool | None]):
+        def on_mount(self) -> None:
+            self.push_screen(PermissionScreen("shell", {"command": "ls"}), self._on_result)
+
+        def _on_result(self, result: bool) -> None:
+            self._result = result
+            self.exit()
+
+    app = _App()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("y")
+        await pilot.pause()
+    assert app._result is True  # type: ignore[attr-defined]
+
+
+async def test_permission_screen_deny_via_keybinding() -> None:
+    from sage.cli.tui import PermissionScreen
+
+    class _App(App[bool | None]):
+        def on_mount(self) -> None:
+            self.push_screen(PermissionScreen("shell", {"command": "ls"}), self._on_result)
+
+        def _on_result(self, result: bool) -> None:
+            self._result = result
+            self.exit()
+
+    app = _App()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("n")
+        await pilot.pause()
+    assert app._result is False  # type: ignore[attr-defined]
+
+
+def test_wire_interactive_permissions_upgrades_handler() -> None:
+    from sage.cli.tui import _wire_interactive_permissions
+    from sage.permissions.base import PermissionAction
+    from sage.permissions.interactive import InteractivePermissionHandler
+    from sage.permissions.policy import CategoryPermissionRule, PolicyPermissionHandler
+    from sage.tools.registry import ToolRegistry
+
+    mock_agent = MagicMock()
+    mock_agent.subagents = {}
+    mock_agent.tool_registry = ToolRegistry()
+    handler = PolicyPermissionHandler(
+        rules=[CategoryPermissionRule(category="shell", action=PermissionAction.ASK)],
+        default=PermissionAction.ASK,
+    )
+    mock_agent.tool_registry.set_permission_handler(handler)
+
+    mock_app = MagicMock()
+    _wire_interactive_permissions(mock_agent, mock_app)
+
+    assert isinstance(mock_agent.tool_registry._permission_handler, InteractivePermissionHandler)
+
+
+def test_wire_interactive_permissions_recurses_into_subagents() -> None:
+    from sage.cli.tui import _wire_interactive_permissions
+    from sage.permissions.base import PermissionAction
+    from sage.permissions.interactive import InteractivePermissionHandler
+    from sage.permissions.policy import CategoryPermissionRule, PolicyPermissionHandler
+    from sage.tools.registry import ToolRegistry
+
+    sub_agent = MagicMock()
+    sub_agent.subagents = {}
+    sub_agent.tool_registry = ToolRegistry()
+    sub_handler = PolicyPermissionHandler(
+        rules=[CategoryPermissionRule(category="shell", action=PermissionAction.ASK)],
+    )
+    sub_agent.tool_registry.set_permission_handler(sub_handler)
+
+    parent = MagicMock()
+    parent.subagents = {"sub": sub_agent}
+    parent.tool_registry = ToolRegistry()
+
+    mock_app = MagicMock()
+    _wire_interactive_permissions(parent, mock_app)
+
+    assert isinstance(sub_agent.tool_registry._permission_handler, InteractivePermissionHandler)
+
+
 # ── Integration test ──────────────────────────────────────────────────────────
 
 

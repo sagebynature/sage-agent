@@ -345,6 +345,16 @@ def load_config(path: str | Path, central: MainConfig | None = None) -> AgentCon
     base_dir = config_path.parent
     config = _resolve_subagent_refs(config, base_dir, central)
 
+    # Auto-discover subagents for the primary agent when not explicitly specified.
+    if (
+        not config.subagents
+        and "subagents" not in metadata
+        and central is not None
+        and central.primary
+        and config.name == central.primary
+    ):
+        config = _auto_discover_subagents(config, base_dir, central)
+
     # Log the effective (post-merge) agent configuration.
     logger.info("Agent '%s' loaded from %s", config.name, config_path)
     logger.info(
@@ -402,3 +412,31 @@ def _resolve_subagent_refs(
                 )
             resolved.append(_resolve_subagent_refs(sub, base_dir, central))
     return config.model_copy(update={"subagents": resolved})
+
+
+def _auto_discover_subagents(
+    config: AgentConfig, base_dir: Path, central: MainConfig | None = None
+) -> AgentConfig:
+    """Auto-discover subagents from sibling ``.md`` files in *base_dir*.
+
+    Used when the primary agent omits the ``subagents`` field, making all
+    other agents in ``agents_dir`` available for delegation.
+    """
+    discovered: list[AgentConfig] = []
+    for md_file in sorted(base_dir.glob("*.md")):
+        if md_file.stem == config.name:
+            continue
+        try:
+            sub_config = load_config(md_file, central=central)
+            discovered.append(sub_config)
+        except ConfigError as exc:
+            logger.warning("Skipping %s during auto-discovery: %s", md_file, exc)
+
+    if discovered:
+        logger.info(
+            "Auto-discovered %d subagent(s) for '%s': %s",
+            len(discovered),
+            config.name,
+            [s.name for s in discovered],
+        )
+    return config.model_copy(update={"subagents": discovered})

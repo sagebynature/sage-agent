@@ -604,13 +604,10 @@ class TestMainConfigNewFields:
         cfg = MainConfig(primary="main-agent")
         assert cfg.primary == "main-agent"
 
-    def test_secondary_default_empty(self) -> None:
-        cfg = MainConfig()
-        assert cfg.secondary == []
-
-    def test_secondary_set(self) -> None:
-        cfg = MainConfig(secondary=[{"name": "helper", "role": "backup"}])
-        assert cfg.secondary == [{"name": "helper", "role": "backup"}]
+    def test_secondary_field_removed(self) -> None:
+        """The secondary field was removed; passing it should raise."""
+        with pytest.raises(Exception):
+            MainConfig(secondary=[{"name": "helper"}])  # type: ignore[call-arg]
 
 
 class TestConfigOverridesMaxDepth:

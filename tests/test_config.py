@@ -597,6 +597,113 @@ class TestDirectorySubagentRef:
 
 
 # ---------------------------------------------------------------------------
+# Auto-discovery tests
+# ---------------------------------------------------------------------------
+
+
+class TestAutoDiscoverSubagents:
+    """Tests for implicit subagent auto-discovery from agents_dir."""
+
+    def test_primary_auto_discovers_sibling_agents(self, tmp_path: Path) -> None:
+        """Primary agent with no subagents field discovers all siblings."""
+        _write_md(tmp_path / "helper.md", {"name": "helper", "model": "gpt-4o"})
+        _write_md(tmp_path / "coder.md", {"name": "coder", "model": "gpt-4o"})
+        cfg_path = _write_md(
+            tmp_path / "orchestrator.md",
+            {"name": "orchestrator", "model": "gpt-4o"},
+        )
+        central = MainConfig(primary="orchestrator")
+        config = load_config(cfg_path, central=central)
+
+        names = sorted(s.name for s in config.subagents)
+        assert names == ["coder", "helper"]
+
+    def test_explicit_subagents_skips_auto_discovery(self, tmp_path: Path) -> None:
+        """When subagents is explicitly set, auto-discovery is skipped."""
+        _write_md(tmp_path / "helper.md", {"name": "helper", "model": "gpt-4o"})
+        _write_md(tmp_path / "coder.md", {"name": "coder", "model": "gpt-4o"})
+        cfg_path = _write_md(
+            tmp_path / "orchestrator.md",
+            {
+                "name": "orchestrator",
+                "model": "gpt-4o",
+                "subagents": [{"config": "helper.md"}],
+            },
+        )
+        central = MainConfig(primary="orchestrator")
+        config = load_config(cfg_path, central=central)
+
+        assert len(config.subagents) == 1
+        assert config.subagents[0].name == "helper"
+
+    def test_explicit_empty_subagents_skips_auto_discovery(self, tmp_path: Path) -> None:
+        """When subagents: [] is explicitly set, auto-discovery is skipped."""
+        _write_md(tmp_path / "helper.md", {"name": "helper", "model": "gpt-4o"})
+        cfg_path = _write_md(
+            tmp_path / "orchestrator.md",
+            {
+                "name": "orchestrator",
+                "model": "gpt-4o",
+                "subagents": [],
+            },
+        )
+        central = MainConfig(primary="orchestrator")
+        config = load_config(cfg_path, central=central)
+
+        assert config.subagents == []
+
+    def test_non_primary_agent_no_auto_discovery(self, tmp_path: Path) -> None:
+        """Non-primary agents never auto-discover subagents."""
+        _write_md(tmp_path / "helper.md", {"name": "helper", "model": "gpt-4o"})
+        cfg_path = _write_md(
+            tmp_path / "coder.md",
+            {"name": "coder", "model": "gpt-4o"},
+        )
+        central = MainConfig(primary="orchestrator")
+        config = load_config(cfg_path, central=central)
+
+        assert config.subagents == []
+
+    def test_no_central_config_no_auto_discovery(self, tmp_path: Path) -> None:
+        """Without central config, auto-discovery is skipped."""
+        _write_md(tmp_path / "helper.md", {"name": "helper", "model": "gpt-4o"})
+        cfg_path = _write_md(
+            tmp_path / "orchestrator.md",
+            {"name": "orchestrator", "model": "gpt-4o"},
+        )
+        config = load_config(cfg_path)
+
+        assert config.subagents == []
+
+    def test_auto_discovery_skips_bad_files(self, tmp_path: Path) -> None:
+        """Malformed agent files are skipped with a warning, not fatal."""
+        _write_md(tmp_path / "good.md", {"name": "good", "model": "gpt-4o"})
+        # Write a bad .md file (missing required name)
+        (tmp_path / "bad.md").write_text("---\nmodel: gpt-4o\n---\n", encoding="utf-8")
+        cfg_path = _write_md(
+            tmp_path / "orchestrator.md",
+            {"name": "orchestrator", "model": "gpt-4o"},
+        )
+        central = MainConfig(primary="orchestrator")
+        config = load_config(cfg_path, central=central)
+
+        assert len(config.subagents) == 1
+        assert config.subagents[0].name == "good"
+
+    def test_auto_discovery_excludes_self(self, tmp_path: Path) -> None:
+        """Primary agent is excluded from its own discovered subagents."""
+        cfg_path = _write_md(
+            tmp_path / "orchestrator.md",
+            {"name": "orchestrator", "model": "gpt-4o"},
+        )
+        central = MainConfig(primary="orchestrator")
+        config = load_config(cfg_path, central=central)
+
+        assert config.subagents == []
+        assert all(s.name != "orchestrator" for s in config.subagents)
+
+
+# ---------------------------------------------------------------------------
 # ModelParams tests
 # ---------------------------------------------------------------------------
 

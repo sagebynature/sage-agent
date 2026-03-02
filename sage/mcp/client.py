@@ -38,7 +38,7 @@ def _install_mcp_asyncgen_error_suppressor() -> None:
     if getattr(existing, "_mcp_cancel_scope_suppressor", False):
         return  # already installed
 
-    def _handler(loop: asyncio.AbstractEventLoop, context: dict) -> None:
+    def _handler(loop: asyncio.AbstractEventLoop, context: dict[str, Any]) -> None:
         exc = context.get("exception")
         msg = context.get("message", "")
         if (
