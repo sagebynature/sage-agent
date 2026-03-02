@@ -362,7 +362,7 @@ class ChatPanel(Widget):
 
     DEFAULT_CSS = """
     ChatPanel {
-        width: 65%;
+        width: 80%;
         height: 100%;
         border-right: solid $primary;
     }
@@ -459,7 +459,7 @@ class StatusPanel(Widget):
 
     DEFAULT_CSS = """
     StatusPanel {
-        width: 35%;
+        width: 20%;
         height: 100%;
         overflow-y: auto;
         padding: 1;
