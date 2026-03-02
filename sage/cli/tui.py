@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from sage.main_config import MainConfig
 
-from textual import on
+from textual import events, on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -177,6 +177,47 @@ def _fmt_args(arguments: dict[str, Any]) -> str:
     if len(arguments) > 3:
         parts.append("…")
     return ", ".join(parts)
+
+
+# ── HistoryInput ──────────────────────────────────────────────────────────────
+
+
+class HistoryInput(Input):
+    """Input widget with up/down arrow message history, like a shell prompt."""
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+        self._history: list[str] = []
+        self._history_idx: int = 0
+        self._draft: str = ""
+
+    def append_history(self, value: str) -> None:
+        """Add a submitted message to history and reset cursor to end."""
+        if value:
+            self._history.append(value)
+        self._history_idx = len(self._history)
+        self._draft = ""
+
+    def _on_key(self, event: events.Key) -> None:
+        if event.key == "up":
+            if self._history_idx > 0:
+                if self._history_idx == len(self._history):
+                    self._draft = self.value
+                self._history_idx -= 1
+                self.value = self._history[self._history_idx]
+                self.cursor_position = len(self.value)
+                event.prevent_default()
+                event.stop()
+        elif event.key == "down":
+            if self._history_idx < len(self._history):
+                self._history_idx += 1
+                if self._history_idx == len(self._history):
+                    self.value = self._draft
+                else:
+                    self.value = self._history[self._history_idx]
+                self.cursor_position = len(self.value)
+                event.prevent_default()
+                event.stop()
 
 
 # ── Widgets ───────────────────────────────────────────────────────────────────
@@ -515,6 +556,10 @@ class SageTUIApp(App[None]):
         )
         self.sub_title = f"{agent.name} ({agent.model})"
         self.query_one("#chat-input", Input).focus()
+
+    async def on_unmount(self) -> None:
+        if self._agent is not None:
+            await self._agent.close()
 
     # ── Input handling ────────────────────────────────────────────────────────
 
