@@ -436,6 +436,21 @@ class AssistantEntry(Widget):
 # ── Widgets ───────────────────────────────────────────────────────────────────
 
 
+class ChatScroll(VerticalScroll):
+    """Chat scroll container that reactively tracks auto-scroll pin state.
+
+    Watches ``scroll_y`` so that the parent :class:`ChatPanel` knows whether the
+    user is "pinned" to the bottom (and should auto-scroll on new content) or
+    has scrolled up to read history (and should *not* be yanked back down).
+    """
+
+    def watch_scroll_y(self, old_value: float, new_value: float) -> None:
+        """Update the parent's auto-scroll flag whenever scroll position changes."""
+        super().watch_scroll_y(old_value, new_value)
+        if isinstance(self.parent, ChatPanel):
+            self.parent._auto_scroll = new_value >= self.max_scroll_y - 2
+
+
 class ChatPanel(Widget):
     """Left panel: conversation history (typed entry widgets) and message input."""
 
@@ -463,7 +478,7 @@ class ChatPanel(Widget):
 
     def compose(self) -> ComposeResult:
         yield Label("CHAT", id="chat-label")
-        yield VerticalScroll(id="chat-scroll")
+        yield ChatScroll(id="chat-scroll")
         yield HistoryInput(
             placeholder="> Type a message… Enter to send, Shift+Enter for newline", id="chat-input"
         )
@@ -471,14 +486,18 @@ class ChatPanel(Widget):
     # -- Scroll-pin logic ------------------------------------------------------
     # Auto-scroll follows output only while the user is "pinned" to the bottom.
     # If the user scrolls up to read history, we stop pulling them down.
-    # Pinning resumes when they scroll back to the bottom or send a message.
+    # Pinning resumes automatically when they scroll back to the bottom
+    # (detected by ChatScroll.watch_scroll_y) or when they send a message.
+    #
+    # IMPORTANT: We do NOT re-check the pin state on every streaming chunk.
+    # During rapid streaming, scroll_y lags behind max_scroll_y because
+    # the previous scroll_end (via call_after_refresh) hasn't executed yet.
+    # Re-checking per-chunk would incorrectly flip _auto_scroll to False,
+    # causing the scroll to "stick" mid-stream even when the user hasn't
+    # scrolled up.  Instead, ChatScroll's watch_scroll_y reactively tracks
+    # the actual scroll position and updates _auto_scroll accordingly.
 
     _auto_scroll: bool = True
-
-    def _check_scroll_pin(self) -> None:
-        """Snapshot whether we're at the bottom BEFORE content changes."""
-        scroll = self.query_one("#chat-scroll", VerticalScroll)
-        self._auto_scroll = scroll.scroll_y >= scroll.max_scroll_y - 1
 
     def _maybe_scroll_end(self) -> None:
         """Scroll to bottom only if pinned — called via call_after_refresh."""
@@ -496,14 +515,12 @@ class ChatPanel(Widget):
 
     def start_turn(self) -> None:
         """Show the animated thinking indicator."""
-        self._check_scroll_pin()
         scroll = self.query_one("#chat-scroll", VerticalScroll)
         scroll.mount(ThinkingEntry(id="thinking"))
         self.call_after_refresh(self._maybe_scroll_end)
 
     def add_tool_call(self, tool_name: str, arguments: dict[str, Any]) -> ToolEntry:
         """Append a ToolEntry (yellow/running) and return it for later update."""
-        self._check_scroll_pin()
         scroll = self.query_one("#chat-scroll", VerticalScroll)
         thinking = self.query("#thinking")
         if thinking:
@@ -515,7 +532,6 @@ class ChatPanel(Widget):
 
     def start_response(self) -> AssistantEntry:
         """Remove thinking indicator, append AssistantEntry, return it."""
-        self._check_scroll_pin()
         thinking = self.query("#thinking")
         if thinking:
             thinking.first().remove()
@@ -527,7 +543,6 @@ class ChatPanel(Widget):
 
     def scroll_to_end(self) -> None:
         """Schedule a scroll-to-bottom respecting the pin state."""
-        self._check_scroll_pin()
         self.call_after_refresh(self._maybe_scroll_end)
 
     def clear_entries(self) -> None:
