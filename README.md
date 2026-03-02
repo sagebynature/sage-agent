@@ -44,6 +44,7 @@ Built-in tools included — or load them all at once with `sage.tools.builtins`:
 | Core | `shell`, `file_read`, `file_write`, `file_edit`, `http_request` |
 | Memory | `memory_store`, `memory_recall` |
 | Web | `web_fetch`, `web_search` |
+| Git | `git_status`, `git_diff`, `git_log`, `git_commit`, `git_undo`, `git_branch` |
 
 ### Skills
 
@@ -112,7 +113,7 @@ Token-aware context window management. Automatic compaction when approaching the
 
 ### TUI
 
-A full interactive terminal UI built with [Textual](https://github.com/Textualize/textual). Split-screen layout — chat on the left, live tool-call feed on the right, status bar at the bottom. It's actually nice to use.
+A full interactive terminal UI built with [Textual](https://github.com/Textualize/textual). 80/20 split layout — chat panel on the left with markdown rendering, collapsible tool calls, and multiline input; status panel on the right with agent info and usage stats. Permission modals for interactive approval. Toggleable log panel (Ctrl+L).
 
 ```bash
 sage tui --agent-config AGENTS.md
@@ -224,9 +225,13 @@ name: my-agent
 model: gpt-4o
 description: "A helpful assistant"   # Display only, NOT sent to model
 max_turns: 10
+max_depth: 3                       # Max delegation depth (default: 3)
+
+git:
+  auto_snapshot: true              # Auto-snapshot before edits (default: true)
 
 # Tool access: permission categories drive tool registration
-# Categories: read, edit, shell, web, memory, task
+# Categories: read, edit, shell, web, memory, task, git
 # Values: "allow" | "deny" | "ask" | {pattern: action, ...}
 permission:
   read: allow
@@ -256,10 +261,12 @@ subagents:
     model: gpt-4o-mini
 
 mcp_servers:
-  - transport: stdio
+  filesystem:
+    transport: stdio
     command: npx
     args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
-  - transport: sse
+  remote:
+    transport: sse
     url: http://localhost:8080/sse
 
 
@@ -281,19 +288,18 @@ credential_scrubbing:
 
 query_classification:
   rules:
-    - keywords: ["python", "code"]
-      patterns: []
+    - pattern: "python|code"
+      model: gpt-4o
       priority: 1
-      target_model: gpt-4o
 
 follow_through:
   enabled: true
-  patterns: ["I cannot", "I'm unable"]
+  patterns: ["I cannot", "I'm unable", "I don't have access"]
 
 research:
   enabled: true
-  max_sources: 5
-  timeout: 15.0
+  max_sources: 3
+  timeout: 10.0
 
 session:
   enabled: true
@@ -309,6 +315,9 @@ Sage supports a global TOML config file for defaults and per-agent overrides. It
 ```toml
 # Optional: global skills directory (waterfall: $cwd/skills → ~/.agents/skills → ~/.claude/skills)
 # skills_dir = "/path/to/skills"
+
+# agents_dir = "agents/"   # default directory for agent discovery
+# primary = "my-agent"     # default agent to run when none specified
 
 [defaults]
 model = "gpt-4o"
@@ -345,7 +354,7 @@ sage/
   mcp/              # MCPClient + MCPServer
   permissions/      # PermissionProtocol, policy rules, interactive prompts
   context/          # Token-aware context budget, fallback table
-  git/              # GitSnapshot (snapshot/restore capability)
+  git/              # Git tools (status, diff, log, commit, undo, branch, worktree) + snapshot
   cli/              # Click CLI commands + Textual TUI
     main.py         # sage agent / exec / eval / tool / init / tui commands
     tui.py          # Textual interactive TUI
@@ -372,83 +381,6 @@ sage/
 - [`examples/safe_coder/`](examples/safe_coder/) — Code generation with safety
 - [`examples/devtools_agent/`](examples/devtools_agent/) — Developer tools
 - [`examples/claude_agent/`](examples/claude_agent/) — Anthropic Claude model
-
-## Claude Code Skills
-
-This repo includes [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skills that help you create and optimize Sage agents through a guided, conversational workflow. The skills live in the `skills/` directory.
-
-### Prerequisites
-
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed
-- `sage-agent` installed — the `evaluate-sage-agent` skill uses `sage eval` which is built in
-
-### Available Skills
-
-#### `create-sage-agent` — Create a new agent from a description
-
-Walks you through generating a complete `AGENTS.md` from a natural language description. It infers permissions, model settings, and system prompt structure, and identifies opportunities for subagent decomposition.
-
-**Invoke it in Claude Code:**
-
-```
-/skill create-sage-agent
-```
-
-**What it does:**
-
-1. Asks what the agent should do
-2. Infers permissions, model, and complexity from your description
-3. Identifies subagent opportunities (e.g., pipeline stages, distinct roles)
-4. Generates a complete `AGENTS.md` with frontmatter config and system prompt
-5. Validates the config
-6. Optionally hands off to `evaluate-sage-agent` for optimization
-
-**Example interaction:**
-
-```
-You: /skill create-sage-agent
-Claude: What should this agent do?
-You: A code reviewer that reads files, checks git history, and flags security issues
-Claude: [generates AGENTS.md with read + shell permissions, appropriate system prompt]
-```
-
-#### `evaluate-sage-agent` — Validate, benchmark, and optimize an agent
-
-Runs a structured evaluation pipeline on an existing agent config: validation, suggestion generation, model benchmarking, and before/after comparison.
-
-**Invoke it in Claude Code:**
-
-```
-/skill evaluate-sage-agent
-```
-
-**What it does:**
-
-1. **Validate** — Checks the agent config for errors
-2. **Suggest** — Analyzes the config and recommends prompt improvements, tool extractions, guardrails, and architectural changes
-3. **Apply** — Creates a versioned backup (`AGENTS.v1.md`, etc.) and applies accepted suggestions
-4. **Benchmark** — Tests the agent against one or more models, reporting quality, latency, token usage, and cost
-5. **Compare** — Runs a before/after comparison if changes were applied, showing deltas in each metric
-
-**Example interaction:**
-
-```
-You: /skill evaluate-sage-agent
-Claude: Which agent would you like to evaluate?
-You: ./code-reviewer
-Claude: [validates, suggests improvements, benchmarks, shows results]
-```
-
-### Typical Workflow
-
-```
-create-sage-agent  →  evaluate-sage-agent
-  (describe it)         (optimize it)
-```
-
-1. Use `create-sage-agent` to generate a new agent from a description
-2. Use `evaluate-sage-agent` to validate and optimize it
-3. Iterate — the evaluate skill versions your config so you can compare changes
 
 ## Requirements
 

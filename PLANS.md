@@ -20,7 +20,7 @@
 
 ---
 
-## Plan 2: Execution Sandboxing
+## Plan 2: Execution Sandboxing ✅ DONE
 
 **Priority:** P0 (Critical)
 **Effort:** High (3-4 weeks)
@@ -220,7 +220,7 @@ sandbox:
 
 ---
 
-## Plan 3: Headless / CI Mode
+## Plan 3: Headless / CI Mode ✅ DONE
 
 **Priority:** P1 (High)
 **Effort:** Low-Medium (1-2 weeks)
@@ -408,7 +408,7 @@ jobs:
 
 ---
 
-## Plan 4: Built-in Evaluation CLI
+## Plan 4: Built-in Evaluation CLI ✅ DONE
 
 **Priority:** P1 (High)
 **Effort:** Medium (2-3 weeks)
@@ -555,7 +555,7 @@ sage eval run evals/suite.yaml --format json --min-pass-rate 0.9
 
 ---
 
-## Plan 5: Observability & Tracing
+## Plan 5: Observability & Tracing ✅ DONE
 
 **Priority:** P1 (High)
 **Effort:** Medium (2-3 weeks)
@@ -1249,17 +1249,17 @@ Create `sagebynature/sage-registry` GitHub repo with `registry.json`:
 
 ### Wave 1 (Weeks 1-4): Safety & Trust
 - ~~Plan 1: Git Integration~~ ✅ Complete
-- Plan 2: Execution Sandboxing — Layer 1 (app-level hardening) (P0)
-- Plan 3: Headless / CI Mode (P1)
+- Plan 2: Execution Sandboxing — Layer 1 (app-level hardening) (P0) ✅
+- Plan 3: Headless / CI Mode (P1) ✅
 - Plan 8: AGENTS.md Naming Resolution (P2, low effort)
 
 ### Wave 2 (Weeks 5-8): Operational Maturity
-- Plan 2: Execution Sandboxing — Layers 2-3 (bubblewrap/seatbelt) (P0)
-- Plan 5: Observability — Steps 1-3 (cost tracking, trace model, instrumentation) (P1)
+- Plan 2: Execution Sandboxing — Layers 2-3 (bubblewrap/seatbelt) (P0) ✅
+- Plan 5: Observability — Steps 1-3 (cost tracking, trace model, instrumentation) (P1) ✅
 - Plan 10: CLI UX — Slash commands, cost tracking, model switching (P2)
 
 ### Wave 3 (Weeks 9-12): Developer Experience
-- Plan 4: Built-in Evaluation CLI (P1)
+- Plan 4: Built-in Evaluation CLI (P1) ✅
 - Plan 7: Durable Execution & Sessions (P2)
 - Plan 6: IDE Integration — Phase 1 (file watcher) + Phase 2 (ACP) (P2)
 
@@ -1267,5 +1267,5 @@ Create `sagebynature/sage-registry` GitHub repo with `registry.json`:
 - Plan 9: Multimodal Input (P3)
 - Plan 11: Community & Ecosystem (P3)
 - Plan 12: Plugin Marketplace (P3)
-- Plan 5: Observability — Step 6 (OTEL export) (P1)
+- Plan 5: Observability — Step 6 (OTEL export) (P1) ✅
 - Plan 6: IDE Integration — Phase 3 (VS Code extension if warranted) (P2)

@@ -92,7 +92,7 @@ INFO  Opening memory database at memory.db
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `backend` | `str` | `"sqlite"` | Memory backend type. Currently only `"sqlite"` is implemented. |
+| `backend` | `str` | `"sqlite"` | Memory backend type: `"sqlite"` (default) or `"file"` (JSON-lines flat file). |
 | `path` | `str` | `"memory.db"` | Path to the SQLite database file. Relative paths are resolved from the working directory. |
 | `embedding` | `str` | `"text-embedding-3-large"` | Any litellm-compatible embedding model string. |
 | `compaction_threshold` | `int` | `50` | Number of conversation messages before history compaction triggers. |
@@ -230,6 +230,8 @@ flowchart TD
     N --> O
 ```
 
+When a memory backend is configured, the agent also registers three memory tools that the LLM can invoke during a conversation: `memory_store` (save a key-value pair), `memory_recall` (semantic search over stored memories), and `memory_forget` (delete a specific memory entry by ID). These are registered in `_register_memory_tools()` and give the model direct read/write/delete access to the memory store.
+
 ### Recall: Semantic Search
 
 When the agent recalls memory, the process is:
@@ -294,6 +296,31 @@ USING vec0(embedding float[N]);   -- N = embedding dimension
 
 When sqlite-vec is active, each `store()` inserts into both tables (using the memories row's `rowid` as the foreign key). `recall()` uses `vec_distance_cosine` for O(log n) ANN retrieval; `clear()` deletes from both tables atomically.
 
+### File Backend
+
+The file backend (`backend: "file"`) stores memories as JSON lines in a flat file. It implements the full `MemoryProtocol` (store, recall via numpy cosine similarity, compact, clear, forget).
+
+```yaml
+memory:
+  backend: file
+  path: memory.jsonl
+  embedding: text-embedding-3-large
+```
+
+This backend is simpler than SQLite — no database engine, no schema migrations. Each line is a JSON object with `id`, `content`, `embedding`, `metadata`, and `created_at` fields. Recall uses O(n) numpy cosine similarity across all entries.
+
+**When to use file vs sqlite:**
+
+| Aspect | SQLite | File |
+|--------|--------|------|
+| Recall performance | O(log n) with sqlite-vec, O(n) with numpy | O(n) always |
+| Concurrent access | Safe (SQLite locking) | Single-writer only |
+| Size limit | Millions of entries | Thousands of entries |
+| Portability | Single `.db` file | Single `.jsonl` file |
+| Dependencies | `aiosqlite` (included) | None beyond numpy |
+
+For most use cases, SQLite is recommended. Use the file backend when you need a human-readable memory store or want to avoid SQLite dependencies.
+
 ### Compaction
 
 Compaction prevents unbounded conversation history growth. Two mechanisms work together:
@@ -315,6 +342,18 @@ Both wait at least 2 turns between compactions to avoid thrashing.
 - Truncates tool outputs longer than `tool_output_max_chars` in older messages
 - Preserves full output in the most recent 10 messages
 
+#### Compaction Strategy Chain
+
+When compaction is triggered, the agent tries three strategies in order:
+
+1. **LLM-based summarization** (`compact_messages`) — uses the provider to intelligently summarize older messages. This is the highest-quality strategy but requires an LLM call.
+
+2. **Emergency drop** (`emergency_drop`) — if LLM summarization fails (provider error, timeout), keeps only the N most recent messages (default: 5) while preserving any leading system message.
+
+3. **Deterministic trim** (`deterministic_trim`) — always succeeds as a guaranteed last resort. Slices history to at most `target_count` messages (default: 20), preserving the system message. No LLM call required.
+
+For very long histories that exceed a single LLM context window, **multi-part compaction** (`multi_part_compact`) splits the history into overlapping chunks, summarizes each, then combines the summaries.
+
 ---
 
 ## Contributing
@@ -326,6 +365,7 @@ Both wait at least 2 turns between compactions to avoid thrashing.
 | `sage/memory/base.py` | `MemoryProtocol` and `MemoryEntry` definitions |
 | `sage/memory/embedding.py` | `EmbeddingProtocol`, `LiteLLMEmbedding`, `ProviderEmbedding` |
 | `sage/memory/sqlite_backend.py` | `SQLiteMemory` implementation (store, recall, cosine search) |
+| `sage/memory/file_backend.py` | `FileMemory` implementation (JSON-lines file store) |
 | `sage/memory/compaction.py` | `compact_messages()` and `prune_tool_outputs()` |
 | `sage/memory/__init__.py` | Public API exports |
 | `sage/agent.py` | Memory integration (init, recall, store, compact lifecycle) |

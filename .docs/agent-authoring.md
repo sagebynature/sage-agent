@@ -165,11 +165,12 @@ name: agent-name          # Required: unique identifier
 model: gpt-4o             # Required: LLM model (litellm format)
 description: A helper     # Optional: display-only, NOT sent to LLM
 max_turns: 10             # Optional: max agentic loop iterations (default: 10)
+max_depth: 3              # Optional: max delegation depth (default: 3)
 permission: {...}         # Optional: tool access control by category
 extensions: [...]         # Optional: custom tool module paths
 memory: {...}             # Optional: persistent memory config
 subagents: [...]          # Optional: child agents for delegation
-mcp_servers: [...]        # Optional: MCP server connections
+mcp_servers: {...}        # Optional: MCP server connections (named dict)
 model_params: {...}       # Optional: LLM parameters
 context: {...}            # Optional: token budget management
 ---
@@ -202,11 +203,12 @@ The parser splits on `---` delimiters, extracts the YAML block via `yaml.safe_lo
 | `model` | `str` | required* | LLM model in litellm format |
 | `description` | `str` | `""` | Display-only metadata (not sent to LLM) |
 | `max_turns` | `int` | `10` | Max agentic loop iterations |
+| `max_depth` | `int` | `3` | Maximum subagent delegation depth. Prevents unbounded recursive delegation chains. Default: 3. |
 | `permission` | `Permission` | `None` | Category-based tool access control |
 | `extensions` | `list[str]` | `[]` | Custom tool module paths |
 | `memory` | `MemoryConfig` | `None` | Persistent memory configuration |
 | `subagents` | `list` | `[]` | Child agent references |
-| `mcp_servers` | `list[MCPServerConfig]` | `[]` | MCP server connections |
+| `mcp_servers` | `dict[str, MCPServerConfig]` | `{}` | MCP server connections |
 | `model_params` | `ModelParams` | `{}` | LLM generation parameters |
 | `context` | `ContextConfig` | `None` | Token budget management |
 | `sandbox` | `SandboxConfig` | `None` | Shell sandbox: `backend` (`auto`/`native`/`bubblewrap`/`seatbelt`/`docker`/`none`), `mode` (`read-only`/`workspace-write`/`full-access`), `enabled` (default `false`), `network` (default `true`) |
@@ -233,6 +235,7 @@ permission:
   web: allow               # Controls web_fetch, web_search, http_request
   memory: allow            # Controls memory_store, memory_recall
   task: allow              # Reserved for future task management
+  git: allow               # Controls git_status, git_diff, git_log, git_commit, etc.
 ```
 
 Values for each category: `"allow"` | `"deny"` | `"ask"` | `{pattern: action, ...}`
@@ -244,6 +247,7 @@ Values for each category: `"allow"` | `"deny"` | `"ask"` | `{pattern: action, ..
 - `web: allow` -> registers `web_fetch`, `web_search`, `http_request`
 - `memory: allow` -> registers `memory_store`, `memory_recall`
 - `task: allow` -> (reserved, no tools currently)
+- `git: allow` -> registers `git_status`, `git_diff`, `git_log`, `git_commit`, `git_undo`, `git_branch`, `git_worktree_create`, `git_worktree_remove`, `snapshot_create`, `snapshot_restore`, `snapshot_list`
 
 When a category is set to `"deny"`, its tools are not available to the LLM. When `"ask"`, the agent prompts for approval before executing. When set to a dict, you can specify per-pattern rules:
 
@@ -317,13 +321,15 @@ memory:
 ```yaml
 mcp_servers:
   # stdio transport (subprocess)
-  - transport: stdio
+  filesystem:
+    transport: stdio
     command: npx
     args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
     env: { KEY: value }
 
   # SSE transport (HTTP)
-  - transport: sse
+  remote-tools:
+    transport: sse
     url: http://localhost:8080/sse
 ```
 
@@ -380,6 +386,27 @@ agent.run
 ```
 
 All instrumentation is zero-cost when `tracing:` is not configured or `opentelemetry-api` is not installed.
+
+### Git Configuration
+
+Git integration configuration. When `auto_snapshot` is enabled (default), the agent creates a lightweight restore point before file edits so changes can be rolled back.
+
+```yaml
+git:
+  auto_snapshot: true              # Create restore point before file edits (default: true)
+  auto_commit_dirty: false         # Auto-commit dirty working tree on start
+  auto_commit_edits: false         # Auto-commit after each file edit
+```
+
+### Identity Configuration
+
+Optional AIEOS personality/identity injection. When configured, loads a YAML persona definition and injects personality traits (neural matrix weights, text style, idiolect, biography) into the system prompt.
+
+```yaml
+identity:
+  format: aieos                    # "aieos" or "none" (default: "none")
+  file: persona.yaml               # Path to AIEOS v1.2 identity YAML
+```
 
 ---
 
@@ -684,26 +711,31 @@ Skills with executable scripts (like the `data-cruncher` or `crypto-toolkit` exa
 
 ### How Skills are Injected
 
-When building messages (`sage/agent.py:557-588`), skills are appended to the system prompt:
+Since v1.11.0, skills use a **two-phase lazy-loading** approach:
+
+**Phase 1 -- System Prompt Catalog:** When building messages, only a lightweight catalog is injected into the system prompt. Each skill is listed with just its name and one-line description:
 
 ```
 [System message]
   Body text (from markdown below frontmatter)
 
-  ## Skill: code-review
-  _Systematic checklist for reviewing code quality_
+  ## Available Skills
 
-  When reviewing code, work through these categories...
+  - **code-review**: Systematic checklist for reviewing code quality
+  - **debugging**: Step-by-step debugging methodology
 
-  ## Skill: debugging
-  _Structured debugging methodology_
-
-  When debugging, follow this sequence...
+  Use the `use_skill` tool to load a skill's full instructions.
 
 [Memory context]
 [Conversation history]
 [User message]
 ```
+
+**Phase 2 -- On-Demand Loading:** The `use_skill(name)` tool is automatically registered when an agent has skills. When the LLM decides a skill is relevant, it calls `use_skill` to load the full markdown content. On first call for a given skill, the complete instructions are returned. Subsequent calls for the same skill return a short "already loaded" notice.
+
+### Lazy Skill Loading via `use_skill`
+
+When an agent has skills, only a lightweight catalog (name + one-line description) is included in the system prompt. The `use_skill(name)` tool is automatically registered, allowing the LLM to load a skill's full markdown instructions on demand. On first call for a given skill, the full content is returned. Subsequent calls for the same skill return a short "already loaded" notice. The tool's `name` parameter is constrained to an enum of valid skill names.
 
 ### Skill Pool Resolution
 
@@ -762,6 +794,12 @@ await memory.store("User asked about Python decorators. I explained @tool.")
 entries = await memory.recall("How do decorators work?", limit=5)
 ```
 
+### Memory Tools
+
+- `memory_store(key, value)` -- stores `"key: value"` as a single embedded document. Returns `"Stored: {key}"`.
+- `memory_recall(query)` -- retrieves the top-5 semantically similar entries. Returns a bulleted list of matches.
+- `memory_forget(memory_id)` -- deletes a specific memory entry by its ID. Registered alongside `memory_store` and `memory_recall` when a memory backend is configured.
+
 ### Memory in Agent Lifecycle
 
 1. **Recall**: Before each `run()`, memories relevant to the input are recalled and prepended as a system message
@@ -784,6 +822,8 @@ class HookEvent(str, enum.Enum):
     POST_TOOL_EXECUTE  = "post_tool_execute"   # after tool dispatch
     ON_DELEGATION      = "on_delegation"       # before subagent.run()
     ON_COMPACTION      = "on_compaction"       # after history compaction
+    ON_DELEGATION_COMPLETE = "on_delegation_complete"  # after subagent.run()
+    ON_LLM_STREAM_DELTA   = "on_llm_stream_delta"     # each streaming token/chunk
     PRE_MEMORY_RECALL  = "pre_memory_recall"
     POST_MEMORY_STORE  = "post_memory_store"
     PRE_COMPACTION     = "pre_compaction"
@@ -874,6 +914,29 @@ memory:
   path: memory.db
   auto_load: true
   auto_load_top_k: 5
+```
+
+### Typed Event Subscription
+
+The `agent.on(EventClass, handler)` method provides a typed alternative to raw hook registration. Event classes in `sage.events` map to underlying `HookEvent` values:
+
+| Event Class | Hook Event | Fields |
+|-------------|-----------|--------|
+| `ToolStarted` | `PRE_TOOL_EXECUTE` | `name`, `arguments`, `turn` |
+| `ToolCompleted` | `POST_TOOL_EXECUTE` | `name`, `result`, `duration_ms` |
+| `LLMTurnStarted` | `PRE_LLM_CALL` | `turn`, `model`, `n_messages` |
+| `LLMTurnCompleted` | `POST_LLM_CALL` | `turn`, `usage`, `n_tool_calls` |
+| `DelegationStarted` | `ON_DELEGATION` | `target`, `task` |
+| `DelegationCompleted` | `ON_DELEGATION_COMPLETE` | `target`, `result` |
+| `LLMStreamDelta` | `ON_LLM_STREAM_DELTA` | `delta`, `turn` |
+
+```python
+from sage.events import ToolCompleted
+
+async def log_tools(e: ToolCompleted) -> None:
+    print(f'{e.name} took {e.duration_ms:.0f}ms')
+
+agent.on(ToolCompleted, log_tools)
 ```
 
 ---
@@ -1102,6 +1165,7 @@ Built-in tool categories (via ToolRegistry):
 - `shell: allow` -> registers `shell`
 - `web: allow` -> registers `web_fetch`, `web_search`, `http_request`
 - `memory: allow` -> registers `memory_store`, `memory_recall`
+- `git: allow` -> registers `git_status`, `git_diff`, `git_log`, `git_commit`, `git_undo`, `git_branch`, `git_worktree_create`, `git_worktree_remove`, `snapshot_create`, `snapshot_restore`, `snapshot_list`
 
 When a category is `"deny"`, its tools become invisible to the LLM (not registered).
 
@@ -1438,7 +1502,8 @@ model_params:
   max_tokens: 4096
   timeout: 45.0
 mcp_servers:
-  - transport: stdio
+  filesystem:
+    transport: stdio
     command: npx
     args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
 memory:

@@ -20,6 +20,9 @@ MCP integration, and how to create your own tools.
   - [File Edit](#file-edit)
   - [Web Tools](#web-tools)
   - [Memory Tools](#memory-tools)
+  - [Git Tools](#git-tools)
+  - [use_skill](#use_skill)
+  - [memory_forget](#memory_forget)
 - [Configuring Tools](#configuring-tools)
   - [In Agent Frontmatter](#in-agent-frontmatter)
   - [In config.toml](#in-configtoml)
@@ -137,7 +140,7 @@ sandbox:
 | `allowed_env` | `list[str]` | `[]` | Extra environment variables to pass through |
 | `network` | `bool` | `true` | Allow network access |
 | `timeout` | `float` | `30.0` | Per-command timeout (seconds) |
-,
+
 ---
 
 ### File Read
@@ -262,6 +265,14 @@ Stores `"key: value"` as a single embedded document in the semantic backend. Ret
 
 Retrieves the top-5 semantically similar entries. Returns a bulleted list of matches.
 
+#### memory_forget
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `memory_id` | `str` | yes | ID of the memory entry to delete |
+
+Deletes a specific memory entry by its ID. Returns confirmation of deletion or "not found" if the ID does not exist. Only available when a `memory:` backend is configured.
+
 **Without `memory:` backend (legacy fallback — deprecated):**
 
 Falls back to a simple JSON key-value file at `~/.sage/memory_store.json` (override with
@@ -272,6 +283,101 @@ gain semantic search.
 > **Migration:** Add `memory: {backend: sqlite, path: memory.db, embedding: text-embedding-3-large}`
 > to your agent frontmatter to upgrade from JSON to vector-based semantic memory. See
 > [memory.md](memory.md) for the full configuration reference.
+
+---
+
+### Git Tools
+
+All git tools are provided by the `GitTools` ToolBase class (`sage.git.tools`). They are registered when `git: allow` is set in permissions.
+
+#### git_status
+
+Shows working tree status (staged, unstaged, untracked files).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| *(none)* | | | |
+
+**Returns:** Full output of `git status`.
+
+#### git_diff
+
+Shows diff of changes.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `ref` | `str` | no | `"HEAD"` | Git ref to diff against |
+| `staged` | `bool` | no | `false` | Show staged changes only |
+
+**Returns:** Unified diff output, or `"No changes."` when empty.
+
+#### git_log
+
+Shows recent commit history.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `count` | `int` | no | `10` | Maximum number of commits |
+| `oneline` | `bool` | no | `true` | Use `--oneline` compact format |
+
+**Returns:** Formatted commit log.
+
+#### git_commit
+
+Stages and commits files. Appends a Co-authored-by trailer automatically.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `message` | `str` | yes | Commit message |
+| `files` | `list[str]` | no | Files to stage before committing |
+
+**Returns:** Commit hash and message, or "Nothing to commit" if nothing staged.
+
+**Safety:** Only commits that were authored by sage in the current session can be undone via `git_undo`.
+
+#### git_undo
+
+Undoes the last sage-authored commit via soft reset. Safety checks: the commit must have been authored by sage in this session AND must not have been pushed to a remote.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| *(none)* | | | |
+
+**Returns:** Confirmation or explanatory message if safety checks prevent the undo.
+
+#### git_branch
+
+Creates a new branch or lists existing branches.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `name` | `str` | no | `None` | Name of new branch to create |
+| `list_branches` | `bool` | no | `false` | List all branches |
+
+**Returns:** Branch listing or creation confirmation.
+
+#### git_worktree_create
+
+Creates an isolated git worktree at `.sage/worktrees/<name>`.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `name` | `str` | yes | | Worktree identifier |
+| `branch` | `str` | no | `None` | New branch name (detached HEAD if omitted) |
+
+**Returns:** Confirmation with absolute path of the new worktree.
+
+**Security:** Path traversal protection validates that the worktree path stays within the repository root.
+
+#### git_worktree_remove
+
+Removes a worktree. Warns (but proceeds) if uncommitted changes exist.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | `str` | yes | Worktree identifier to remove |
+
+**Returns:** Confirmation or "not found" message.
 
 ---
 
@@ -349,6 +455,7 @@ it is resolved in this order:
 | `shell` | `shell` |
 | `web` | `web_fetch`, `web_search`, `http_request` |
 | `memory` | `memory_store`, `memory_recall` |
+| `git` | `git_status`, `git_diff`, `git_log`, `git_commit`, `git_undo`, `git_branch`, `git_worktree_create`, `git_worktree_remove`, `snapshot_create`, `snapshot_restore`, `snapshot_list` |
 
 **Extended tool lookup** (non-builtin, auto-resolved to modules):
 
@@ -386,6 +493,7 @@ permission:
   shell: ask       # ask for approval on shell commands
   web: allow       # allow web_fetch, web_search, http_request
   memory: deny     # deny memory_store, memory_recall
+  git: allow       # allow all git tools
 ```
 
 This grants category-level control. For fine-grained control over specific
@@ -516,7 +624,8 @@ Add `mcp_servers:` to your agent frontmatter:
 name: mcp-assistant
 model: azure_ai/claude-sonnet-4-6
 mcp_servers:
-  - transport: stdio
+  filesystem:
+    transport: stdio
     command: npx
     args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
 permission:
@@ -528,12 +637,12 @@ permission:
 Or in `config.toml`:
 
 ```toml
-[[defaults.mcp_servers]]
+[defaults.mcp_servers.filesystem]
 transport = "stdio"
 command = "npx"
 args = ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]
 
-[[defaults.mcp_servers]]
+[defaults.mcp_servers.remote]
 transport = "sse"
 url = "http://localhost:8080/sse"
 ```
@@ -804,6 +913,7 @@ Agent
       │    ├── sage.tools.builtins      (shell, file_read, file_write, http_request, memory_store, memory_recall)
       │    ├── sage.tools.file_tools    (file_edit)
       │    ├── sage.tools.web_tools     (web_fetch, web_search)
+      │    ├── sage.git.tools          (git_status, git_diff, git_log, git_commit, git_undo, git_branch, git_worktree_*)
       │    └── custom modules via       (your own tools via extensions:)
       │
       ├── MCP tools (discovered from MCP servers)
