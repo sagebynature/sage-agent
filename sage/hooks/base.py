@@ -18,6 +18,8 @@ class HookEvent(str, enum.Enum):
     PRE_MEMORY_RECALL = "pre_memory_recall"
     POST_MEMORY_STORE = "post_memory_store"
     ON_DELEGATION = "on_delegation"
+    ON_DELEGATION_COMPLETE = "on_delegation_complete"
+    ON_LLM_STREAM_DELTA = "on_llm_stream_delta"
     ON_COMPACTION = "on_compaction"
 
 

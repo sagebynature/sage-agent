@@ -7,9 +7,8 @@ The app offers a split-screen layout:
 - **Activity panel** (right, 40 %): live tool-call feed with timestamps.
 - **Status bar** (bottom): agent name, model, current state, keyboard hints.
 
-Tool-call visibility is achieved by monkey-patching ``ToolRegistry.execute`` so
-that every dispatch emits Textual ``Message`` events — no changes to core
-library code are needed.
+Tool-call and LLM-turn visibility is achieved by subscribing to the typed
+agent event system via :meth:`~sage.agent.Agent.on`.
 """
 
 from __future__ import annotations
@@ -100,25 +99,66 @@ class StreamFinished(Message):
         self.full_text = full_text
 
 
-# ── Observable wrapper ────────────────────────────────────────────────────────
+class TurnStarted(Message):
+    """Emitted when the agent begins a new LLM turn."""
+
+    def __init__(self, turn: int, model: str) -> None:
+        super().__init__()
+        self.turn = turn
+        self.model = model
 
 
-def instrument_agent(agent: Agent, app: SageTUIApp) -> None:
-    """Wrap ``agent.tool_registry.execute`` to emit live Textual events.
+class DelegationEventStarted(Message):
+    """Emitted when the agent delegates to a subagent."""
 
-    Replaces the bound method in-place on the *instance*, so the core library
-    code is unchanged.  Every tool dispatch fires a :class:`ToolCallStarted`
-    event before execution and a :class:`ToolCallCompleted` event after.
+    def __init__(self, target: str, task: str) -> None:
+        super().__init__()
+        self.target = target
+        self.task = task
+
+
+# ── Hook-based instrumentation ────────────────────────────────────────────────
+
+
+def instrument_agent(agent: Agent, app: "SageTUIApp") -> None:
+    """Subscribe to typed agent events to emit live Textual messages.
+
+    Replaces the former monkey-patching approach with hook subscriptions via
+    :meth:`~sage.agent.Agent.on`.  Every tool dispatch fires a
+    :class:`ToolCallStarted` / :class:`ToolCallCompleted` pair, each LLM turn
+    fires a :class:`TurnStarted` message, and each delegation fires a
+    :class:`DelegationEventStarted` message.  Streaming text is delivered via
+    :class:`StreamChunkReceived` through the :data:`~sage.hooks.base.HookEvent.ON_LLM_STREAM_DELTA`
+    hook so the :meth:`~SageTUIApp._agent_stream` loop can stay clean.
     """
-    original_execute = agent.tool_registry.execute
+    from sage.events import (
+        DelegationStarted,
+        LLMStreamDelta,
+        LLMTurnStarted,
+        ToolCompleted,
+        ToolStarted,
+    )
 
-    async def _wrapped(name: str, arguments: dict[str, Any]) -> str:
-        app.post_message(ToolCallStarted(name, arguments))
-        result = await original_execute(name, arguments)
-        app.post_message(ToolCallCompleted(name, result))
-        return result
+    async def on_tool_started(e: ToolStarted) -> None:
+        app.post_message(ToolCallStarted(e.name, e.arguments))
 
-    agent.tool_registry.execute = _wrapped  # type: ignore[method-assign]
+    async def on_tool_completed(e: ToolCompleted) -> None:
+        app.post_message(ToolCallCompleted(e.name, e.result))
+
+    async def on_stream_delta(e: LLMStreamDelta) -> None:
+        app.post_message(StreamChunkReceived(e.delta))
+
+    async def on_turn_started(e: LLMTurnStarted) -> None:
+        app.post_message(TurnStarted(e.turn, e.model))
+
+    async def on_delegation_started(e: DelegationStarted) -> None:
+        app.post_message(DelegationEventStarted(e.target, e.task))
+
+    agent.on(ToolStarted, on_tool_started)
+    agent.on(ToolCompleted, on_tool_completed)
+    agent.on(LLMStreamDelta, on_stream_delta)
+    agent.on(LLMTurnStarted, on_turn_started)
+    agent.on(DelegationStarted, on_delegation_started)
 
 
 # ── Helper ────────────────────────────────────────────────────────────────────
@@ -201,6 +241,19 @@ class ActivityPanel(Widget):
         yield Label("LIVE ACTIVITY")
         yield RichLog(id="activity-log", wrap=True, markup=True, highlight=False)
         yield Static("", id="stats")
+
+    def add_turn_started(self, turn: int, model: str) -> None:
+        log = self.query_one("#activity-log", RichLog)
+        ts = datetime.now().strftime("%H:%M:%S")
+        log.write(f"[{ts}] [bold cyan]◆ turn {turn + 1}[/bold cyan]  [dim]{model}[/dim]")
+
+    def add_delegation_started(self, target: str, task: str) -> None:
+        log = self.query_one("#activity-log", RichLog)
+        ts = datetime.now().strftime("%H:%M:%S")
+        task_preview = task[:50] + "…" if len(task) > 50 else task
+        log.write(
+            f"[{ts}] [bold magenta]↳ delegate →[/bold magenta] {target}  [dim]{task_preview!r}[/dim]"
+        )
 
     def add_tool_started(self, name: str, arguments: dict[str, Any]) -> None:
         log = self.query_one("#activity-log", RichLog)
@@ -518,7 +571,8 @@ class SageTUIApp(App[None]):
             full_text = ""
             async for chunk in self._agent.stream(query):
                 full_text += chunk
-                self.post_message(StreamChunkReceived(chunk))
+                # StreamChunkReceived is posted by the ON_LLM_STREAM_DELTA hook
+                # registered in instrument_agent — no direct posting here.
             self.post_message(StreamFinished(full_text))
         except Exception as exc:
             logger.exception("Agent stream failed")
@@ -531,6 +585,12 @@ class SageTUIApp(App[None]):
 
     def on_tool_call_completed(self, event: ToolCallCompleted) -> None:
         self.query_one(ActivityPanel).add_tool_completed(event.tool_name, event.result)
+
+    def on_turn_started(self, event: TurnStarted) -> None:
+        self.query_one(ActivityPanel).add_turn_started(event.turn, event.model)
+
+    def on_delegation_event_started(self, event: DelegationEventStarted) -> None:
+        self.query_one(ActivityPanel).add_delegation_started(event.target, event.task)
 
     def on_stream_chunk_received(self, event: StreamChunkReceived) -> None:
         chat_log = self.query_one("#chat-log", RichLog)

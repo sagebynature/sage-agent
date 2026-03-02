@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar, cast, overload
@@ -161,6 +162,7 @@ class Agent:
         self._hook_registry: HookRegistry = (
             hook_registry if hook_registry is not None else HookRegistry()
         )
+        self._current_turn: int = 0
         self._identity_prompt: str = ""
         self._last_compaction_strategy: str | None = None
 
@@ -457,17 +459,32 @@ class Agent:
                 messages.insert(insert_idx, schema_instruction)
 
             for turn in range(self.max_turns):
+                self._current_turn = turn
                 logger.debug("Turn %d/%d", turn + 1, self.max_turns)
                 tool_schemas = self.tool_registry.get_schemas() or None
                 await self._emit(
                     HookEvent.PRE_LLM_CALL,
-                    {"model": self.model, "messages": messages, "tool_schemas": tool_schemas},
+                    {
+                        "model": self.model,
+                        "messages": messages,
+                        "tool_schemas": tool_schemas,
+                        "turn": turn,
+                    },
                 )
                 result: CompletionResult = await self.provider.complete(
                     messages, tools=tool_schemas
                 )
                 self._cumulative_usage += result.usage
-                await self._emit(HookEvent.POST_LLM_CALL, {"result": result, "turn": turn})
+                n_tool_calls = len(result.message.tool_calls) if result.message.tool_calls else 0
+                await self._emit(
+                    HookEvent.POST_LLM_CALL,
+                    {
+                        "result": result,
+                        "turn": turn,
+                        "usage": result.usage,
+                        "n_tool_calls": n_tool_calls,
+                    },
+                )
 
                 messages.append(result.message)
 
@@ -516,11 +533,17 @@ class Agent:
             "agent.stream", {"agent.name": self.name, "model": self.model}
         ) as agent_span:
             for turn in range(self.max_turns):
+                self._current_turn = turn
                 logger.debug("Stream turn %d/%d", turn + 1, self.max_turns)
                 tool_schemas = self.tool_registry.get_schemas() or None
                 await self._emit(
                     HookEvent.PRE_LLM_CALL,
-                    {"model": self.model, "messages": messages, "tool_schemas": tool_schemas},
+                    {
+                        "model": self.model,
+                        "messages": messages,
+                        "tool_schemas": tool_schemas,
+                        "turn": turn,
+                    },
                 )
 
                 # Accumulate the full assistant content and tool calls for this turn.
@@ -531,6 +554,10 @@ class Agent:
                 async for chunk in self.provider.stream(messages, tools=tool_schemas):  # type: ignore[attr-defined]
                     if chunk.delta:
                         turn_content += chunk.delta
+                        await self._emit(
+                            HookEvent.ON_LLM_STREAM_DELTA,
+                            {"delta": chunk.delta, "turn": turn},
+                        )
                         yield chunk.delta
                     if chunk.tool_calls:
                         turn_tool_calls = chunk.tool_calls
@@ -547,9 +574,15 @@ class Agent:
                     tool_calls=turn_tool_calls,
                 )
                 messages.append(assistant_msg)
+                n_tool_calls_stream = len(turn_tool_calls) if turn_tool_calls else 0
                 await self._emit(
                     HookEvent.POST_LLM_CALL,
-                    {"result": assistant_msg, "turn": turn},
+                    {
+                        "result": assistant_msg,
+                        "turn": turn,
+                        "usage": turn_usage,
+                        "n_tool_calls": n_tool_calls_stream,
+                    },
                 )
 
                 # No tool calls means the model is done.
@@ -657,6 +690,9 @@ class Agent:
                 raise
             logger.error("Subagent '%s' crashed: %s", subagent.name, e, exc_info=True)
             result = f"[Subagent Error] {subagent.name} failed: {type(e).__name__}: {e}"
+        await self._emit(
+            HookEvent.ON_DELEGATION_COMPLETE, {"target": subagent_name, "result": result}
+        )
         return result
 
     # ── Operator overloads ──────────────────────────────────────────────
@@ -674,6 +710,38 @@ class Agent:
         if isinstance(other, Pipeline):
             return Pipeline([self] + other.agents)
         return Pipeline([self, other])
+
+    def on(self, event_class: type[Any], callback: "Callable[[Any], Awaitable[None]]") -> None:
+        """Subscribe to a typed agent event.
+
+        Maps *event_class* to its underlying :class:`~sage.hooks.base.HookEvent`
+        via :data:`~sage.events.EVENT_TYPE_MAP`, then registers an adapter that
+        deserialises the raw hook data dict into a typed instance before calling
+        *callback*.
+
+        Args:
+            event_class: One of the typed event dataclasses from :mod:`sage.events`
+                (e.g. :class:`~sage.events.ToolStarted`).
+            callback: An async callable that accepts a single typed event instance.
+
+        Example::
+
+            from sage.events import ToolStarted
+
+            async def handler(e: ToolStarted) -> None:
+                print(f"Tool {e.name} started")
+
+            agent.on(ToolStarted, handler)
+        """
+        from sage.events import EVENT_TYPE_MAP, from_hook_data
+
+        hook_event = EVENT_TYPE_MAP[event_class]
+
+        async def _adapter(event: HookEvent, data: dict[str, Any]) -> None:
+            typed = from_hook_data(event_class, data)
+            await callback(typed)
+
+        self._hook_registry.register(hook_event, _adapter)
 
     # ── Private helpers ───────────────────────────────────────────────
 
@@ -742,11 +810,26 @@ class Agent:
                 logger.debug("Executing tool '%s': %s", tc.name, str(tc.arguments)[:120])
 
             try:
+                await self._emit(
+                    HookEvent.PRE_TOOL_EXECUTE,
+                    {
+                        "tool_name": tc.name,
+                        "arguments": tc.arguments or {},
+                        "turn": self._current_turn,
+                    },
+                )
+                _t0 = time.monotonic()
                 result = await self.tool_registry.execute(tc.name, tc.arguments or {})
+                duration_ms = (time.monotonic() - _t0) * 1000
                 result_str = str(result)
                 await self._emit(
                     HookEvent.POST_TOOL_EXECUTE,
-                    {"tool_name": tc.name, "arguments": tc.arguments or {}, "result": result_str},
+                    {
+                        "tool_name": tc.name,
+                        "arguments": tc.arguments or {},
+                        "result": result_str,
+                        "duration_ms": duration_ms,
+                    },
                 )
                 return tc.id, result_str
             except SagePermissionError:

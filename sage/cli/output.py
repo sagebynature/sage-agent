@@ -1,10 +1,13 @@
-"""Output writers for Sage CLI — JSONL, plain text, and quiet modes."""
+"""Output writers for Sage CLI — JSONL, plain text, quiet, and verbose modes."""
 
 from __future__ import annotations
 
 import json
 import sys
-from typing import IO, Protocol, runtime_checkable
+from typing import IO, TYPE_CHECKING, Any, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from sage.agent import Agent
 
 
 @runtime_checkable
@@ -114,3 +117,95 @@ def make_writer(mode: str) -> OutputWriter:
             return TextWriter()
         case _:
             raise ValueError(f"Unknown output mode: {mode!r}. Choose text, jsonl, or quiet.")
+
+
+class VerboseWriter:
+    """Prints formatted live agent events to stderr using Rich.
+
+    Output goes to ``stderr`` so it does not pollute stdout (which carries the
+    final result in text / JSONL mode).
+
+    Example output::
+
+        ◆ turn 1  model=claude-sonnet-4-6  msgs=3
+        → tool: shell  cmd='ls -la'
+        ✓ shell  (42ms)  → 'total 48...'
+        ↳ delegate → researcher  'find papers on X'
+        ✓ researcher  → 'Found 3 papers...'
+
+    Call :meth:`attach` with an :class:`~sage.agent.Agent` instance to wire
+    all subscriptions in one shot.
+    """
+
+    def __init__(self) -> None:
+        from rich.console import Console
+
+        self._console = Console(stderr=True)
+
+    def attach(self, agent: "Agent") -> None:
+        """Subscribe all verbose event handlers to *agent*."""
+        from sage.events import (
+            DelegationCompleted,
+            DelegationStarted,
+            LLMTurnStarted,
+            ToolCompleted,
+            ToolStarted,
+        )
+
+        agent.on(LLMTurnStarted, self._on_turn_started)
+        agent.on(ToolStarted, self._on_tool_started)
+        agent.on(ToolCompleted, self._on_tool_completed)
+        agent.on(DelegationStarted, self._on_delegation_started)
+        agent.on(DelegationCompleted, self._on_delegation_completed)
+
+    async def _on_turn_started(self, e: Any) -> None:
+        self._console.print(
+            f"  [bold cyan]◆[/bold cyan] turn {e.turn + 1}  model={e.model}  msgs={e.n_messages}",
+        )
+
+    async def _on_tool_started(self, e: Any) -> None:
+        args_preview = _fmt_args_brief(e.arguments)
+        suffix = f"  {args_preview}" if args_preview else ""
+        self._console.print(f"  [bold yellow]→[/bold yellow] tool: {e.name}{suffix}")
+
+    async def _on_tool_completed(self, e: Any) -> None:
+        result_preview = str(e.result)[:60].replace("\n", " ")
+        self._console.print(
+            f"  [bold green]✓[/bold green] {e.name}  ({e.duration_ms:.0f}ms)  → '{result_preview}'"
+        )
+
+    async def _on_delegation_started(self, e: Any) -> None:
+        task_preview = e.task[:60].replace("\n", " ")
+        self._console.print(
+            f"  [bold magenta]↳[/bold magenta] delegate → {e.target}  '{task_preview}'"
+        )
+
+    async def _on_delegation_completed(self, e: Any) -> None:
+        result_preview = str(e.result)[:60].replace("\n", " ")
+        self._console.print(f"  [bold green]✓[/bold green] {e.target}  → '{result_preview}'")
+
+    # OutputWriter protocol stubs — VerboseWriter is used alongside a TextWriter,
+    # so these are intentional no-ops.
+    def write_event(self, event: str, data: dict[str, object]) -> None:  # noqa: ARG002
+        pass
+
+    def write_result(self, result: str) -> None:  # noqa: ARG002
+        pass
+
+    def close(self) -> None:
+        pass
+
+
+def _fmt_args_brief(arguments: dict[str, Any]) -> str:
+    """Return a short single-line summary of tool arguments."""
+    if not arguments:
+        return ""
+    parts: list[str] = []
+    for k, v in list(arguments.items())[:2]:
+        val_str = str(v)
+        if len(val_str) > 25:
+            val_str = val_str[:25] + "…"
+        parts.append(f"{k}={val_str!r}")
+    if len(arguments) > 2:
+        parts.append("…")
+    return "  ".join(parts)

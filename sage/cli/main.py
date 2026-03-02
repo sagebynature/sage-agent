@@ -141,9 +141,14 @@ def agent() -> None:
 @click.argument("config_path", type=click.Path(exists=True), default=None, required=False)
 @click.option("--input", "-i", "user_input", required=True, help="Input to send to the agent")
 @click.option("--stream", "use_stream", is_flag=True, help="Stream the response")
+@click.option("--verbose", "show_activity", is_flag=True, help="Show live agent activity.")
 @click.pass_context
 def agent_run(
-    ctx: click.Context, config_path: str | None, user_input: str, use_stream: bool
+    ctx: click.Context,
+    config_path: str | None,
+    user_input: str,
+    use_stream: bool,
+    show_activity: bool,
 ) -> None:
     """Run an agent from a config file.
 
@@ -153,7 +158,7 @@ def agent_run(
         main_config = _get_main_config(ctx)
         if config_path is None:
             config_path = _resolve_primary_agent(main_config)
-        asyncio.run(_agent_run(config_path, user_input, use_stream, main_config))
+        asyncio.run(_agent_run(config_path, user_input, use_stream, main_config, show_activity))
     except ConfigError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
@@ -167,10 +172,15 @@ async def _agent_run(
     user_input: str,
     use_stream: bool,
     main_config: MainConfig | None = None,
+    show_activity: bool = True,
 ) -> None:
     from sage.agent import Agent
 
     agent = Agent.from_config(config_path, central=main_config)
+    if show_activity:
+        from sage.cli.output import VerboseWriter
+
+        VerboseWriter().attach(agent)
     try:
         if use_stream:
             async for chunk in agent.stream(user_input):
