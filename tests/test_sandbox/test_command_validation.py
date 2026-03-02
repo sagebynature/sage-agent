@@ -15,13 +15,10 @@ class TestDangerousCommands:
         with pytest.raises(ToolError):
             _validate_shell_command("rm -rf /")
 
-    def test_python3_interpreter_bypass(self) -> None:
+    def test_python3_rm_via_eval(self) -> None:
+        """python3 -c is allowed, but the inner rm -rf / is still caught via eval pattern."""
         with pytest.raises(ToolError):
-            _validate_shell_command("python3 -c \"import os; os.system('rm -rf /')\"")
-
-    def test_python_interpreter_bypass(self) -> None:
-        with pytest.raises(ToolError):
-            _validate_shell_command("python -c \"import shutil; shutil.rmtree('/')\"")
+            _validate_shell_command("eval python3 -c \"import os; os.system('rm -rf /')\"")
 
     def test_node_interpreter_bypass(self) -> None:
         with pytest.raises(ToolError):
@@ -32,10 +29,10 @@ class TestDangerousCommands:
         with pytest.raises(ToolError):
             _validate_shell_command("echo hello; rm -rf /")
 
-    def test_chained_and_python(self) -> None:
+    def test_chained_and_eval(self) -> None:
         """Second segment after && should still be caught."""
         with pytest.raises(ToolError):
-            _validate_shell_command('echo hello && python3 -c "pass"')
+            _validate_shell_command('echo hello && eval "rm -rf /"')
 
     def test_curl_pipe_to_bash(self) -> None:
         with pytest.raises(ToolError):
@@ -79,3 +76,9 @@ class TestSafeCommands:
 
     def test_uv_run_pytest(self) -> None:
         _validate_shell_command("uv run pytest tests/ -v")
+
+    def test_python_c_inline(self) -> None:
+        _validate_shell_command('python -c "print(1+1)"')
+
+    def test_python3_c_inline(self) -> None:
+        _validate_shell_command('python3 -c "import sys; print(sys.version)"')

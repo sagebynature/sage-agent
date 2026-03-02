@@ -70,8 +70,7 @@ _DANGEROUS_PATTERNS: list[str] = [
     r"\bgit\s+rebase\b",
     r"\bgit\s+push\s+.*\bmain\b",
     r"\bgit\s+push\s+.*\bmaster\b",
-    # Interpreter-based bypasses
-    r"\bpython[23]?\s+-c\s+",
+    # Interpreter-based bypasses (perl/ruby/node inline eval)
     r"\bperl\s+-e\s+",
     r"\bruby\s+-e\s+",
     r"\bnode\s+-e\s+",

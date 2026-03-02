@@ -68,9 +68,9 @@ class TestShellAllowPatterns:
         with pytest.raises(ToolError, match="Command rejected"):
             _validate_shell_command("rm -rf /", allowed_commands=allowed)
 
-    def test_no_allowed_commands_blocks_all(self) -> None:
+    def test_no_allowed_commands_still_blocks_dangerous(self) -> None:
         with pytest.raises(ToolError, match="Command rejected"):
-            _validate_shell_command('python3 -c "print(1)"')
+            _validate_shell_command("eval 'echo hi'")
 
     async def test_make_shell_with_allowed_commands(self) -> None:
         allowed = frozenset(["python *", "python3 *"])
