@@ -1143,7 +1143,7 @@ class Agent:
                 await client.connect()
                 schemas = await client.discover_tools()
                 logger.info(
-                    "MCP server connected, discovered %d tool(s): %s",
+                    "Discovered %d MCP tool(s): %s",
                     len(schemas),
                     [s.name for s in schemas],
                 )

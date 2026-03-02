@@ -18,6 +18,45 @@ from sage.models import ToolSchema
 logger = logging.getLogger(__name__)
 
 
+def _install_mcp_asyncgen_error_suppressor() -> None:
+    """Install a targeted event loop exception handler that silences the
+    ``RuntimeError("Attempted to exit cancel scope in a different task…")``
+    that asyncio's ``shutdown_asyncgens()`` logs when it finalizes a
+    ``stdio_client`` generator that failed to close cleanly.
+
+    The handler is idempotent (installed at most once per loop) and only
+    suppresses the specific ``"closing of asynchronous generator"`` messages
+    whose exception mentions ``"cancel scope"``.  All other exceptions are
+    forwarded to the original handler.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return  # no running loop — nothing to install
+
+    existing = loop.get_exception_handler()
+    if getattr(existing, "_mcp_cancel_scope_suppressor", False):
+        return  # already installed
+
+    def _handler(loop: asyncio.AbstractEventLoop, context: dict) -> None:
+        exc = context.get("exception")
+        msg = context.get("message", "")
+        if (
+            "closing of asynchronous generator" in msg
+            and isinstance(exc, RuntimeError)
+            and "cancel scope" in str(exc)
+        ):
+            logger.debug("MCP asyncgen finalization suppressed: %s", exc)
+            return
+        if existing is not None:
+            existing(loop, context)
+        else:
+            loop.default_exception_handler(context)
+
+    _handler._mcp_cancel_scope_suppressor = True  # type: ignore[attr-defined]
+    loop.set_exception_handler(_handler)
+
+
 class MCPClient:
     """Client for connecting to MCP servers."""
 
@@ -39,7 +78,7 @@ class MCPClient:
 
     async def connect(self) -> None:
         """Establish connection to the MCP server."""
-        logger.info("MCP connecting: transport=%s", self._transport)
+        logger.debug("MCP connecting: transport=%s", self._transport)
         try:
             if self._transport == "stdio":
                 if not self._command:
@@ -70,7 +109,7 @@ class MCPClient:
                 raise SageError(f"Unsupported transport: {self._transport}")
 
             await self._session.initialize()
-            logger.info("MCP connected: transport=%s", self._transport)
+            logger.debug("MCP connected: transport=%s", self._transport)
         except SageError:
             raise
         except Exception as exc:
@@ -120,10 +159,12 @@ class MCPClient:
         except RuntimeError as exc:
             # anyio raises RuntimeError("Attempted to exit cancel scope in a
             # different task than it was entered in") when the stdio_client
-            # async generator is torn down from a different asyncio Task than
-            # the one that opened it.  This is cosmetic cleanup noise — the
-            # subprocess has already exited.
+            # async generator is torn down from a different asyncio Task.
+            # The generator remains open and asyncio's shutdown_asyncgens()
+            # will try to finalize it later — install a targeted handler to
+            # silence that follow-on error too.
             logger.debug("MCP disconnect: cancel-scope mismatch (safe to ignore): %s", exc)
+            _install_mcp_asyncgen_error_suppressor()
         self._session = None
 
     @property
