@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from textual.app import App, ComposeResult
-from textual.widgets import Collapsible, Markdown
+from textual.widgets import Collapsible, Markdown, Static
 
 from sage.cli.tui import (
     AssistantEntry,
@@ -500,6 +500,69 @@ def test_agent_reset_session_clears_usage() -> None:
     assert mock_agent._turns_since_compaction == 0
     assert mock_agent._current_turn == 0
     assert mock_agent._loaded_skills == set()
+
+
+# ── StatusPanel session & toggle tests ─────────────────────────────────────────
+
+
+async def test_status_panel_has_session_section() -> None:
+    class _App(App[None]):
+        def compose(self) -> ComposeResult:
+            yield StatusPanel(id="status")
+
+    app = _App()
+    async with app.run_test():
+        panel = app.query_one(StatusPanel)
+        panel.display = True
+        panel.set_session("abcd1234abcd1234abcd1234abcd1234", "")
+        panel.initialize(_make_mock_agent())
+        session_widget = panel.query_one("#session-section", Static)
+        assert session_widget is not None
+
+
+async def test_status_panel_update_session_title() -> None:
+    class _App(App[None]):
+        def compose(self) -> ComposeResult:
+            yield StatusPanel(id="status")
+
+    app = _App()
+    async with app.run_test():
+        panel = app.query_one(StatusPanel)
+        panel.display = True
+        panel.set_session("abcd1234abcd1234abcd1234abcd1234", "")
+        panel.initialize(_make_mock_agent())
+        panel.update_session_title("My Great Session")
+        assert panel._session_title == "My Great Session"
+
+
+async def test_status_panel_hidden_by_default() -> None:
+    class _App(App[None]):
+        def compose(self) -> ComposeResult:
+            yield StatusPanel(id="status")
+
+    app = _App()
+    async with app.run_test():
+        panel = app.query_one(StatusPanel)
+        assert panel.display is False
+
+
+async def test_ctrl_b_toggles_status_panel(tmp_path: Path) -> None:
+    from sage.cli.tui import SageTUIApp
+
+    cfg = _make_config_path(tmp_path)
+    mock_agent = _make_mock_agent()
+    mock_agent.close = AsyncMock()
+
+    with patch("sage.cli.tui.Agent.from_config", return_value=mock_agent):
+        app = SageTUIApp(config_path=cfg)
+        async with app.run_test() as pilot:
+            panel = app.query_one(StatusPanel)
+            assert panel.display is False  # hidden by default
+            await pilot.press("ctrl+b")
+            assert panel.display is True  # now visible
+            await pilot.press("ctrl+b")
+            assert panel.display is False  # hidden again
+            await pilot.press("ctrl+q")
 
 
 # ── Helper for integration tests ──────────────────────────────────────────────

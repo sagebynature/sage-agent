@@ -535,7 +535,7 @@ class ChatPanel(Widget):
 
 
 class StatusPanel(Widget):
-    """Right panel: static agent info + live token/cost/context stats."""
+    """Right panel: session info, context, tokens, agent info, skills, active agents."""
 
     DEFAULT_CSS = """
     StatusPanel {
@@ -543,6 +543,7 @@ class StatusPanel(Widget):
         height: 100%;
         overflow-y: auto;
         padding: 1;
+        display: none;
     }
     StatusPanel .section {
         height: auto;
@@ -552,40 +553,92 @@ class StatusPanel(Widget):
     }
     """
 
+    def __init__(self, **kwargs: object) -> None:
+        super().__init__(**kwargs)  # type: ignore[arg-type]
+        self._session_id: str = ""
+        self._session_title: str = ""
+
     def compose(self) -> ComposeResult:
+        yield Static("", id="session-section", classes="section")
+        yield Static("", id="context-section", classes="section")
+        yield Static("", id="tokens-section", classes="section")
         yield Static("", id="agent-section", classes="section")
         with Collapsible(
             title="SKILLS", collapsed=True, id="skills-collapsible", classes="section"
         ):
             yield Static("", id="skills-content")
-        yield Static("", id="tokens-section", classes="section")
-        yield Static("", id="context-section", classes="section")
-        yield Static("", id="session-section", classes="section")
         yield Static("", id="active-section")
+
+    def set_session(self, session_id: str, title: str) -> None:
+        """Set session identity. Call before initialize()."""
+        self._session_id = session_id
+        self._session_title = title
+        self._render_session()
+
+    def update_session_title(self, title: str) -> None:
+        """Update the session title (e.g. from background LLM generation)."""
+        self._session_title = title
+        self._render_session()
+
+    def _render_session(self) -> None:
+        short_id = self._session_id[:8] if self._session_id else ""
+        title_display = (
+            f"  [bold]{self._session_title}[/bold]"
+            if self._session_title
+            else "  [dim](untitled)[/dim]"
+        )
+        self.query_one("#session-section", Static).update(
+            f"[bold]SESSION[/bold]\n{title_display}\n  [dim]{short_id}[/dim]"
+        )
 
     def initialize(self, agent: "Agent") -> None:
         """Populate static sections from agent config. Call once after mount."""
         import os
 
         cwd = os.getcwd()
-        subagent_names = ", ".join(agent.subagents.keys()) or "[dim](none)[/dim]"
         self.query_one("#agent-section", Static).update(
             f"[bold]AGENT[/bold]\n"
             f"  [dim]name[/dim]       {agent.name}\n"
             f"  [dim]model[/dim]      {agent.model}\n"
-            f"  [dim]cwd[/dim]        {cwd}\n"
-            f"  [dim]subagents[/dim]  {subagent_names}"
+            f"  [dim]cwd[/dim]        {cwd}"
         )
         skill_names = [s.name for s in agent.skills]
         collapsible = self.query_one("#skills-collapsible", Collapsible)
         collapsible.title = f"SKILLS  ({len(skill_names)})" if skill_names else "SKILLS"
-        skills_content = "\n".join(f"[dim]•[/dim] {n}" for n in skill_names) or "[dim](none)[/dim]"
+        skills_content = (
+            "\n".join(f"[dim]\u2022[/dim] {n}" for n in skill_names) or "[dim](none)[/dim]"
+        )
         self.query_one("#skills-content", Static).update(skills_content)
+        self._render_session()
         self.update_stats({})
         self.clear_active_delegation()
 
     def update_stats(self, stats: dict[str, Any]) -> None:
-        """Refresh token, context window, and session sections."""
+        """Refresh context, token breakdown, and cost sections."""
+        # -- Context section (progress bar + percentage + cost) --
+        token_usage = int(stats.get("token_usage") or 0)
+        limit = int(stats.get("context_window_limit") or 0)
+        cost = float(stats.get("cumulative_cost") or 0.0)
+
+        if limit > 0:
+            ratio = min(1.0, token_usage / limit)
+            filled = int(ratio * 15)
+            bar = "\u2588" * filled + "\u2591" * (15 - filled)
+            pct = int(ratio * 100)
+            color = "red" if ratio >= 0.8 else ("yellow" if ratio >= 0.6 else "green")
+            context_text = (
+                f"[bold]CONTEXT[/bold]\n"
+                f"  [{color}]{bar}[/{color}]  {pct}%\n"
+                f"  [dim]({format_tokens(token_usage)} / {format_tokens(limit)})[/dim]\n"
+                f"  [green]${cost:.4f}[/green] spent"
+            )
+        else:
+            context_text = (
+                f"[bold]CONTEXT[/bold]\n  [dim](unknown)[/dim]\n  [green]${cost:.4f}[/green] spent"
+            )
+        self.query_one("#context-section", Static).update(context_text)
+
+        # -- Token breakdown --
         prompt = int(stats.get("cumulative_prompt_tokens") or 0)
         completion = int(stats.get("cumulative_completion_tokens") or 0)
         cache_read = int(stats.get("cumulative_cache_read_tokens") or 0)
@@ -603,35 +656,10 @@ class StatusPanel(Widget):
             tokens_lines.append(f"  [dim]reasoning[/dim]  {format_tokens(reasoning)}")
         self.query_one("#tokens-section", Static).update("\n".join(tokens_lines))
 
-        token_usage = int(stats.get("token_usage") or 0)
-        limit = int(stats.get("context_window_limit") or 0)
-        if limit > 0:
-            ratio = min(1.0, token_usage / limit)
-            filled = int(ratio * 15)
-            bar = "█" * filled + "░" * (15 - filled)
-            pct = int(ratio * 100)
-            color = "red" if ratio >= 0.8 else ("yellow" if ratio >= 0.6 else "green")
-            context_text = (
-                f"[bold]CONTEXT WINDOW[/bold]\n"
-                f"  [{color}]{bar}[/{color}]  {pct}%\n"
-                f"  [dim]({format_tokens(token_usage)} / {format_tokens(limit)})[/dim]"
-            )
-        else:
-            context_text = "[bold]CONTEXT WINDOW[/bold]\n  [dim](unknown)[/dim]"
-        self.query_one("#context-section", Static).update(context_text)
-
-        total = int(stats.get("cumulative_total_tokens") or 0)
-        cost = float(stats.get("cumulative_cost") or 0.0)
-        self.query_one("#session-section", Static).update(
-            f"[bold]SESSION[/bold]\n"
-            f"  [dim]total[/dim]  {format_tokens(total)} tokens\n"
-            f"  [dim]cost[/dim]   [green]${cost:.4f}[/green]"
-        )
-
     def set_active_delegation(self, target: str, task: str) -> None:
-        preview = task[:45] + "…" if len(task) > 45 else task
+        preview = task[:45] + "\u2026" if len(task) > 45 else task
         self.query_one("#active-section", Static).update(
-            f"[bold]ACTIVE AGENTS[/bold]\n  [yellow]↳[/yellow] {target}  [dim]{preview!r}[/dim]"
+            f"[bold]ACTIVE AGENTS[/bold]\n  [yellow]\u21b3[/yellow] {target}  [dim]{preview!r}[/dim]"
         )
 
     def clear_active_delegation(self) -> None:
@@ -812,7 +840,7 @@ class StatusBar(Static):
             f"[{colour}]● {self._state}[/{colour}]  [bold]{self._agent_name}[/bold]"
             f" ([dim]{self._model}[/dim]){stream_badge}    "
             f"[{token_colour}]{token_str}[/{token_colour}]{cost_str}    "
-            f"[dim]ctrl+s: stream  ctrl+l: logs  ctrl+L: clear  ctrl+q: quit[/dim]{hint}"
+            f"[dim]ctrl+b: status  ctrl+s: stream  ctrl+l: logs  ctrl+L: clear  ctrl+q: quit[/dim]{hint}"
         )
 
 
@@ -1044,6 +1072,7 @@ class SageTUIApp(App[None]):
 
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit", priority=True),
+        Binding("ctrl+b", "toggle_status", "Status panel"),
         Binding("ctrl+l", "toggle_logs", "Logs"),
         Binding("ctrl+shift+l", "clear_chat", "Clear"),
         Binding("ctrl+L", "clear_chat", "Clear", show=False),
@@ -1254,6 +1283,10 @@ class SageTUIApp(App[None]):
             panel.update_session_title(event.title)
 
     # ── Actions ───────────────────────────────────────────────────────────────
+
+    def action_toggle_status(self) -> None:
+        panel = self.query_one(StatusPanel)
+        panel.display = not panel.display
 
     def action_toggle_logs(self) -> None:
         self.query_one(LogPanel).toggle_visibility()
