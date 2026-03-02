@@ -387,47 +387,71 @@ class ChatPanel(Widget):
         yield VerticalScroll(id="chat-scroll")
         yield HistoryInput(placeholder="> Type a message and press Enter…", id="chat-input")
 
+    # -- Scroll-pin logic ------------------------------------------------------
+    # Auto-scroll follows output only while the user is "pinned" to the bottom.
+    # If the user scrolls up to read history, we stop pulling them down.
+    # Pinning resumes when they scroll back to the bottom or send a message.
+
+    _auto_scroll: bool = True
+
+    def _check_scroll_pin(self) -> None:
+        """Snapshot whether we're at the bottom BEFORE content changes."""
+        scroll = self.query_one("#chat-scroll", VerticalScroll)
+        self._auto_scroll = scroll.scroll_y >= scroll.max_scroll_y - 1
+
+    def _maybe_scroll_end(self) -> None:
+        """Scroll to bottom only if pinned — called via call_after_refresh."""
+        if self._auto_scroll:
+            self.query_one("#chat-scroll", VerticalScroll).scroll_end(animate=False)
+
     # -- Public API used by SageTUIApp ----------------------------------------
 
-    def _scroll_end(self) -> None:
-        """Scroll the chat to the bottom — safe to call before layout settles."""
-        self.query_one("#chat-scroll", VerticalScroll).scroll_end(animate=False)
-
     def append_user_message(self, text: str) -> None:
+        # User explicitly interacted — always re-pin.
+        self._auto_scroll = True
         scroll = self.query_one("#chat-scroll", VerticalScroll)
         scroll.mount(UserEntry(text))
-        self.call_after_refresh(self._scroll_end)
+        self.call_after_refresh(self._maybe_scroll_end)
 
     def start_turn(self) -> None:
         """Show the animated thinking indicator."""
+        self._check_scroll_pin()
         scroll = self.query_one("#chat-scroll", VerticalScroll)
         scroll.mount(ThinkingEntry(id="thinking"))
-        self.call_after_refresh(self._scroll_end)
+        self.call_after_refresh(self._maybe_scroll_end)
 
     def add_tool_call(self, tool_name: str, arguments: dict[str, Any]) -> ToolEntry:
         """Append a ToolEntry (yellow/running) and return it for later update."""
+        self._check_scroll_pin()
         scroll = self.query_one("#chat-scroll", VerticalScroll)
         thinking = self.query("#thinking")
         if thinking:
             thinking.first().remove()
         entry = ToolEntry(tool_name, arguments)
         scroll.mount(entry)
-        self.call_after_refresh(self._scroll_end)
+        self.call_after_refresh(self._maybe_scroll_end)
         return entry
 
     def start_response(self) -> AssistantEntry:
         """Remove thinking indicator, append AssistantEntry, return it."""
+        self._check_scroll_pin()
         thinking = self.query("#thinking")
         if thinking:
             thinking.first().remove()
         scroll = self.query_one("#chat-scroll", VerticalScroll)
         entry = AssistantEntry()
         scroll.mount(entry)
-        self.call_after_refresh(self._scroll_end)
+        self.call_after_refresh(self._maybe_scroll_end)
         return entry
+
+    def scroll_to_end(self) -> None:
+        """Schedule a scroll-to-bottom respecting the pin state."""
+        self._check_scroll_pin()
+        self.call_after_refresh(self._maybe_scroll_end)
 
     def clear_entries(self) -> None:
         self.query_one("#chat-scroll", VerticalScroll).remove_children()
+        self._auto_scroll = True
 
 
 class StatusPanel(Widget):
@@ -1007,7 +1031,7 @@ class SageTUIApp(App[None]):
         if self._current_response is None:
             self._current_response = chat.start_response()
         self._current_response.append_chunk(event.text)
-        chat.call_after_refresh(chat._scroll_end)
+        chat.scroll_to_end()
 
     def on_stream_finished(self, event: StreamFinished) -> None:
         if self._current_response is None and not self._had_tool_calls_in_turn:
