@@ -661,7 +661,7 @@ async def test_clear_chat_resets_session(tmp_path: Path) -> None:
         async with app.run_test() as pilot:
             old_session_id = app._session_id
             app._session_title = "Old Title"
-            await pilot.press("ctrl+L")
+            await pilot.press("ctrl+n")
             await pilot.pause()
             assert app._session_id != old_session_id
             assert app._session_title == ""

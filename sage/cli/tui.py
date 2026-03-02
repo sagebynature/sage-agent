@@ -841,7 +841,7 @@ class StatusBar(Static):
             f"[{colour}]● {self._state}[/{colour}]  [bold]{self._agent_name}[/bold]"
             f" ([dim]{self._model}[/dim]){stream_badge}    "
             f"[{token_colour}]{token_str}[/{token_colour}]{cost_str}    "
-            f"[dim]ctrl+b: status  ctrl+s: stream  ctrl+l: logs  ctrl+L: clear  ctrl+q: quit[/dim]{hint}"
+            f"[dim]ctrl+b: status  ctrl+n: new session  ctrl+s: stream  ctrl+l: logs  ctrl+q: quit[/dim]{hint}"
         )
 
 
@@ -1075,8 +1075,7 @@ class SageTUIApp(App[None]):
         Binding("ctrl+q", "quit", "Quit", priority=True),
         Binding("ctrl+b", "toggle_status", "Status panel"),
         Binding("ctrl+l", "toggle_logs", "Logs"),
-        Binding("ctrl+shift+l", "clear_chat", "Clear"),
-        Binding("ctrl+L", "clear_chat", "Clear", show=False),
+        Binding("ctrl+n", "clear_chat", "New session"),
         Binding("ctrl+o", "orchestrate", "Orchestrate"),
         Binding("ctrl+s", "toggle_stream", "Toggle stream"),
     ]
@@ -1381,8 +1380,9 @@ class SageTUIApp(App[None]):
                         role="system",
                         content=(
                             "Generate a concise title (max 50 chars, single line) "
-                            "summarizing the user's intent. Return ONLY the title text, "
-                            "no quotes, no punctuation at the end."
+                            "that captures the user's intent or goal. Focus on WHAT "
+                            "the user wants to accomplish, not the specific details. "
+                            "Return ONLY the title text, no quotes, no punctuation at the end."
                         ),
                     ),
                     SageMessage(role="user", content=context[:500]),
