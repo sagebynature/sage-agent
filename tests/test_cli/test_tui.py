@@ -4,8 +4,9 @@
 from __future__ import annotations
 
 from textual.app import App, ComposeResult
+from textual.widgets import Collapsible
 
-from sage.cli.tui import HistoryInput, ThinkingEntry, UserEntry
+from sage.cli.tui import HistoryInput, ThinkingEntry, ToolEntry, UserEntry
 
 
 class _HistoryApp(App[None]):
@@ -95,3 +96,39 @@ async def test_thinking_entry_is_mounted() -> None:
     async with app.run_test():
         widget = app.query_one(ThinkingEntry)
         assert widget is not None
+
+
+async def test_tool_entry_starts_collapsed() -> None:
+    class _App(App[None]):
+        def compose(self) -> ComposeResult:
+            yield ToolEntry("bash", {"command": "ls"})
+
+    app = _App()
+    async with app.run_test():
+        c = app.query_one(Collapsible)
+        assert c.collapsed is True
+
+
+async def test_tool_entry_set_result_updates_widget() -> None:
+    class _App(App[None]):
+        def compose(self) -> ComposeResult:
+            yield ToolEntry("bash", {"command": "ls"})
+
+    app = _App()
+    async with app.run_test():
+        entry = app.query_one(ToolEntry)
+        entry.set_result("file1\nfile2")
+        assert entry._result == "file1\nfile2"
+        assert entry._error is False
+
+
+async def test_tool_entry_set_error_marks_error() -> None:
+    class _App(App[None]):
+        def compose(self) -> ComposeResult:
+            yield ToolEntry("bash", {"command": "bad"})
+
+    app = _App()
+    async with app.run_test():
+        entry = app.query_one(ToolEntry)
+        entry.set_result("command not found", error=True)
+        assert entry._error is True

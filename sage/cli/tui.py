@@ -28,7 +28,7 @@ from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widget import Widget
-from textual.widgets import Button, Input, Label, RichLog, Static
+from textual.widgets import Button, Collapsible, Input, Label, RichLog, Static
 from rich.text import Text
 
 from sage.agent import Agent
@@ -266,6 +266,52 @@ class ThinkingEntry(Widget):
         self._frame = (self._frame + 1) % len(self._FRAMES)
         self.query_one("#thinking-label", Static).update(
             f"[dim]{self._FRAMES[self._frame]} Thinking…[/dim]"
+        )
+
+
+class ToolEntry(Widget):
+    """A tool call rendered as a collapsible block. Yellow while running, green/red when done."""
+
+    DEFAULT_CSS = """
+    ToolEntry {
+        height: auto;
+        padding: 0 1;
+        margin-bottom: 1;
+    }
+    ToolEntry Collapsible {
+        height: auto;
+        border: none;
+        padding: 0;
+        margin: 0;
+    }
+    """
+
+    def __init__(self, tool_name: str, arguments: dict[str, Any]) -> None:
+        super().__init__()
+        self._tool_name = tool_name
+        self._arguments = arguments
+        self._result: str | None = None
+        self._error: bool = False
+
+    def _summary(self, icon: str = "▶", color: str = "yellow") -> str:
+        args_str = _fmt_args(self._arguments)
+        return f"[{color}]{icon}[/{color}]  [bold]{self._tool_name}[/bold]  [dim]{args_str}[/dim]"
+
+    def compose(self) -> ComposeResult:
+        with Collapsible(title=self._summary(), collapsed=True):
+            yield Static(f"[dim]input:[/dim]   {self._arguments}", id="tool-input")
+            yield Static("[dim]result:[/dim]  [dim]running…[/dim]", id="tool-result")
+
+    def set_result(self, result: str, error: bool = False) -> None:
+        """Update the entry once the tool has completed."""
+        self._result = result
+        self._error = error
+        color = "red" if error else "green"
+        icon = "✗" if error else "✓"
+        preview = result[:300] + "…" if len(result) > 300 else result
+        self.query_one(Collapsible).title = self._summary(icon=icon, color=color)
+        self.query_one("#tool-result", Static).update(
+            f"[dim]result:[/dim]  [{color}]{preview}[/{color}]"
         )
 
 
