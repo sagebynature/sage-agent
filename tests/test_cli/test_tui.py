@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from textual.app import App, ComposeResult
-from textual.widgets import Collapsible, TextArea
+from textual.widgets import Collapsible, Markdown
 
 from sage.cli.tui import (
     AssistantEntry,
@@ -148,15 +148,15 @@ async def test_tool_entry_set_error_marks_error() -> None:
         assert entry._error is True
 
 
-async def test_assistant_entry_text_area_is_read_only() -> None:
+async def test_assistant_entry_has_markdown_widget() -> None:
     class _App(App[None]):
         def compose(self) -> ComposeResult:
             yield AssistantEntry()
 
     app = _App()
     async with app.run_test():
-        ta = app.query_one(TextArea)
-        assert ta.read_only is True
+        md = app.query_one(Markdown)
+        assert md is not None
 
 
 async def test_assistant_entry_append_chunk() -> None:
@@ -165,12 +165,12 @@ async def test_assistant_entry_append_chunk() -> None:
             yield AssistantEntry()
 
     app = _App()
-    async with app.run_test():
+    async with app.run_test() as pilot:
         entry = app.query_one(AssistantEntry)
         entry.append_chunk("hello ")
         entry.append_chunk("world")
-        ta = app.query_one(TextArea)
-        assert "hello world" in ta.text
+        await pilot.pause()
+        assert "hello world" in entry._content
 
 
 async def test_assistant_entry_set_text() -> None:
@@ -179,11 +179,11 @@ async def test_assistant_entry_set_text() -> None:
             yield AssistantEntry()
 
     app = _App()
-    async with app.run_test():
+    async with app.run_test() as pilot:
         entry = app.query_one(AssistantEntry)
         entry.set_text("full response here")
-        ta = app.query_one(TextArea)
-        assert "full response here" in ta.text
+        await pilot.pause()
+        assert "full response here" in entry._content
 
 
 async def test_chat_panel_append_user_message() -> None:

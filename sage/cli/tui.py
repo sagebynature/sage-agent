@@ -28,7 +28,7 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widget import Widget
-from textual.widgets import Button, Collapsible, Input, Label, RichLog, Static, TextArea
+from textual.widgets import Button, Collapsible, Input, Label, Markdown, RichLog, Static
 
 from sage.agent import Agent
 from sage.orchestrator.parallel import Orchestrator
@@ -315,7 +315,7 @@ class ToolEntry(Widget):
 
 
 class AssistantEntry(Widget):
-    """Agent response in a read-only TextArea — supports mouse text selection and streaming."""
+    """Agent response rendered as Markdown with streaming support."""
 
     DEFAULT_CSS = """
     AssistantEntry {
@@ -328,12 +328,10 @@ class AssistantEntry(Widget):
         text-style: bold;
         height: 1;
     }
-    AssistantEntry TextArea {
+    AssistantEntry Markdown {
         height: auto;
-        min-height: 1;
-        border: none;
         padding: 0;
-        background: transparent;
+        margin: 0;
     }
     """
 
@@ -343,27 +341,17 @@ class AssistantEntry(Widget):
 
     def compose(self) -> ComposeResult:
         yield Static("[bold green]Agent[/bold green]  [dim]╷[/dim]", classes="assistant-label")
-        yield TextArea("", read_only=True, show_line_numbers=False, id="response-area")
+        yield Markdown("", id="response-area")
 
     def append_chunk(self, chunk: str) -> None:
-        """Append a streaming text chunk to the response."""
+        """Append a streaming text chunk and re-render markdown."""
         self._content += chunk
-        ta = self.query_one("#response-area", TextArea)
-        end = ta.document.end
-        ta.insert(chunk, location=end)
-        self._sync_height()
+        self.query_one("#response-area", Markdown).update(self._content)
 
     def set_text(self, text: str) -> None:
-        """Replace full text (non-streaming mode)."""
+        """Set full text and render as markdown (non-streaming mode)."""
         self._content = text
-        ta = self.query_one("#response-area", TextArea)
-        ta.load_text(text)
-        self._sync_height()
-
-    def _sync_height(self) -> None:
-        """Resize TextArea to fit content without internal scrollbar."""
-        lines = max(1, self._content.count("\n") + 1)
-        self.query_one("#response-area", TextArea).styles.height = lines
+        self.query_one("#response-area", Markdown).update(text)
 
 
 # ── Widgets ───────────────────────────────────────────────────────────────────
@@ -457,7 +445,10 @@ class StatusPanel(Widget):
 
     def compose(self) -> ComposeResult:
         yield Static("", id="agent-section", classes="section")
-        yield Static("", id="skills-section", classes="section")
+        with Collapsible(
+            title="SKILLS", collapsed=True, id="skills-collapsible", classes="section"
+        ):
+            yield Static("", id="skills-content")
         yield Static("", id="tokens-section", classes="section")
         yield Static("", id="context-section", classes="section")
         yield Static("", id="session-section", classes="section")
@@ -477,12 +468,10 @@ class StatusPanel(Widget):
             f"  [dim]subagents[/dim]  {subagent_names}"
         )
         skill_names = [s.name for s in agent.skills]
-        if skill_names:
-            skills_text = f"[bold]SKILLS[/bold]  ({len(skill_names)})\n"
-            skills_text += "\n".join(f"  [dim]•[/dim] {n}" for n in skill_names)
-        else:
-            skills_text = "[bold]SKILLS[/bold]\n  [dim](none)[/dim]"
-        self.query_one("#skills-section", Static).update(skills_text)
+        collapsible = self.query_one("#skills-collapsible", Collapsible)
+        collapsible.title = f"SKILLS  ({len(skill_names)})" if skill_names else "SKILLS"
+        skills_content = "\n".join(f"[dim]•[/dim] {n}" for n in skill_names) or "[dim](none)[/dim]"
+        self.query_one("#skills-content", Static).update(skills_content)
         self.update_stats({})
         self.clear_active_delegation()
 
@@ -840,6 +829,7 @@ class SageTUIApp(App[None]):
         self._current_response: AssistantEntry | None = None
         self._pending_tools: dict[str, list[ToolEntry]] = {}
         self._log_handler: TUILogHandler | None = None
+        self._sage_logger_level: int = logging.NOTSET
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="main-layout"):
@@ -851,7 +841,12 @@ class SageTUIApp(App[None]):
     def on_mount(self) -> None:
         self._log_handler = TUILogHandler(self)
         self._log_handler.setLevel(logging.DEBUG)
-        logging.getLogger().addHandler(self._log_handler)
+        # Attach to the sage logger (not root) so only sage.* records appear.
+        # Ensure sage logger propagates at DEBUG so records reach our handler.
+        sage_logger = logging.getLogger("sage")
+        self._sage_logger_level = sage_logger.level
+        sage_logger.setLevel(logging.DEBUG)
+        sage_logger.addHandler(self._log_handler)
 
         agent = Agent.from_config(self.config_path, central=self._central)
         self._agent = agent
@@ -870,7 +865,9 @@ class SageTUIApp(App[None]):
 
     async def on_unmount(self) -> None:
         if self._log_handler is not None:
-            logging.getLogger().removeHandler(self._log_handler)
+            sage_logger = logging.getLogger("sage")
+            sage_logger.removeHandler(self._log_handler)
+            sage_logger.setLevel(self._sage_logger_level)
         if self._agent is not None:
             await self._agent.close()
 
