@@ -542,6 +542,79 @@ class StatusPanel(Widget):
         )
 
 
+# ── Log panel ────────────────────────────────────────────────────────────────
+
+
+class _LogRecord(Message):
+    """Carries a logging.LogRecord safely across thread boundaries into Textual."""
+
+    def __init__(self, record: logging.LogRecord) -> None:
+        super().__init__()
+        self.record = record
+
+
+class TUILogHandler(logging.Handler):
+    """Logging handler that forwards records to the TUI via post_message."""
+
+    def __init__(self, app: App[None]) -> None:
+        super().__init__()
+        self._app = app
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            self._app.post_message(_LogRecord(record))
+        except Exception:
+            pass  # Never let logging raise
+
+
+_LOG_COLORS: dict[int, str] = {
+    logging.DEBUG: "dim",
+    logging.INFO: "white",
+    logging.WARNING: "yellow",
+    logging.ERROR: "red",
+    logging.CRITICAL: "bold red",
+}
+_LOG_FMT = logging.Formatter(
+    "%(asctime)s.%(msecs)03d  %(levelname)-8s  %(name)s  %(message)s",
+    datefmt="%H:%M:%S",
+)
+
+
+class LogPanel(Widget):
+    """Docked-bottom log viewer, hidden by default. Toggle with ctrl+l."""
+
+    DEFAULT_CSS = """
+    LogPanel {
+        dock: bottom;
+        height: 10;
+        border-top: solid $primary-darken-2;
+        display: none;
+    }
+    LogPanel #log-label {
+        padding: 0 1;
+        color: $text-muted;
+        text-style: bold;
+        height: 1;
+    }
+    LogPanel #log-output {
+        height: 1fr;
+    }
+    """
+
+    def compose(self) -> ComposeResult:
+        yield Label("LOGS", id="log-label")
+        yield RichLog(id="log-output", wrap=True, markup=True, highlight=False)
+
+    def toggle_visibility(self) -> None:
+        self.display = not self.display
+
+    def write_record(self, record: logging.LogRecord) -> None:
+        color = _LOG_COLORS.get(record.levelno, "white")
+        msg = _LOG_FMT.format(record)
+        safe_msg = msg.replace("[", "\\[")
+        self.query_one("#log-output", RichLog).write(f"[{color}]{safe_msg}[/{color}]")
+
+
 class StatusBar(Static):
     """Bottom bar: agent state, model info, and keyboard hints."""
 

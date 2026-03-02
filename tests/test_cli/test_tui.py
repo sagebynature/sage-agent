@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import MagicMock
 
 from textual.app import App, ComposeResult
@@ -12,9 +13,11 @@ from sage.cli.tui import (
     AssistantEntry,
     ChatPanel,
     HistoryInput,
+    LogPanel,
     StatusPanel,
     ThinkingEntry,
     ToolEntry,
+    TUILogHandler,
     UserEntry,
 )
 
@@ -300,3 +303,44 @@ async def test_status_panel_active_agents_delegation() -> None:
         panel.initialize(_make_mock_agent())
         panel.set_active_delegation("coder", "write a function")
         panel.clear_active_delegation()
+
+
+async def test_log_panel_starts_hidden() -> None:
+    class _App(App[None]):
+        def compose(self) -> ComposeResult:
+            yield LogPanel(id="logs")
+
+    app = _App()
+    async with app.run_test():
+        panel = app.query_one(LogPanel)
+        assert panel.display is False
+
+
+async def test_log_panel_toggle_shows_and_hides() -> None:
+    class _App(App[None]):
+        def compose(self) -> ComposeResult:
+            yield LogPanel(id="logs")
+
+    app = _App()
+    async with app.run_test():
+        panel = app.query_one(LogPanel)
+        panel.toggle_visibility()
+        assert panel.display is True
+        panel.toggle_visibility()
+        assert panel.display is False
+
+
+def test_tui_log_handler_emit_calls_post_message() -> None:
+    mock_app = MagicMock()
+    handler = TUILogHandler(mock_app)
+    record = logging.LogRecord(
+        name="test",
+        level=logging.INFO,
+        pathname="",
+        lineno=0,
+        msg="hello",
+        args=(),
+        exc_info=None,
+    )
+    handler.emit(record)
+    mock_app.post_message.assert_called_once()
