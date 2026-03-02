@@ -381,6 +381,26 @@ class TestLiteLLMProviderHelpers:
         assert isinstance(result, int)
 
 
+class TestBuildRequestKwargs:
+    """Tests for _build_request_kwargs helper."""
+
+    def test_stream_includes_drop_params(self, provider: LiteLLMProvider) -> None:
+        """Streaming requests must include drop_params=True for cross-provider compatibility."""
+        messages = [Message(role="user", content="Hello")]
+        kwargs = provider._build_request_kwargs(messages, stream=True)
+        assert kwargs["stream"] is True
+        assert kwargs["stream_options"] == {"include_usage": True}
+        assert kwargs["drop_params"] is True
+
+    def test_non_stream_omits_drop_params(self, provider: LiteLLMProvider) -> None:
+        """Non-streaming requests should not include drop_params."""
+        messages = [Message(role="user", content="Hello")]
+        kwargs = provider._build_request_kwargs(messages, stream=False)
+        assert "stream" not in kwargs
+        assert "stream_options" not in kwargs
+        assert "drop_params" not in kwargs
+
+
 class TestModelParamsRetry:
     """Tests for num_retries and retry_after fields on ModelParams."""
 

@@ -352,6 +352,10 @@ class LiteLLMProvider:
         if stream:
             request_kwargs["stream"] = True
             request_kwargs["stream_options"] = {"include_usage": True}
+            # Enable drop_params so litellm silently removes parameters
+            # rejected by the provider (e.g. Azure AI endpoints that reject
+            # stream_options for models like kimi-k2.5).
+            request_kwargs["drop_params"] = True
         if tools:
             request_kwargs["tools"] = [self._tool_schema_to_dict(t) for t in tools]
 
