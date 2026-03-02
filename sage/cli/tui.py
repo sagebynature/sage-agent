@@ -14,6 +14,7 @@ agent event system via :meth:`~sage.agent.Agent.on`.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -1096,6 +1097,7 @@ class SageTUIApp(App[None]):
         self._sage_logger_propagate: bool = True
         self._session_id: str = uuid4().hex
         self._session_title: str = ""
+        self._title_task: asyncio.Task[None] | None = None
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="main-layout"):
@@ -1282,9 +1284,7 @@ class SageTUIApp(App[None]):
         self._re_enable_input()
 
     def on_session_title_generated(self, event: SessionTitleGenerated) -> None:
-        panel = self.query_one(StatusPanel)
-        if hasattr(panel, "update_session_title"):
-            panel.update_session_title(event.title)
+        self.query_one(StatusPanel).update_session_title(event.title)
 
     # ── Actions ───────────────────────────────────────────────────────────────
 
@@ -1297,6 +1297,10 @@ class SageTUIApp(App[None]):
 
     def action_clear_chat(self) -> None:
         self.query_one(ChatPanel).clear_entries()
+        # Cancel in-flight title generation
+        if self._title_task and not self._title_task.done():
+            self._title_task.cancel()
+            self._title_task = None
         # Start a fresh session
         self._session_id = uuid4().hex
         self._session_title = ""
@@ -1393,6 +1397,4 @@ class SageTUIApp(App[None]):
 
     def _schedule_title_generation(self, context: str) -> None:
         """Fire-and-forget background title generation."""
-        import asyncio
-
-        asyncio.create_task(self._generate_session_title(context))
+        self._title_task = asyncio.create_task(self._generate_session_title(context))
