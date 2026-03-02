@@ -140,13 +140,19 @@ class EvalRunner:
             # relative directory structure so paths in the test input resolve.
             tmp_dir = tempfile.mkdtemp()
             original_cwd = os.getcwd()
-            suite_dir = Path(self.suite.suite_dir)
+            suite_dir = Path(self.suite.suite_dir).resolve()
+            suite_parent = suite_dir.parent
             for file_path in test_case.context_files:
                 src = Path(file_path)
                 if src.exists():
-                    try:
-                        rel = src.relative_to(suite_dir)
-                    except ValueError:
+                    rel: Path | None = None
+                    for base in (suite_dir, suite_parent):
+                        try:
+                            rel = src.relative_to(base)
+                            break
+                        except ValueError:
+                            continue
+                    if rel is None:
                         rel = Path(src.name)
                     dest = Path(tmp_dir) / rel
                     dest.parent.mkdir(parents=True, exist_ok=True)
