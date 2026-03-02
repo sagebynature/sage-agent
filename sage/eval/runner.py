@@ -128,8 +128,11 @@ class EvalRunner:
         # --- Phase 1: run the agent ---
         try:
             agent = Agent.from_config(self.suite.agent)
-            # Override model
+            # Override model on both the agent and its provider so that
+            # API calls and cost calculations use the correct model.
             agent.model = self.model
+            if hasattr(agent.provider, "model"):
+                agent.provider.model = self.model
 
             # Always run each case in its own temp directory so that file
             # writes are isolated (especially important when models run in
