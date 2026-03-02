@@ -693,7 +693,7 @@ class StatusBar(Static):
             f"[{colour}]● {self._state}[/{colour}]  [bold]{self._agent_name}[/bold]"
             f" ([dim]{self._model}[/dim]){stream_badge}    "
             f"[{token_colour}]{token_str}[/{token_colour}]{cost_str}    "
-            f"[dim]ctrl+s: stream  ctrl+l: clear  ctrl+q: quit[/dim]{hint}"
+            f"[dim]ctrl+s: stream  ctrl+l: logs  ctrl+L: clear  ctrl+q: quit[/dim]{hint}"
         )
 
 
