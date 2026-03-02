@@ -1163,6 +1163,11 @@ class SageTUIApp(App[None]):
         input_widget.clear()
         input_widget.disabled = True
 
+        # Cancel any in-flight title generation to avoid concurrent LLM calls
+        if self._title_task and not self._title_task.done():
+            self._title_task.cancel()
+            self._title_task = None
+
         chat = self.query_one(ChatPanel)
         chat.append_user_message(query)
         chat.start_turn()
