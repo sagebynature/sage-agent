@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 from textual import events, on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widget import Widget
@@ -371,33 +371,71 @@ class AssistantEntry(Widget):
 
 
 class ChatPanel(Widget):
-    """Left panel: conversation history and message input."""
+    """Left panel: conversation history (typed entry widgets) and message input."""
 
     DEFAULT_CSS = """
     ChatPanel {
-        width: 60%;
+        width: 65%;
         height: 100%;
         border-right: solid $primary;
     }
-    ChatPanel #chat-log {
-        height: 1fr;
-        padding: 0 1;
-    }
-    ChatPanel Label {
+    ChatPanel #chat-label {
         padding: 0 1;
         color: $text-muted;
         text-style: bold;
+        height: 1;
     }
-    ChatPanel #chat-input {
+    ChatPanel #chat-scroll {
+        height: 1fr;
+    }
+    ChatPanel HistoryInput {
         dock: bottom;
         margin: 0 1 1 1;
     }
     """
 
     def compose(self) -> ComposeResult:
-        yield Label("CHAT")
-        yield RichLog(id="chat-log", wrap=True, markup=True, highlight=False)
-        yield Input(placeholder="> Type a message and press Enter…", id="chat-input")
+        yield Label("CHAT", id="chat-label")
+        yield VerticalScroll(id="chat-scroll")
+        yield HistoryInput(placeholder="> Type a message and press Enter…", id="chat-input")
+
+    # -- Public API used by SageTUIApp ----------------------------------------
+
+    def append_user_message(self, text: str) -> None:
+        scroll = self.query_one("#chat-scroll", VerticalScroll)
+        scroll.mount(UserEntry(text))
+        scroll.scroll_end(animate=False)
+
+    def start_turn(self) -> None:
+        """Show the animated thinking indicator."""
+        scroll = self.query_one("#chat-scroll", VerticalScroll)
+        scroll.mount(ThinkingEntry(id="thinking"))
+        scroll.scroll_end(animate=False)
+
+    def add_tool_call(self, tool_name: str, arguments: dict[str, Any]) -> ToolEntry:
+        """Append a ToolEntry (yellow/running) and return it for later update."""
+        scroll = self.query_one("#chat-scroll", VerticalScroll)
+        thinking = self.query("#thinking")
+        if thinking:
+            thinking.first().remove()
+        entry = ToolEntry(tool_name, arguments)
+        scroll.mount(entry)
+        scroll.scroll_end(animate=False)
+        return entry
+
+    def start_response(self) -> AssistantEntry:
+        """Remove thinking indicator, append AssistantEntry, return it."""
+        thinking = self.query("#thinking")
+        if thinking:
+            thinking.first().remove()
+        scroll = self.query_one("#chat-scroll", VerticalScroll)
+        entry = AssistantEntry()
+        scroll.mount(entry)
+        scroll.scroll_end(animate=False)
+        return entry
+
+    def clear_entries(self) -> None:
+        self.query_one("#chat-scroll", VerticalScroll).remove_children()
 
 
 class ActivityPanel(Widget):

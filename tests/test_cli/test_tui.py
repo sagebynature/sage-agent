@@ -6,7 +6,14 @@ from __future__ import annotations
 from textual.app import App, ComposeResult
 from textual.widgets import Collapsible, TextArea
 
-from sage.cli.tui import AssistantEntry, HistoryInput, ThinkingEntry, ToolEntry, UserEntry
+from sage.cli.tui import (
+    AssistantEntry,
+    ChatPanel,
+    HistoryInput,
+    ThinkingEntry,
+    ToolEntry,
+    UserEntry,
+)
 
 
 class _HistoryApp(App[None]):
@@ -170,3 +177,62 @@ async def test_assistant_entry_set_text() -> None:
         entry.set_text("full response here")
         ta = app.query_one(TextArea)
         assert "full response here" in ta.text
+
+
+async def test_chat_panel_append_user_message() -> None:
+    class _App(App[None]):
+        def compose(self) -> ComposeResult:
+            yield ChatPanel(id="chat")
+
+    app = _App()
+    async with app.run_test() as pilot:
+        panel = app.query_one(ChatPanel)
+        panel.append_user_message("test message")
+        await pilot.pause()
+        assert len(app.query(UserEntry)) == 1
+
+
+async def test_chat_panel_start_and_finish_turn() -> None:
+    class _App(App[None]):
+        def compose(self) -> ComposeResult:
+            yield ChatPanel(id="chat")
+
+    app = _App()
+    async with app.run_test() as pilot:
+        panel = app.query_one(ChatPanel)
+        panel.start_turn()
+        await pilot.pause()
+        assert len(app.query(ThinkingEntry)) == 1
+        panel.start_response()
+        await pilot.pause()
+        assert len(app.query(ThinkingEntry)) == 0
+        assert len(app.query(AssistantEntry)) == 1
+
+
+async def test_chat_panel_add_tool_call() -> None:
+    class _App(App[None]):
+        def compose(self) -> ComposeResult:
+            yield ChatPanel(id="chat")
+
+    app = _App()
+    async with app.run_test() as pilot:
+        panel = app.query_one(ChatPanel)
+        tool = panel.add_tool_call("bash", {"command": "ls"})
+        await pilot.pause()
+        assert isinstance(tool, ToolEntry)
+        assert len(app.query(ToolEntry)) == 1
+
+
+async def test_chat_panel_clear() -> None:
+    class _App(App[None]):
+        def compose(self) -> ComposeResult:
+            yield ChatPanel(id="chat")
+
+    app = _App()
+    async with app.run_test() as pilot:
+        panel = app.query_one(ChatPanel)
+        panel.append_user_message("hi")
+        await pilot.pause()
+        panel.clear_entries()
+        await pilot.pause()
+        assert len(app.query(UserEntry)) == 0
