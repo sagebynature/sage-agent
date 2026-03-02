@@ -79,8 +79,6 @@ class PolicyPermissionHandler:
     async def check(self, tool_name: str, arguments: dict[str, Any]) -> PermissionDecision:
         category = TOOL_TO_CATEGORY.get(tool_name)
         if category is None:
-            # Unknown category (e.g. MCP tools) — user explicitly configured these
-            # servers, so allow them through rather than blocking non-interactively.
             return PermissionDecision(action=PermissionAction.ALLOW)
 
         matched_rule: CategoryPermissionRule | None = None

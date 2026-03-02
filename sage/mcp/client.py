@@ -117,6 +117,13 @@ class MCPClient:
             await self._exit_stack.aclose()
         except (asyncio.CancelledError, anyio.get_cancelled_exc_class()):
             logger.debug("MCP disconnect: subprocess cleanup cancelled (safe to ignore)")
+        except RuntimeError as exc:
+            # anyio raises RuntimeError("Attempted to exit cancel scope in a
+            # different task than it was entered in") when the stdio_client
+            # async generator is torn down from a different asyncio Task than
+            # the one that opened it.  This is cosmetic cleanup noise — the
+            # subprocess has already exited.
+            logger.debug("MCP disconnect: cancel-scope mismatch (safe to ignore): %s", exc)
         self._session = None
 
     @property
