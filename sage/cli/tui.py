@@ -1125,6 +1125,7 @@ class SageTUIApp(App[None]):
         instrument_agent(agent, self)
 
         self.query_one(StatusPanel).initialize(agent)
+        self.query_one(StatusPanel).set_session(self._session_id, self._session_title)
         self.query_one(StatusBar).set_state(
             "Ready",
             agent.name,
@@ -1164,6 +1165,9 @@ class SageTUIApp(App[None]):
         chat = self.query_one(ChatPanel)
         chat.append_user_message(query)
         chat.start_turn()
+
+        if not self._session_title:
+            self._schedule_title_generation(query)
 
         agent = self._agent
         self._pending_tools.clear()
@@ -1293,6 +1297,16 @@ class SageTUIApp(App[None]):
 
     def action_clear_chat(self) -> None:
         self.query_one(ChatPanel).clear_entries()
+        # Start a fresh session
+        self._session_id = uuid4().hex
+        self._session_title = ""
+        if self._agent:
+            self._agent.reset_session()
+        status_panel = self.query_one(StatusPanel)
+        status_panel.set_session(self._session_id, self._session_title)
+        status_panel.update_stats({})
+        self.query_one(StatusBar).update_token_usage(0, None)
+        self.query_one(StatusBar).update_session_cost(0.0)
 
     def action_orchestrate(self) -> None:
         if self._agent and self._agent.subagents:
@@ -1334,6 +1348,7 @@ class SageTUIApp(App[None]):
             self.query_one(StatusBar).update_session_cost(float(cost))
             if stats.get("compacted_this_turn"):
                 self.query_one(ChatPanel).append_user_message("[dim]⚡ Context compacted[/dim]")
+                self._schedule_title_generation("")  # empty triggers re-derive from history
         self._re_enable_input()
 
     def _re_enable_input(self) -> None:

@@ -267,6 +267,8 @@ async def test_status_panel_initializes_without_crash() -> None:
     app = _App()
     async with app.run_test():
         panel = app.query_one(StatusPanel)
+        panel.display = True
+        panel.set_session("abcd1234abcd1234abcd1234abcd1234", "")
         panel.initialize(_make_mock_agent())
 
 
@@ -278,6 +280,8 @@ async def test_status_panel_update_stats_without_crash() -> None:
     app = _App()
     async with app.run_test():
         panel = app.query_one(StatusPanel)
+        panel.display = True
+        panel.set_session("abcd1234abcd1234abcd1234abcd1234", "")
         panel.initialize(_make_mock_agent())
         stats = {
             "token_usage": 5000,
@@ -301,6 +305,8 @@ async def test_status_panel_active_agents_delegation() -> None:
     app = _App()
     async with app.run_test():
         panel = app.query_one(StatusPanel)
+        panel.display = True
+        panel.set_session("abcd1234abcd1234abcd1234abcd1234", "")
         panel.initialize(_make_mock_agent())
         panel.set_active_delegation("coder", "write a function")
         panel.clear_active_delegation()
@@ -634,6 +640,30 @@ async def test_sage_tui_app_mounts_and_quits(tmp_path: Path) -> None:
         async with app.run_test() as pilot:
             assert app.query_one(ChatPanel) is not None
             assert app.query_one(StatusPanel) is not None
+            assert app.query_one(StatusPanel).display is False  # hidden by default
             assert app.query_one(LogPanel) is not None
+            assert hasattr(app, "_session_id")
             await pilot.press("ctrl+q")
         mock_agent.close.assert_awaited_once()
+
+
+async def test_clear_chat_resets_session(tmp_path: Path) -> None:
+    from sage.cli.tui import SageTUIApp
+
+    cfg = _make_config_path(tmp_path)
+    mock_agent = _make_mock_agent()
+    mock_agent.close = AsyncMock()
+    mock_agent.reset_session = MagicMock()
+    mock_agent.get_usage_stats = MagicMock(return_value={})
+
+    with patch("sage.cli.tui.Agent.from_config", return_value=mock_agent):
+        app = SageTUIApp(config_path=cfg)
+        async with app.run_test() as pilot:
+            old_session_id = app._session_id
+            app._session_title = "Old Title"
+            await pilot.press("ctrl+L")
+            await pilot.pause()
+            assert app._session_id != old_session_id
+            assert app._session_title == ""
+            mock_agent.reset_session.assert_called_once()
+            await pilot.press("ctrl+q")
