@@ -502,13 +502,61 @@ def test_agent_reset_session_clears_usage() -> None:
     assert mock_agent._loaded_skills == set()
 
 
-# ── Integration test ──────────────────────────────────────────────────────────
+# ── Helper for integration tests ──────────────────────────────────────────────
 
 
 def _make_config_path(tmp_path: Path) -> Path:
     cfg = tmp_path / "AGENTS.md"
     cfg.write_text("---\nname: test-agent\nmodel: gpt-4o\n---\nA helpful assistant.\n")
     return cfg
+
+
+# ── Session state & title generation tests ────────────────────────────────────
+
+
+async def test_app_has_session_id_on_mount(tmp_path: Path) -> None:
+    from sage.cli.tui import SageTUIApp
+
+    cfg = _make_config_path(tmp_path)
+    mock_agent = _make_mock_agent()
+    mock_agent.close = AsyncMock()
+
+    with patch("sage.cli.tui.Agent.from_config", return_value=mock_agent):
+        app = SageTUIApp(config_path=cfg)
+        async with app.run_test() as pilot:
+            assert hasattr(app, "_session_id")
+            assert isinstance(app._session_id, str)
+            assert len(app._session_id) == 32  # uuid4 hex
+            assert hasattr(app, "_session_title")
+            assert app._session_title == ""
+            await pilot.press("ctrl+q")
+
+
+async def test_generate_session_title_calls_provider(tmp_path: Path) -> None:
+    from sage.cli.tui import SageTUIApp
+    from sage.models import CompletionResult, Message, Usage
+
+    cfg = _make_config_path(tmp_path)
+    mock_agent = _make_mock_agent()
+    mock_agent.close = AsyncMock()
+    mock_agent.provider = AsyncMock()
+    mock_agent.provider.complete = AsyncMock(
+        return_value=CompletionResult(
+            message=Message(role="assistant", content="Enhance TUI Design"),
+            usage=Usage(),
+        )
+    )
+
+    with patch("sage.cli.tui.Agent.from_config", return_value=mock_agent):
+        app = SageTUIApp(config_path=cfg)
+        async with app.run_test() as pilot:
+            await app._generate_session_title("help me redesign the TUI")
+            assert app._session_title == "Enhance TUI Design"
+            mock_agent.provider.complete.assert_awaited_once()
+            await pilot.press("ctrl+q")
+
+
+# ── Integration test ──────────────────────────────────────────────────────────
 
 
 async def test_sage_tui_app_mounts_and_quits(tmp_path: Path) -> None:

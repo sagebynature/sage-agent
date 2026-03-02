@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 if TYPE_CHECKING:
     from sage.main_config import MainConfig
@@ -114,6 +115,14 @@ class DelegationEventStarted(Message):
         super().__init__()
         self.target = target
         self.task = task
+
+
+class SessionTitleGenerated(Message):
+    """Emitted when the background title generation completes."""
+
+    def __init__(self, title: str) -> None:
+        super().__init__()
+        self.title = title
 
 
 # ── Hook-based instrumentation ────────────────────────────────────────────────
@@ -1056,6 +1065,8 @@ class SageTUIApp(App[None]):
         self._log_handler: TUILogHandler | None = None
         self._sage_logger_level: int = logging.NOTSET
         self._sage_logger_propagate: bool = True
+        self._session_id: str = uuid4().hex
+        self._session_title: str = ""
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="main-layout"):
@@ -1237,6 +1248,11 @@ class SageTUIApp(App[None]):
             )
         self._re_enable_input()
 
+    def on_session_title_generated(self, event: SessionTitleGenerated) -> None:
+        panel = self.query_one(StatusPanel)
+        if hasattr(panel, "update_session_title"):
+            panel.update_session_title(event.title)
+
     # ── Actions ───────────────────────────────────────────────────────────────
 
     def action_toggle_logs(self) -> None:
@@ -1291,3 +1307,44 @@ class SageTUIApp(App[None]):
         inp = self.query_one("#chat-input", HistoryInput)
         inp.disabled = False
         inp.focus()
+
+    async def _generate_session_title(self, context: str) -> None:
+        """Generate a session title from context using the agent's provider."""
+        if self._agent is None:
+            return
+        if not context:
+            # Derive context from conversation history
+            for msg in reversed(self._agent._conversation_history):
+                if msg.role == "user" and msg.content:
+                    context = msg.content
+                    break
+        if not context:
+            return
+        try:
+            from sage.models import Message as SageMessage
+
+            result = await self._agent.provider.complete(
+                [
+                    SageMessage(
+                        role="system",
+                        content=(
+                            "Generate a concise title (max 50 chars, single line) "
+                            "summarizing the user's intent. Return ONLY the title text, "
+                            "no quotes, no punctuation at the end."
+                        ),
+                    ),
+                    SageMessage(role="user", content=context[:500]),
+                ]
+            )
+            title = (result.message.content or "").strip()[:50]
+            if title:
+                self._session_title = title
+                self.post_message(SessionTitleGenerated(title))
+        except Exception:
+            logger.debug("Session title generation failed", exc_info=True)
+
+    def _schedule_title_generation(self, context: str) -> None:
+        """Fire-and-forget background title generation."""
+        import asyncio
+
+        asyncio.create_task(self._generate_session_title(context))
