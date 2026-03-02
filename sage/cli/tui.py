@@ -14,7 +14,6 @@ agent event system via :meth:`~sage.agent.Agent.on`.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -438,69 +437,109 @@ class ChatPanel(Widget):
         self.query_one("#chat-scroll", VerticalScroll).remove_children()
 
 
-class ActivityPanel(Widget):
-    """Right panel: timestamped, colour-coded live tool-call feed."""
+class StatusPanel(Widget):
+    """Right panel: static agent info + live token/cost/context stats."""
 
     DEFAULT_CSS = """
-    ActivityPanel {
-        width: 40%;
+    StatusPanel {
+        width: 35%;
         height: 100%;
+        overflow-y: auto;
+        padding: 1;
     }
-    ActivityPanel Label {
-        padding: 0 1;
-        color: $text-muted;
-        text-style: bold;
-    }
-    ActivityPanel #activity-log {
-        height: 1fr;
-        padding: 0 1;
-    }
-    ActivityPanel #stats {
-        dock: bottom;
-        padding: 0 1 1 1;
+    StatusPanel .section {
+        height: auto;
+        margin-bottom: 1;
+        padding-bottom: 1;
+        border-bottom: solid $primary-darken-3;
     }
     """
 
-    _tool_call_count: int = 0
-
     def compose(self) -> ComposeResult:
-        yield Label("LIVE ACTIVITY")
-        yield RichLog(id="activity-log", wrap=True, markup=True, highlight=False)
-        yield Static("", id="stats")
+        yield Static("", id="agent-section", classes="section")
+        yield Static("", id="skills-section", classes="section")
+        yield Static("", id="tokens-section", classes="section")
+        yield Static("", id="context-section", classes="section")
+        yield Static("", id="session-section", classes="section")
+        yield Static("", id="active-section")
 
-    def add_turn_started(self, turn: int, model: str) -> None:
-        log = self.query_one("#activity-log", RichLog)
-        ts = datetime.now().strftime("%H:%M:%S")
-        log.write(f"[{ts}] [bold cyan]◆ turn {turn + 1}[/bold cyan]  [dim]{model}[/dim]")
+    def initialize(self, agent: "Agent") -> None:
+        """Populate static sections from agent config. Call once after mount."""
+        import os
 
-    def add_delegation_started(self, target: str, task: str) -> None:
-        log = self.query_one("#activity-log", RichLog)
-        ts = datetime.now().strftime("%H:%M:%S")
-        task_preview = task[:50] + "…" if len(task) > 50 else task
-        log.write(
-            f"[{ts}] [bold magenta]↳ delegate →[/bold magenta] {target}  [dim]{task_preview!r}[/dim]"
+        cwd = os.getcwd()
+        subagent_names = ", ".join(agent.subagents.keys()) or "[dim](none)[/dim]"
+        self.query_one("#agent-section", Static).update(
+            f"[bold]AGENT[/bold]\n"
+            f"  [dim]name[/dim]       {agent.name}\n"
+            f"  [dim]model[/dim]      {agent.model}\n"
+            f"  [dim]cwd[/dim]        {cwd}\n"
+            f"  [dim]subagents[/dim]  {subagent_names}"
+        )
+        skill_names = [s.name for s in agent.skills]
+        if skill_names:
+            skills_text = f"[bold]SKILLS[/bold]  ({len(skill_names)})\n"
+            skills_text += "\n".join(f"  [dim]•[/dim] {n}" for n in skill_names)
+        else:
+            skills_text = "[bold]SKILLS[/bold]\n  [dim](none)[/dim]"
+        self.query_one("#skills-section", Static).update(skills_text)
+        self.update_stats({})
+        self.clear_active_delegation()
+
+    def update_stats(self, stats: dict[str, Any]) -> None:
+        """Refresh token, context window, and session sections."""
+        prompt = int(stats.get("cumulative_prompt_tokens") or 0)
+        completion = int(stats.get("cumulative_completion_tokens") or 0)
+        cache_read = int(stats.get("cumulative_cache_read_tokens") or 0)
+        cache_write = int(stats.get("cumulative_cache_creation_tokens") or 0)
+        reasoning = int(stats.get("cumulative_reasoning_tokens") or 0)
+
+        tokens_lines = [
+            "[bold]TOKENS[/bold]",
+            f"  [dim]prompt[/dim]      {format_tokens(prompt)}",
+            f"  [dim]completion[/dim]  {format_tokens(completion)}",
+            f"  [dim]cache read[/dim]  {format_tokens(cache_read)}",
+            f"  [dim]cache write[/dim] {format_tokens(cache_write)}",
+        ]
+        if reasoning:
+            tokens_lines.append(f"  [dim]reasoning[/dim]  {format_tokens(reasoning)}")
+        self.query_one("#tokens-section", Static).update("\n".join(tokens_lines))
+
+        token_usage = int(stats.get("token_usage") or 0)
+        limit = int(stats.get("context_window_limit") or 0)
+        if limit > 0:
+            ratio = min(1.0, token_usage / limit)
+            filled = int(ratio * 15)
+            bar = "█" * filled + "░" * (15 - filled)
+            pct = int(ratio * 100)
+            color = "red" if ratio >= 0.8 else ("yellow" if ratio >= 0.6 else "green")
+            context_text = (
+                f"[bold]CONTEXT WINDOW[/bold]\n"
+                f"  [{color}]{bar}[/{color}]  {pct}%\n"
+                f"  [dim]({format_tokens(token_usage)} / {format_tokens(limit)})[/dim]"
+            )
+        else:
+            context_text = "[bold]CONTEXT WINDOW[/bold]\n  [dim](unknown)[/dim]"
+        self.query_one("#context-section", Static).update(context_text)
+
+        total = int(stats.get("cumulative_total_tokens") or 0)
+        cost = float(stats.get("cumulative_cost") or 0.0)
+        self.query_one("#session-section", Static).update(
+            f"[bold]SESSION[/bold]\n"
+            f"  [dim]total[/dim]  {format_tokens(total)} tokens\n"
+            f"  [dim]cost[/dim]   [green]${cost:.4f}[/green]"
         )
 
-    def add_tool_started(self, name: str, arguments: dict[str, Any]) -> None:
-        log = self.query_one("#activity-log", RichLog)
-        args_str = _fmt_args(arguments)
-        ts = datetime.now().strftime("%H:%M:%S")
-        log.write(f"[{ts}] [yellow]▶ tool:[/yellow] [bold]{name}[/bold]({args_str})")
+    def set_active_delegation(self, target: str, task: str) -> None:
+        preview = task[:45] + "…" if len(task) > 45 else task
+        self.query_one("#active-section", Static).update(
+            f"[bold]ACTIVE AGENTS[/bold]\n  [yellow]↳[/yellow] {target}  [dim]{preview!r}[/dim]"
+        )
 
-    def add_tool_completed(self, name: str, result: str) -> None:
-        log = self.query_one("#activity-log", RichLog)
-        self._tool_call_count += 1
-        preview = result[:60] + "…" if len(result) > 60 else result
-        log.write(f"         [dim]result:[/dim] {preview}")
-        self._refresh_stats()
-
-    def _refresh_stats(self) -> None:
-        self.query_one("#stats", Static).update(f"[dim]Tool calls: {self._tool_call_count}[/dim]")
-
-    def clear_feed(self) -> None:
-        self.query_one("#activity-log", RichLog).clear()
-        self._tool_call_count = 0
-        self._refresh_stats()
+    def clear_active_delegation(self) -> None:
+        self.query_one("#active-section", Static).update(
+            "[bold]ACTIVE AGENTS[/bold]\n  [dim](idle)[/dim]"
+        )
 
 
 class StatusBar(Static):
@@ -728,7 +767,7 @@ class SageTUIApp(App[None]):
     def compose(self) -> ComposeResult:
         with Horizontal(id="main-layout"):
             yield ChatPanel(id="chat-panel")
-            yield ActivityPanel(id="activity-panel")
+            yield ActivityPanel(id="activity-panel")  # noqa: F821 — replaced in Task 8
         yield StatusBar(id="status-bar")
 
     def on_mount(self) -> None:
@@ -811,16 +850,16 @@ class SageTUIApp(App[None]):
     # ── Message handlers ──────────────────────────────────────────────────────
 
     def on_tool_call_started(self, event: ToolCallStarted) -> None:
-        self.query_one(ActivityPanel).add_tool_started(event.tool_name, event.arguments)
+        self.query_one(ActivityPanel).add_tool_started(event.tool_name, event.arguments)  # noqa: F821
 
     def on_tool_call_completed(self, event: ToolCallCompleted) -> None:
-        self.query_one(ActivityPanel).add_tool_completed(event.tool_name, event.result)
+        self.query_one(ActivityPanel).add_tool_completed(event.tool_name, event.result)  # noqa: F821
 
     def on_turn_started(self, event: TurnStarted) -> None:
-        self.query_one(ActivityPanel).add_turn_started(event.turn, event.model)
+        self.query_one(ActivityPanel).add_turn_started(event.turn, event.model)  # noqa: F821
 
     def on_delegation_event_started(self, event: DelegationEventStarted) -> None:
-        self.query_one(ActivityPanel).add_delegation_started(event.target, event.task)
+        self.query_one(ActivityPanel).add_delegation_started(event.target, event.task)  # noqa: F821
 
     def on_stream_chunk_received(self, event: StreamChunkReceived) -> None:
         chat_log = self.query_one("#chat-log", RichLog)
@@ -904,7 +943,7 @@ class SageTUIApp(App[None]):
 
     def action_clear_chat(self) -> None:
         self.query_one("#chat-log", RichLog).clear()
-        self.query_one(ActivityPanel).clear_feed()
+        self.query_one(ActivityPanel).clear_feed()  # noqa: F821
         self.query_one(StatusBar).update_token_usage(0, None)
 
     def action_orchestrate(self) -> None:

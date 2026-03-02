@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 from textual.app import App, ComposeResult
 from textual.widgets import Collapsible, TextArea
 
@@ -10,6 +12,7 @@ from sage.cli.tui import (
     AssistantEntry,
     ChatPanel,
     HistoryInput,
+    StatusPanel,
     ThinkingEntry,
     ToolEntry,
     UserEntry,
@@ -236,3 +239,64 @@ async def test_chat_panel_clear() -> None:
         panel.clear_entries()
         await pilot.pause()
         assert len(app.query(UserEntry)) == 0
+
+
+def _make_mock_agent(
+    name: str = "test",
+    model: str = "gpt-4o",
+    skills: list | None = None,
+    subagents: dict | None = None,
+) -> MagicMock:
+    agent = MagicMock()
+    agent.name = name
+    agent.model = model
+    agent.skills = skills or []
+    agent.subagents = subagents or {}
+    return agent
+
+
+async def test_status_panel_initializes_without_crash() -> None:
+    class _App(App[None]):
+        def compose(self) -> ComposeResult:
+            yield StatusPanel(id="status")
+
+    app = _App()
+    async with app.run_test():
+        panel = app.query_one(StatusPanel)
+        panel.initialize(_make_mock_agent())
+
+
+async def test_status_panel_update_stats_without_crash() -> None:
+    class _App(App[None]):
+        def compose(self) -> ComposeResult:
+            yield StatusPanel(id="status")
+
+    app = _App()
+    async with app.run_test():
+        panel = app.query_one(StatusPanel)
+        panel.initialize(_make_mock_agent())
+        stats = {
+            "token_usage": 5000,
+            "context_window_limit": 100000,
+            "cumulative_prompt_tokens": 4000,
+            "cumulative_completion_tokens": 1000,
+            "cumulative_cache_read_tokens": 500,
+            "cumulative_cache_creation_tokens": 100,
+            "cumulative_reasoning_tokens": 0,
+            "cumulative_total_tokens": 5000,
+            "cumulative_cost": 0.012,
+        }
+        panel.update_stats(stats)
+
+
+async def test_status_panel_active_agents_delegation() -> None:
+    class _App(App[None]):
+        def compose(self) -> ComposeResult:
+            yield StatusPanel(id="status")
+
+    app = _App()
+    async with app.run_test():
+        panel = app.query_one(StatusPanel)
+        panel.initialize(_make_mock_agent())
+        panel.set_active_delegation("coder", "write a function")
+        panel.clear_active_delegation()
