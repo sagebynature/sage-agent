@@ -59,18 +59,32 @@ def _get_main_config(ctx: click.Context) -> MainConfig | None:
     return obj.get("main_config")
 
 
-def _resolve_primary_agent(main_config: MainConfig | None) -> str:
+def _resolve_primary_agent(
+    main_config: MainConfig | None,
+    config_file_path: Path | None = None,
+) -> str:
     """Resolve the primary agent config path from MainConfig.
 
     Uses ``agents_dir`` and ``primary`` to locate the agent file.
     Falls back to ``agents_dir/AGENTS.md`` when ``primary`` is not set.
+
+    When ``agents_dir`` is a relative path it is resolved relative to the
+    directory containing the main config file (*config_file_path*), not the
+    current working directory.  This lets users run ``sage tui`` from any
+    directory while their config lives in ``~/.config/sage/``.
     """
     if main_config is None:
         raise ConfigError(
             "No config.toml found. Provide --agent-config or create a config.toml with a 'primary' field."
         )
 
-    agents_dir = Path(main_config.agents_dir)
+    raw_agents_dir = Path(main_config.agents_dir)
+    if not raw_agents_dir.is_absolute() and config_file_path is not None:
+        # Anchor relative paths to the directory containing config.toml so
+        # the user can run `sage tui` from any working directory.
+        agents_dir = (config_file_path.parent / raw_agents_dir).resolve()
+    else:
+        agents_dir = raw_agents_dir
 
     if main_config.primary:
         # Try <agents_dir>/<primary>.md first
@@ -129,6 +143,7 @@ def cli(
 
     resolved = resolve_main_config_path(main_config_path)
     ctx.obj["main_config"] = load_main_config(resolved)
+    ctx.obj["main_config_path"] = resolved
     resolve_and_apply_env(ctx.obj["main_config"])
 
 
@@ -157,7 +172,7 @@ def agent_run(
     try:
         main_config = _get_main_config(ctx)
         if config_path is None:
-            config_path = _resolve_primary_agent(main_config)
+            config_path = _resolve_primary_agent(main_config, ctx.obj.get("main_config_path"))
         asyncio.run(_agent_run(config_path, user_input, use_stream, main_config, show_activity))
     except ConfigError as e:
         click.echo(f"Error: {e}", err=True)
@@ -364,7 +379,7 @@ def tui(ctx: click.Context, config_path: str | None) -> None:
 
     main_config = _get_main_config(ctx)
     if config_path is None:
-        config_path = _resolve_primary_agent(main_config)
+        config_path = _resolve_primary_agent(main_config, ctx.obj.get("main_config_path"))
     path = Path(config_path)
     if path.is_dir():
         path = path / "AGENTS.md"
