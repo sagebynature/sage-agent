@@ -1174,6 +1174,15 @@ class Agent:
         self._conversation_history.clear()
         self._loaded_skills.clear()
 
+    def reset_session(self) -> None:
+        """Full session reset: clear history, usage stats, and turn counters."""
+        self.clear_history()
+        self._cumulative_usage = Usage()
+        self._token_usage = 0
+        self._compacted_last_turn = False
+        self._turns_since_compaction = 0
+        self._current_turn = 0
+
     async def close(self) -> None:
         """Release resources held by the agent (MCP connections, memory DB, etc.).
 

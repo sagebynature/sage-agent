@@ -473,6 +473,35 @@ def test_wire_interactive_permissions_recurses_into_subagents() -> None:
     assert isinstance(sub_agent.tool_registry._permission_handler, InteractivePermissionHandler)
 
 
+def test_agent_reset_session_clears_usage() -> None:
+    from sage.models import Usage
+
+    mock_agent = MagicMock()
+    mock_agent._conversation_history = [MagicMock()]
+    mock_agent._cumulative_usage = Usage(
+        prompt_tokens=100, completion_tokens=50, total_tokens=150, cost=0.01
+    )
+    mock_agent._token_usage = 500
+    mock_agent._compacted_last_turn = True
+    mock_agent._turns_since_compaction = 5
+    mock_agent._current_turn = 3
+    mock_agent._loaded_skills = {"skill1"}
+
+    # Call the real method on a mock — we need to test the actual Agent method
+    from sage.agent import Agent
+
+    mock_agent.clear_history = lambda: Agent.clear_history(mock_agent)
+    Agent.reset_session(mock_agent)
+
+    assert mock_agent._conversation_history == []
+    assert mock_agent._cumulative_usage.total_tokens == 0
+    assert mock_agent._token_usage == 0
+    assert mock_agent._compacted_last_turn is False
+    assert mock_agent._turns_since_compaction == 0
+    assert mock_agent._current_turn == 0
+    assert mock_agent._loaded_skills == set()
+
+
 # ── Integration test ──────────────────────────────────────────────────────────
 
 
