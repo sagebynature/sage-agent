@@ -857,6 +857,7 @@ class SageTUIApp(App[None]):
         self._had_tool_calls_in_turn: bool = False
         self._log_handler: TUILogHandler | None = None
         self._sage_logger_level: int = logging.NOTSET
+        self._sage_logger_propagate: bool = True
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="main-layout"):
@@ -869,10 +870,15 @@ class SageTUIApp(App[None]):
         self._log_handler = TUILogHandler(self)
         self._log_handler.setLevel(logging.DEBUG)
         # Attach to the sage logger (not root) so only sage.* records appear.
-        # Ensure sage logger propagates at DEBUG so records reach our handler.
+        # Disable propagation while the TUI is running: logging.conf installs a
+        # StreamHandler on the root logger that writes to stderr, which Textual
+        # renders as raw terminal text (the "log flash"). With propagate=False,
+        # records are handled only by our TUILogHandler and never reach stderr.
         sage_logger = logging.getLogger("sage")
         self._sage_logger_level = sage_logger.level
+        self._sage_logger_propagate = sage_logger.propagate
         sage_logger.setLevel(logging.DEBUG)
+        sage_logger.propagate = False
         sage_logger.addHandler(self._log_handler)
 
         agent = Agent.from_config(self.config_path, central=self._central)
@@ -895,6 +901,7 @@ class SageTUIApp(App[None]):
             sage_logger = logging.getLogger("sage")
             sage_logger.removeHandler(self._log_handler)
             sage_logger.setLevel(self._sage_logger_level)
+            sage_logger.propagate = self._sage_logger_propagate
         if self._agent is not None:
             await self._agent.close()
 
