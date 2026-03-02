@@ -28,7 +28,7 @@ from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widget import Widget
-from textual.widgets import Button, Collapsible, Input, Label, RichLog, Static
+from textual.widgets import Button, Collapsible, Input, Label, RichLog, Static, TextArea
 from rich.text import Text
 
 from sage.agent import Agent
@@ -313,6 +313,58 @@ class ToolEntry(Widget):
         self.query_one("#tool-result", Static).update(
             f"[dim]result:[/dim]  [{color}]{preview}[/{color}]"
         )
+
+
+class AssistantEntry(Widget):
+    """Agent response in a read-only TextArea — supports mouse text selection and streaming."""
+
+    DEFAULT_CSS = """
+    AssistantEntry {
+        height: auto;
+        padding: 0 1;
+        margin-bottom: 1;
+    }
+    AssistantEntry .assistant-label {
+        color: $success;
+        text-style: bold;
+        height: 1;
+    }
+    AssistantEntry TextArea {
+        height: auto;
+        min-height: 1;
+        border: none;
+        padding: 0;
+        background: transparent;
+    }
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._content = ""
+
+    def compose(self) -> ComposeResult:
+        yield Static("[bold green]Agent[/bold green]  [dim]╷[/dim]", classes="assistant-label")
+        yield TextArea("", read_only=True, show_line_numbers=False, id="response-area")
+
+    def append_chunk(self, chunk: str) -> None:
+        """Append a streaming text chunk to the response."""
+        self._content += chunk
+        ta = self.query_one("#response-area", TextArea)
+        end = ta.document.end
+        ta.insert(chunk, location=end)
+        self._sync_height()
+
+    def set_text(self, text: str) -> None:
+        """Replace full text (non-streaming mode)."""
+        self._content = text
+        ta = self.query_one("#response-area", TextArea)
+        ta.load_text(text)
+        self._sync_height()
+
+    def _sync_height(self) -> None:
+        """Resize TextArea to fit content without internal scrollbar."""
+        lines = max(1, self._content.count("\n") + 1)
+        self.query_one("#response-area", TextArea).styles.height = lines
 
 
 # ── Widgets ───────────────────────────────────────────────────────────────────

@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 from textual.app import App, ComposeResult
-from textual.widgets import Collapsible
+from textual.widgets import Collapsible, TextArea
 
-from sage.cli.tui import HistoryInput, ThinkingEntry, ToolEntry, UserEntry
+from sage.cli.tui import AssistantEntry, HistoryInput, ThinkingEntry, ToolEntry, UserEntry
 
 
 class _HistoryApp(App[None]):
@@ -132,3 +132,41 @@ async def test_tool_entry_set_error_marks_error() -> None:
         entry = app.query_one(ToolEntry)
         entry.set_result("command not found", error=True)
         assert entry._error is True
+
+
+async def test_assistant_entry_text_area_is_read_only() -> None:
+    class _App(App[None]):
+        def compose(self) -> ComposeResult:
+            yield AssistantEntry()
+
+    app = _App()
+    async with app.run_test():
+        ta = app.query_one(TextArea)
+        assert ta.read_only is True
+
+
+async def test_assistant_entry_append_chunk() -> None:
+    class _App(App[None]):
+        def compose(self) -> ComposeResult:
+            yield AssistantEntry()
+
+    app = _App()
+    async with app.run_test():
+        entry = app.query_one(AssistantEntry)
+        entry.append_chunk("hello ")
+        entry.append_chunk("world")
+        ta = app.query_one(TextArea)
+        assert "hello world" in ta.text
+
+
+async def test_assistant_entry_set_text() -> None:
+    class _App(App[None]):
+        def compose(self) -> ComposeResult:
+            yield AssistantEntry()
+
+    app = _App()
+    async with app.run_test():
+        entry = app.query_one(AssistantEntry)
+        entry.set_text("full response here")
+        ta = app.query_one(TextArea)
+        assert "full response here" in ta.text
