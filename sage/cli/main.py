@@ -70,7 +70,7 @@ def _resolve_primary_agent(
 
     When ``agents_dir`` is a relative path it is resolved relative to the
     directory containing the main config file (*config_file_path*), not the
-    current working directory.  This lets users run ``sage tui`` from any
+    current working directory.  This lets users run sage commands from any
     directory while their config lives in ``~/.config/sage/``.
     """
     if main_config is None:
@@ -357,34 +357,6 @@ Be concise and accurate in your responses.
 
     click.echo(f"Created {md_path}")
     click.echo("\nRun with: sage agent run AGENTS.md -i 'Hello!'")
-
-
-@cli.command()
-@click.option(
-    "--agent-config",
-    "-c",
-    "config_path",
-    required=False,
-    default=None,
-    type=click.Path(exists=True),
-    help="Path to AGENTS.md or directory containing AGENTS.md (inferred from config.toml if omitted)",
-)
-@click.pass_context
-def tui(ctx: click.Context, config_path: str | None) -> None:
-    """Launch the interactive TUI for an agent config.
-
-    If --agent-config is omitted, the primary agent is inferred from config.toml.
-    """
-    from sage.cli.tui import SageTUIApp
-
-    main_config = _get_main_config(ctx)
-    if config_path is None:
-        config_path = _resolve_primary_agent(main_config, ctx.obj.get("main_config_path"))
-    path = Path(config_path)
-    if path.is_dir():
-        path = path / "AGENTS.md"
-    app = SageTUIApp(config_path=path, central=main_config)
-    app.run()
 
 
 # ---------------------------------------------------------------------------
