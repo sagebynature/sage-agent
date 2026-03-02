@@ -3,8 +3,9 @@
 Provides the ``SageTUIApp`` class launched by ``sage tui --config=<path>``.
 The app offers a split-screen layout:
 
-- **Chat panel** (left, 60 %): conversation history and message input.
-- **Activity panel** (right, 40 %): live tool-call feed with timestamps.
+- **Chat panel** (left, 65 %): conversation history with inline collapsible tool calls and message input.
+- **Status panel** (right, 35 %): agent info, skills, token usage, context window, and active agents.
+- **Log panel** (bottom, hidden): togglable log viewer (ctrl+l).
 - **Status bar** (bottom): agent name, model, current state, keyboard hints.
 
 Tool-call and LLM-turn visibility is achieved by subscribing to the typed
