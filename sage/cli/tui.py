@@ -28,7 +28,6 @@ from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widget import Widget
 from textual.widgets import Button, Collapsible, Input, Label, RichLog, Static, TextArea
-from rich.text import Text
 
 from sage.agent import Agent
 from sage.orchestrator.parallel import Orchestrator
@@ -822,41 +821,62 @@ class SageTUIApp(App[None]):
 
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit", priority=True),
-        Binding("ctrl+l", "clear_chat", "Clear"),
+        Binding("ctrl+l", "toggle_logs", "Logs"),
+        Binding("ctrl+shift+l", "clear_chat", "Clear"),
+        Binding("ctrl+L", "clear_chat", "Clear", show=False),
         Binding("ctrl+o", "orchestrate", "Orchestrate"),
         Binding("ctrl+s", "toggle_stream", "Toggle stream"),
     ]
 
     TITLE = "Sage TUI"
 
-    def __init__(self, config_path: Path, central: MainConfig | None = None) -> None:
+    def __init__(self, config_path: Path, central: "MainConfig | None" = None) -> None:
         super().__init__()
         self.config_path = config_path
         self._central = central
         self._agent: Agent | None = None
         self._streaming_mode: bool = True
-        self._stream_buffer: str = ""
+        self._current_response: AssistantEntry | None = None
+        self._pending_tools: dict[str, list[ToolEntry]] = {}
+        self._log_handler: TUILogHandler | None = None
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="main-layout"):
             yield ChatPanel(id="chat-panel")
-            yield ActivityPanel(id="activity-panel")  # noqa: F821 — replaced in Task 8
+            yield StatusPanel(id="status-panel")
+        yield LogPanel(id="log-panel")
         yield StatusBar(id="status-bar")
 
     def on_mount(self) -> None:
+        self._log_handler = TUILogHandler(self)
+        self._log_handler.setLevel(logging.DEBUG)
+        logging.getLogger().addHandler(self._log_handler)
+
         agent = Agent.from_config(self.config_path, central=self._central)
         self._agent = agent
         instrument_agent(agent, self)
-        has_subs = bool(agent.subagents)
+
+        self.query_one(StatusPanel).initialize(agent)
         self.query_one(StatusBar).set_state(
-            "Ready", agent.name, agent.model, has_subs, streaming_mode=self._streaming_mode
+            "Ready",
+            agent.name,
+            agent.model,
+            has_subagents=bool(agent.subagents),
+            streaming_mode=self._streaming_mode,
         )
         self.sub_title = f"{agent.name} ({agent.model})"
-        self.query_one("#chat-input", Input).focus()
+        self.query_one("#chat-input", HistoryInput).focus()
 
     async def on_unmount(self) -> None:
+        if self._log_handler is not None:
+            logging.getLogger().removeHandler(self._log_handler)
         if self._agent is not None:
             await self._agent.close()
+
+    # ── Log record handler ────────────────────────────────────────────────────
+
+    def on__log_record(self, event: _LogRecord) -> None:
+        self.query_one(LogPanel).write_record(event.record)
 
     # ── Input handling ────────────────────────────────────────────────────────
 
@@ -865,34 +885,35 @@ class SageTUIApp(App[None]):
         query = event.value.strip()
         if not query or self._agent is None:
             return
-        input_widget = self.query_one("#chat-input", Input)
+        input_widget = self.query_one("#chat-input", HistoryInput)
+        input_widget.append_history(query)
         input_widget.clear()
         input_widget.disabled = True
 
-        chat_log = self.query_one("#chat-log", RichLog)
-        chat_log.write(f"[bold cyan]You:[/bold cyan] {query}")
+        chat = self.query_one(ChatPanel)
+        chat.append_user_message(query)
+        chat.start_turn()
 
         agent = self._agent
+        self._pending_tools.clear()
+        self._current_response = None
 
         if self._streaming_mode:
-            chat_log.write("[bold green]Agent:[/bold green] ", shrink=False)
             self.query_one(StatusBar).set_state(
                 "Streaming…",
                 agent.name,
                 agent.model,
                 bool(agent.subagents),
-                streaming_mode=self._streaming_mode,
+                streaming_mode=True,
             )
-            self._stream_buffer = ""
             self.run_worker(self._agent_stream(query), exclusive=True, exit_on_error=False)
         else:
-            chat_log.write("[dim yellow]Agent: ● Thinking…[/dim yellow]")
             self.query_one(StatusBar).set_state(
                 "Thinking…",
                 agent.name,
                 agent.model,
                 bool(agent.subagents),
-                streaming_mode=self._streaming_mode,
+                streaming_mode=False,
             )
             self.run_worker(self._agent_run(query), exclusive=True, exit_on_error=False)
 
@@ -913,8 +934,6 @@ class SageTUIApp(App[None]):
             full_text = ""
             async for chunk in self._agent.stream(query):
                 full_text += chunk
-                # StreamChunkReceived is posted by the ON_LLM_STREAM_DELTA hook
-                # registered in instrument_agent — no direct posting here.
             self.post_message(StreamFinished(full_text))
         except Exception as exc:
             logger.exception("Agent stream failed")
@@ -923,86 +942,50 @@ class SageTUIApp(App[None]):
     # ── Message handlers ──────────────────────────────────────────────────────
 
     def on_tool_call_started(self, event: ToolCallStarted) -> None:
-        self.query_one(ActivityPanel).add_tool_started(event.tool_name, event.arguments)  # noqa: F821
+        chat = self.query_one(ChatPanel)
+        entry = chat.add_tool_call(event.tool_name, event.arguments)
+        self._pending_tools.setdefault(event.tool_name, []).append(entry)
 
     def on_tool_call_completed(self, event: ToolCallCompleted) -> None:
-        self.query_one(ActivityPanel).add_tool_completed(event.tool_name, event.result)  # noqa: F821
+        queue = self._pending_tools.get(event.tool_name)
+        if queue:
+            entry = queue.pop(0)
+            entry.set_result(event.result)
 
     def on_turn_started(self, event: TurnStarted) -> None:
-        self.query_one(ActivityPanel).add_turn_started(event.turn, event.model)  # noqa: F821
+        if self._agent:
+            self.query_one(StatusBar).set_state(
+                "Streaming…" if self._streaming_mode else "Thinking…",
+                self._agent.name,
+                self._agent.model,
+                bool(self._agent.subagents),
+                streaming_mode=self._streaming_mode,
+            )
 
     def on_delegation_event_started(self, event: DelegationEventStarted) -> None:
-        self.query_one(ActivityPanel).add_delegation_started(event.target, event.task)  # noqa: F821
+        self.query_one(StatusPanel).set_active_delegation(event.target, event.task)
 
     def on_stream_chunk_received(self, event: StreamChunkReceived) -> None:
-        chat_log = self.query_one("#chat-log", RichLog)
-        self._stream_buffer += event.text
-        # Flush completed lines; keep partial line in buffer
-        while "\n" in self._stream_buffer:
-            line, self._stream_buffer = self._stream_buffer.split("\n", 1)
-            chat_log.write(line, scroll_end=True)
+        if self._current_response is None:
+            self._current_response = self.query_one(ChatPanel).start_response()
+        self._current_response.append_chunk(event.text)
 
     def on_stream_finished(self, event: StreamFinished) -> None:
-        chat_log = self.query_one("#chat-log", RichLog)
-        # Flush any remaining partial line
-        if self._stream_buffer:
-            chat_log.write(self._stream_buffer, scroll_end=True)
-        chat_log.write("")  # blank separator
-        self._stream_buffer = ""
-        self._re_enable_input()
-        if self._agent:
-            self.query_one(StatusBar).set_state(
-                "Ready",
-                self._agent.name,
-                self._agent.model,
-                bool(self._agent.subagents),
-                streaming_mode=self._streaming_mode,
-            )
-            stats = self._agent.get_usage_stats()
-            status_bar = self.query_one(StatusBar)
-            status_bar.update_token_usage(
-                stats["token_usage"],  # type: ignore[arg-type]
-                stats["context_window_limit"],  # type: ignore[arg-type]
-            )
-            status_bar.update_session_cost(stats.get("cumulative_cost", 0.0))  # type: ignore[arg-type]
-            if stats.get("compacted_this_turn"):
-                chat_log.write(
-                    Text("⚡ Context compacted to reduce token usage", style="dim italic"),
-                    scroll_end=True,
-                )
+        if self._current_response is None:
+            entry = self.query_one(ChatPanel).start_response()
+            entry.set_text(event.full_text)
+        self._current_response = None
+        self._finish_turn()
 
     def on_agent_response_ready(self, event: AgentResponseReady) -> None:
-        chat_log = self.query_one("#chat-log", RichLog)
-        chat_log.write(f"[bold green]Agent:[/bold green] {event.text}")
-        chat_log.write("")
-        self._re_enable_input()
-        if self._agent:
-            self.query_one(StatusBar).set_state(
-                "Ready",
-                self._agent.name,
-                self._agent.model,
-                bool(self._agent.subagents),
-                streaming_mode=self._streaming_mode,
-            )
-            stats = self._agent.get_usage_stats()
-            status_bar = self.query_one(StatusBar)
-            status_bar.update_token_usage(
-                stats["token_usage"],  # type: ignore[arg-type]
-                stats["context_window_limit"],  # type: ignore[arg-type]
-            )
-            status_bar.update_session_cost(stats.get("cumulative_cost", 0.0))  # type: ignore[arg-type]
-            if stats.get("compacted_this_turn"):
-                chat_log.write(
-                    Text("⚡ Context compacted to reduce token usage", style="dim italic"),
-                    scroll_end=True,
-                )
+        entry = self.query_one(ChatPanel).start_response()
+        entry.set_text(event.text)
+        self._finish_turn()
 
     def on_agent_error(self, event: AgentError) -> None:
-        chat_log = self.query_one("#chat-log", RichLog)
-        chat_log.write(f"[bold red]Error:[/bold red] {event.error}")
-        chat_log.write("")
-        self._stream_buffer = ""
-        self._re_enable_input()
+        entry = self.query_one(ChatPanel).start_response()
+        entry.set_text(f"[Error] {event.error}")
+        self._current_response = None
         if self._agent:
             self.query_one(StatusBar).set_state(
                 "Error",
@@ -1011,13 +994,15 @@ class SageTUIApp(App[None]):
                 bool(self._agent.subagents),
                 streaming_mode=self._streaming_mode,
             )
+        self._re_enable_input()
 
     # ── Actions ───────────────────────────────────────────────────────────────
 
+    def action_toggle_logs(self) -> None:
+        self.query_one(LogPanel).toggle_visibility()
+
     def action_clear_chat(self) -> None:
-        self.query_one("#chat-log", RichLog).clear()
-        self.query_one(ActivityPanel).clear_feed()  # noqa: F821
-        self.query_one(StatusBar).update_token_usage(0, None)
+        self.query_one(ChatPanel).clear_entries()
 
     def action_orchestrate(self) -> None:
         if self._agent and self._agent.subagents:
@@ -1026,8 +1011,7 @@ class SageTUIApp(App[None]):
     def action_toggle_stream(self) -> None:
         self._streaming_mode = not self._streaming_mode
         mode_label = "streaming" if self._streaming_mode else "batch"
-        chat_log = self.query_one("#chat-log", RichLog)
-        chat_log.write(f"[dim]⚙ Switched to {mode_label} mode[/dim]")
+        self.query_one(ChatPanel).append_user_message(f"[dim]⚙ Switched to {mode_label} mode[/dim]")
         if self._agent:
             self.query_one(StatusBar).set_state(
                 "Ready",
@@ -1039,7 +1023,30 @@ class SageTUIApp(App[None]):
 
     # ── Private helpers ───────────────────────────────────────────────────────
 
+    def _finish_turn(self) -> None:
+        self.query_one(StatusPanel).clear_active_delegation()
+        if self._agent:
+            stats = self._agent.get_usage_stats()
+            self.query_one(StatusPanel).update_stats(stats)
+            self.query_one(StatusBar).set_state(
+                "Ready",
+                self._agent.name,
+                self._agent.model,
+                bool(self._agent.subagents),
+                streaming_mode=self._streaming_mode,
+            )
+            token_usage = stats.get("token_usage") or 0
+            limit = stats.get("context_window_limit")
+            self.query_one(StatusBar).update_token_usage(
+                int(token_usage), int(limit) if limit else None
+            )
+            cost = stats.get("cumulative_cost") or 0.0
+            self.query_one(StatusBar).update_session_cost(float(cost))
+            if stats.get("compacted_this_turn"):
+                self.query_one(ChatPanel).append_user_message("[dim]⚡ Context compacted[/dim]")
+        self._re_enable_input()
+
     def _re_enable_input(self) -> None:
-        input_widget = self.query_one("#chat-input", Input)
-        input_widget.disabled = False
-        input_widget.focus()
+        inp = self.query_one("#chat-input", HistoryInput)
+        inp.disabled = False
+        inp.focus()

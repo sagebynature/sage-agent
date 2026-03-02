@@ -4,7 +4,8 @@
 from __future__ import annotations
 
 import logging
-from unittest.mock import MagicMock
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from textual.app import App, ComposeResult
 from textual.widgets import Collapsible, TextArea
@@ -344,3 +345,29 @@ def test_tui_log_handler_emit_calls_post_message() -> None:
     )
     handler.emit(record)
     mock_app.post_message.assert_called_once()
+
+
+# ── Integration test ──────────────────────────────────────────────────────────
+
+
+def _make_config_path(tmp_path: Path) -> Path:
+    cfg = tmp_path / "AGENTS.md"
+    cfg.write_text("---\nname: test-agent\nmodel: gpt-4o\n---\nA helpful assistant.\n")
+    return cfg
+
+
+async def test_sage_tui_app_mounts_and_quits(tmp_path: Path) -> None:
+    from sage.cli.tui import SageTUIApp
+
+    cfg = _make_config_path(tmp_path)
+    mock_agent = _make_mock_agent()
+    mock_agent.close = AsyncMock()
+
+    with patch("sage.cli.tui.Agent.from_config", return_value=mock_agent):
+        app = SageTUIApp(config_path=cfg)
+        async with app.run_test() as pilot:
+            assert app.query_one(ChatPanel) is not None
+            assert app.query_one(StatusPanel) is not None
+            assert app.query_one(LogPanel) is not None
+            await pilot.press("ctrl+q")
+        mock_agent.close.assert_awaited_once()
