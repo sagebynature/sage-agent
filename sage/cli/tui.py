@@ -1167,9 +1167,6 @@ class SageTUIApp(App[None]):
         chat.append_user_message(query)
         chat.start_turn()
 
-        if not self._session_title:
-            self._schedule_title_generation(query)
-
         agent = self._agent
         self._pending_tools.clear()
         self._current_response = None
@@ -1351,7 +1348,9 @@ class SageTUIApp(App[None]):
             self.query_one(StatusBar).update_session_cost(float(cost))
             if stats.get("compacted_this_turn"):
                 self.query_one(ChatPanel).append_user_message("[dim]⚡ Context compacted[/dim]")
-                self._schedule_title_generation("")  # empty triggers re-derive from history
+                self._schedule_title_generation("")  # re-derive from history
+            elif not self._session_title:
+                self._schedule_title_generation("")  # generate from first user message
         self._re_enable_input()
 
     def _re_enable_input(self) -> None:
