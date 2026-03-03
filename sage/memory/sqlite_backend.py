@@ -129,10 +129,13 @@ class SQLiteMemory:
             self._vec_available = False
 
     async def close(self) -> None:
-        """Close the database connection."""
+        """Close the database connection and wait for the worker thread."""
         if self._db is not None:
+            thread = getattr(self._db, "_thread", None)
             logger.debug("Closing memory database connection")
             await self._db.close()
+            if thread is not None:
+                thread.join(timeout=2.0)
             self._db = None
 
     # ------------------------------------------------------------------

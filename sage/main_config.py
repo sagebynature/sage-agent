@@ -35,6 +35,7 @@ from sage.config import (
     MemoryConfig,
     ModelParams,
     Permission,
+    PlanningConfig,
 )
 from sage.exceptions import ConfigError
 
@@ -54,6 +55,7 @@ class ConfigOverrides(BaseModel):
     context: ContextConfig | None = None
     extensions: list[str] | None = None
     mcp_servers: dict[str, MCPServerConfig] | None = None
+    planning: PlanningConfig | None = None
 
 
 class AgentOverrides(ConfigOverrides):

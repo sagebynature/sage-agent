@@ -22,6 +22,7 @@ class HookEvent(str, enum.Enum):
     ON_LLM_STREAM_DELTA = "on_llm_stream_delta"
     ON_COMPACTION = "on_compaction"
     BACKGROUND_TASK_COMPLETED = "background_task_completed"
+    ON_PLAN_CREATED = "on_plan_created"
 
 
 @runtime_checkable

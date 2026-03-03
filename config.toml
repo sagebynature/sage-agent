@@ -73,6 +73,26 @@ reserve_tokens = 4096         # tokens reserved for model output
 prune_tool_outputs = true     # truncate large tool outputs
 tool_output_max_chars = 5000  # max chars per tool output before truncation
 
+# ── Planning Pipeline ─────────────────────────────────────────────────────────
+# Optional plan creation, analysis, and iterative review.
+# When enabled, agents gain plan_create / plan_status / plan_update / plan_review
+# tools. Plans are persisted as JSON and can be reviewed iteratively by an LLM.
+#
+# planning.analysis  — hook that fires ON_PLAN_CREATED to analyze new plans.
+# planning.review    — iterative LLM-driven review loop (critique → revise → re-check).
+#
+# Both sub-sections are opt-in. Omit or set enabled = false to disable.
+
+# Uncomment to enable planning globally (all agents):
+[defaults.planning.analysis]
+enabled = true
+# prompt = "Analyze this plan for completeness and feasibility."
+
+[defaults.planning.review]
+enabled = true
+max_iterations = 3      # Maximum review-revise cycles (default: 3)
+# prompt = "Review this plan. Flag gaps, contradictions, or missing steps."
+
 # ── MCP Servers ───────────────────────────────────────────────────────────────
 # Model Context Protocol server connections.
 # Each server uses either stdio (command) or sse (url) transport.
@@ -122,6 +142,19 @@ compaction_threshold = 50
 
 # skills = ["git-master", "terraform"]  # Optional: limit this agent to specific skills
 
+# ── Planning (per-agent) ─────────────────────────────────────────────────────
+# Enable planning for the researcher with a custom analysis prompt.
+# The review loop uses up to 4 iterations with a domain-specific rubric.
+
+[agents.researcher.planning.analysis]
+enabled = true
+prompt = "Evaluate whether the plan covers all research angles and cites sources."
+
+[agents.researcher.planning.review]
+enabled = true
+max_iterations = 4
+prompt = "Review the research plan. Check for: missing perspectives, unsupported claims, and logical gaps."
+
 [agents.summarizer]
 model = "azure_ai/gpt-4o"
 max_turns = 5
@@ -129,3 +162,8 @@ max_turns = 5
 [agents.summarizer.model_params]
 temperature = 0.2
 max_tokens = 2048
+
+# Planning disabled for summarizer (default) — uncomment to enable:
+# [agents.summarizer.planning.analysis]
+# enabled = true
+# prompt = "Check that the summary plan captures all key points from the source material."

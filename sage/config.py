@@ -95,6 +95,28 @@ class SessionConfig(BaseModel):
     enabled: bool = False
 
 
+class PlanAnalysisConfig(BaseModel):
+    """Configuration for the optional plan analysis hook."""
+
+    enabled: bool = False
+    prompt: str | None = None
+
+
+class PlanReviewConfig(BaseModel):
+    """Configuration for the optional plan review system."""
+
+    enabled: bool = False
+    max_iterations: int = 3
+    prompt: str | None = None
+
+
+class PlanningConfig(BaseModel):
+    """Configuration for the planning pipeline."""
+
+    analysis: PlanAnalysisConfig | None = None
+    review: PlanReviewConfig | None = None
+
+
 class MemoryConfig(BaseModel):
     """Configuration for the agent memory backend."""
 
@@ -266,6 +288,7 @@ class AgentConfig(BaseModel):
     follow_through: FollowThroughConfig | None = None
     session: SessionConfig | None = None
     identity: IdentityConfig | None = None
+    planning: PlanningConfig | None = None
     allowed_tools: list[str] | None = None
     blocked_tools: list[str] | None = None
 
