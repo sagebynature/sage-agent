@@ -135,6 +135,13 @@ class ModelParams(BaseModel):
         return self.model_dump(exclude_none=True)
 
 
+class CategoryConfig(BaseModel):
+    """Configuration for category-based model routing during delegation."""
+
+    model: str
+    model_params: ModelParams = Field(default_factory=ModelParams)
+
+
 # Type aliases for permission configuration
 PermissionAction = Literal["allow", "deny", "ask"]
 PermissionValue = Union[PermissionAction, Dict[str, PermissionAction]]
@@ -243,6 +250,8 @@ class AgentConfig(BaseModel):
     follow_through: FollowThroughConfig | None = None
     session: SessionConfig | None = None
     identity: IdentityConfig | None = None
+    allowed_tools: list[str] | None = None
+    blocked_tools: list[str] | None = None
 
     @field_validator("subagents", mode="before")
     @classmethod

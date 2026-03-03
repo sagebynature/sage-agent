@@ -73,6 +73,8 @@ class ToolRegistry:
         self._permission_handler: Any | None = None
         self._default_timeout: float | None = default_timeout
         self._ask_policy: Literal["allow", "deny", "error"] = "error"
+        self._allowed_tools: set[str] | None = None
+        self._blocked_tools: set[str] = set()
 
     def register(self, fn_or_instance: Callable[..., Any] | ToolBase) -> None:
         """Register a ``@tool``-decorated function or a ``ToolBase`` instance."""
@@ -120,9 +122,26 @@ class ToolRegistry:
         """
         self._ask_policy = policy
 
+    def set_restrictions(
+        self, allowed: list[str] | None = None, blocked: list[str] | None = None
+    ) -> None:
+        """Set tool allowlist/blocklist restrictions for this registry.
+
+        When *allowed* is set, only tools in the allowlist are visible/executable.
+        When *blocked* is set, those tools are hidden/blocked regardless.
+        Blocklist takes precedence over allowlist.
+        """
+        self._allowed_tools = set(allowed) if allowed is not None else None
+        self._blocked_tools = set(blocked) if blocked is not None else set()
+
     def get_schemas(self) -> list[ToolSchema]:
-        """Return schemas for all registered tools."""
-        return list(self._schemas.values())
+        """Return schemas for all registered tools, applying restrictions."""
+        schemas = list(self._schemas.values())
+        if self._allowed_tools is not None:
+            schemas = [s for s in schemas if s.name in self._allowed_tools]
+        if self._blocked_tools:
+            schemas = [s for s in schemas if s.name not in self._blocked_tools]
+        return schemas
 
     async def execute(self, name: str, arguments: dict[str, Any]) -> str:
         """Dispatch a tool call by name and return the stringified result.
@@ -135,6 +154,14 @@ class ToolRegistry:
         mcp_client = self._mcp_tools.get(name)
         if fn is None and mcp_client is None:
             raise ToolError(f"Unknown tool: {name!r}")
+
+        # Tool restriction check (allowlist/blocklist).
+        if self._allowed_tools is not None and name not in self._allowed_tools:
+            raise SagePermissionError(
+                f"Tool {name!r} is not in the allowed tools list for this agent."
+            )
+        if name in self._blocked_tools:
+            raise SagePermissionError(f"Tool {name!r} is explicitly blocked for this agent.")
 
         # Permission check.
         if self._permission_handler is not None:

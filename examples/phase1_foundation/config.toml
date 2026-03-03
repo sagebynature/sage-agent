@@ -1,0 +1,12 @@
+[defaults]
+model = "gpt-4o"
+
+[categories.quick]
+model = "gpt-4o-mini"
+
+[categories.deep]
+model = "anthropic/claude-sonnet-4-20250514"
+
+[categories.deep.model_params]
+temperature = 0.2
+max_tokens = 4096

@@ -29,6 +29,7 @@ else:
 from pydantic import BaseModel, ConfigDict, Field
 
 from sage.config import (
+    CategoryConfig,
     ContextConfig,
     MCPServerConfig,
     MemoryConfig,
@@ -73,6 +74,7 @@ class MainConfig(BaseModel):
     env: dict[str, str] = Field(default_factory=dict)
     defaults: ConfigOverrides = Field(default_factory=ConfigOverrides)
     agents: dict[str, AgentOverrides] = Field(default_factory=dict)
+    categories: dict[str, CategoryConfig] = Field(default_factory=dict)
 
 
 def resolve_main_config_path(cli_path: str | None = None) -> Path | None:

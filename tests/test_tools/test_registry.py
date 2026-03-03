@@ -530,3 +530,66 @@ class TestToolTimeout:
             return x
 
         assert not hasattr(my_tool, "__tool_timeout__")
+
+
+class TestToolRestrictions:
+    """Tests for allowed_tools / blocked_tools filtering."""
+
+    def test_blocked_tools_hidden_from_schemas(self) -> None:
+        registry = ToolRegistry()
+        registry.register(add)
+        registry.register(async_greet)
+        registry.set_restrictions(blocked=["add"])
+        schemas = registry.get_schemas()
+        names = {s.name for s in schemas}
+        assert "add" not in names
+        assert "async_greet" in names
+
+    def test_allowed_tools_filters_schemas(self) -> None:
+        registry = ToolRegistry()
+        registry.register(add)
+        registry.register(async_greet)
+        registry.set_restrictions(allowed=["add"])
+        schemas = registry.get_schemas()
+        names = {s.name for s in schemas}
+        assert names == {"add"}
+
+    async def test_blocked_tool_raises_on_execute(self) -> None:
+        from sage.exceptions import PermissionError as SagePermissionError
+
+        registry = ToolRegistry()
+        registry.register(add)
+        registry.set_restrictions(blocked=["add"])
+        with pytest.raises(SagePermissionError, match="blocked"):
+            await registry.execute("add", {"a": 1, "b": 2})
+
+    async def test_allowed_tool_not_in_list_raises(self) -> None:
+        from sage.exceptions import PermissionError as SagePermissionError
+
+        registry = ToolRegistry()
+        registry.register(add)
+        registry.register(async_greet)
+        registry.set_restrictions(allowed=["async_greet"])
+        with pytest.raises(SagePermissionError, match="not in the allowed"):
+            await registry.execute("add", {"a": 1, "b": 2})
+
+    async def test_allowed_tool_in_list_executes(self) -> None:
+        registry = ToolRegistry()
+        registry.register(add)
+        registry.set_restrictions(allowed=["add"])
+        result = await registry.execute("add", {"a": 1, "b": 2})
+        assert result == "3"
+
+    def test_no_restrictions_returns_all(self) -> None:
+        registry = ToolRegistry()
+        registry.register(add)
+        registry.register(async_greet)
+        schemas = registry.get_schemas()
+        assert len(schemas) == 2
+
+    def test_blocked_takes_precedence_over_allowed(self) -> None:
+        registry = ToolRegistry()
+        registry.register(add)
+        registry.set_restrictions(allowed=["add"], blocked=["add"])
+        schemas = registry.get_schemas()
+        assert len(schemas) == 0

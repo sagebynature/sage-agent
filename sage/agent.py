@@ -165,6 +165,11 @@ class Agent:
         self._current_turn: int = 0
         self._identity_prompt: str = ""
         self._last_compaction_strategy: str | None = None
+        # Session manager for stateful delegations.
+        from sage.coordination.session import SessionManager
+
+        self._session_mgr = SessionManager()
+        self._main_config: MainConfig | None = None
 
         # Default to LiteLLM provider if none supplied.
         self.provider: ProviderProtocol = provider or LiteLLMProvider(model, **(model_params or {}))  # type: ignore[assignment]
@@ -200,7 +205,9 @@ class Agent:
         config = load_config(str(resolved), central=central)
         resolved_dir = resolve_skills_dir(central.skills_dir if central else None)
         global_skills = load_skills_from_directory(resolved_dir) if resolved_dir else []
-        return cls._from_agent_config(config, resolved.parent, global_skills=global_skills)
+        agent = cls._from_agent_config(config, resolved.parent, global_skills=global_skills)
+        agent._main_config = central
+        return agent
 
     @classmethod
     def _from_agent_config(
@@ -336,6 +343,13 @@ class Agent:
             tool_timeout=config.tool_timeout,
             hook_registry=hook_registry,
         )
+
+        # Apply tool restrictions from config.
+        if config.allowed_tools is not None or config.blocked_tools is not None:
+            agent.tool_registry.set_restrictions(
+                allowed=config.allowed_tools,
+                blocked=config.blocked_tools,
+            )
 
         if config.permission is not None:
             agent.tool_registry.register_from_permissions(
@@ -658,7 +672,14 @@ class Agent:
             "cumulative_cost": cu.cost,
         }
 
-    async def delegate(self, subagent_name: str, task: str) -> str:
+    async def delegate(
+        self,
+        subagent_name: str,
+        task: str,
+        *,
+        session_id: str | None = None,
+        category: str | None = None,
+    ) -> str:
         """Delegate a task to a named subagent.
 
         Raises:
@@ -679,6 +700,30 @@ class Agent:
         )
         await self._emit(HookEvent.ON_DELEGATION, {"target": subagent_name, "input": task})
         subagent = self.subagents[subagent_name]
+        # Restore conversation history from session if resuming.
+        if session_id:
+            session = self._session_mgr.get(session_id)
+            if session:
+                subagent._conversation_history = [m for m in session.messages if m.role != "system"]
+
+        # Apply category-based model routing.
+        if category:
+            main_config = getattr(self, "_main_config", None)
+            if main_config is not None:
+                cat_cfg = main_config.categories.get(category)
+                if cat_cfg:
+                    logger.info(
+                        "Category '%s' routing: %s -> model=%s",
+                        category,
+                        subagent_name,
+                        cat_cfg.model,
+                    )
+                    subagent.model = cat_cfg.model
+                    setattr(
+                        subagent,
+                        "provider",
+                        LiteLLMProvider(cat_cfg.model, **cat_cfg.model_params.to_kwargs()),
+                    )
         # Propagate depth to subagent.
         subagent._current_depth = self._current_depth + 1
         try:
@@ -690,9 +735,21 @@ class Agent:
                 raise
             logger.error("Subagent '%s' crashed: %s", subagent.name, e, exc_info=True)
             result = f"[Subagent Error] {subagent.name} failed: {type(e).__name__}: {e}"
+
+        # Persist subagent conversation history to session.
+        effective_sid = session_id or f"{subagent_name}_{int(time.time())}"
+        session_state = self._session_mgr.get(effective_sid)
+        if session_state is None:
+            session_state = self._session_mgr.create(subagent_name, session_id=effective_sid)
+        history = getattr(subagent, "_conversation_history", [])
+        session_state.messages = list(history)
+
         await self._emit(
             HookEvent.ON_DELEGATION_COMPLETE, {"target": subagent_name, "result": result}
         )
+        # Only surface session ID when caller explicitly provided one.
+        if session_id:
+            return f"[Session: {effective_sid}]\n{result}"
         return result
 
     # ── Operator overloads ──────────────────────────────────────────────
@@ -937,8 +994,18 @@ class Agent:
         # Capture self via closure for the tool function.
         agent_ref = self
 
-        async def delegate(agent_name: str, task: str) -> str:  # noqa: D401
-            return await agent_ref.delegate(agent_name, task)
+        async def delegate(  # noqa: D401
+            agent_name: str,
+            task: str,
+            session_id: str | None = None,
+            category: str | None = None,
+        ) -> str:
+            return await agent_ref.delegate(
+                agent_name,
+                task,
+                session_id=session_id,
+                category=category,
+            )
 
         schema = ToolSchema(
             name="delegate",
@@ -954,6 +1021,14 @@ class Agent:
                     "task": {
                         "type": "string",
                         "description": "The task or input to send to the subagent.",
+                    },
+                    "session_id": {
+                        "type": "string",
+                        "description": "Optional session ID to resume a previous conversation with this subagent.",
+                    },
+                    "category": {
+                        "type": "string",
+                        "description": "Task category for model routing (e.g., 'quick', 'deep').",
                     },
                 },
                 "required": ["agent_name", "task"],
