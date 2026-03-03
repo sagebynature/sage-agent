@@ -18,6 +18,7 @@ import pytest
 from sage.agent import Agent
 from sage.events import (
     EVENT_TYPE_MAP,
+    BackgroundTaskCompleted,
     DelegationCompleted,
     DelegationStarted,
     LLMStreamDelta,
@@ -166,6 +167,7 @@ class TestEventTypeMap:
             DelegationStarted,
             DelegationCompleted,
             LLMStreamDelta,
+            BackgroundTaskCompleted,
         }
         assert expected == set(EVENT_TYPE_MAP.keys())
 
@@ -177,6 +179,7 @@ class TestEventTypeMap:
         assert EVENT_TYPE_MAP[DelegationStarted] == HookEvent.ON_DELEGATION
         assert EVENT_TYPE_MAP[DelegationCompleted] == HookEvent.ON_DELEGATION_COMPLETE
         assert EVENT_TYPE_MAP[LLMStreamDelta] == HookEvent.ON_LLM_STREAM_DELTA
+        assert EVENT_TYPE_MAP[BackgroundTaskCompleted] == HookEvent.BACKGROUND_TASK_COMPLETED
 
 
 # ---------------------------------------------------------------------------

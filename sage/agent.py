@@ -131,11 +131,13 @@ class Agent:
         parallel_tool_execution: bool = True,
         tool_timeout: float | None = None,
         hook_registry: HookRegistry | None = None,
+        prompt_metadata: Any | None = None,
     ) -> None:
         self.name = name
         self.model = model
         self.description = description
         self._body = body
+        self._prompt_metadata = prompt_metadata
         self.max_turns = max_turns
         self.max_depth = max_depth
         self._current_depth = _current_depth
@@ -171,6 +173,11 @@ class Agent:
         self._session_mgr = SessionManager()
         self._main_config: MainConfig | None = None
 
+        # Background task manager for async delegations.
+        from sage.coordination.background import BackgroundTaskManager
+
+        self._bg_manager = BackgroundTaskManager()
+
         # Default to LiteLLM provider if none supplied.
         self.provider: ProviderProtocol = provider or LiteLLMProvider(model, **(model_params or {}))  # type: ignore[assignment]
 
@@ -186,6 +193,7 @@ class Agent:
         # Auto-register delegation tools when subagents are present.
         if self.subagents:
             self._register_delegation_tools()
+            self._register_background_tools()
 
         # Auto-register skill tool when skills are present.
         if self.skills:
@@ -342,6 +350,7 @@ class Agent:
             parallel_tool_execution=config.parallel_tool_execution,
             tool_timeout=config.tool_timeout,
             hook_registry=hook_registry,
+            prompt_metadata=config.prompt_metadata,
         )
 
         # Apply tool restrictions from config.
@@ -475,6 +484,7 @@ class Agent:
             for turn in range(self.max_turns):
                 self._current_turn = turn
                 logger.debug("Turn %d/%d", turn + 1, self.max_turns)
+                await self._inject_background_notifications(messages)
                 tool_schemas = self.tool_registry.get_schemas() or None
                 await self._emit(
                     HookEvent.PRE_LLM_CALL,
@@ -549,6 +559,7 @@ class Agent:
             for turn in range(self.max_turns):
                 self._current_turn = turn
                 logger.debug("Stream turn %d/%d", turn + 1, self.max_turns)
+                await self._inject_background_notifications(messages)
                 tool_schemas = self.tool_registry.get_schemas() or None
                 await self._emit(
                     HookEvent.PRE_LLM_CALL,
@@ -1073,6 +1084,134 @@ class Agent:
         self.tool_registry.register(memory_recall)
         self.tool_registry.register(memory_forget)
 
+    def _register_background_tools(self) -> None:
+        """Register tools for launching, collecting, and cancelling background agent tasks."""
+        subagent_names = list(self.subagents.keys())
+        agent_ref = self
+
+        async def delegate_background(
+            agent_name: str, task: str, session_id: str | None = None
+        ) -> str:  # noqa: D401
+            sub = agent_ref.subagents.get(agent_name)
+            if sub is None:
+                available = ", ".join(sorted(agent_ref.subagents))
+                raise ToolError(f"Unknown subagent: {agent_name}. Available: {available}")
+            task_id = await agent_ref._bg_manager.launch(sub, task, session_id=session_id)
+            return f"Background task launched: {task_id} (agent={agent_name})"
+
+        delegate_bg_schema = ToolSchema(
+            name="delegate_background",
+            description="Launch a subagent task in the background. Returns immediately with a task_id.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "agent_name": {
+                        "type": "string",
+                        "description": f"Name of the subagent. One of: {subagent_names}",
+                        "enum": subagent_names,
+                    },
+                    "task": {
+                        "type": "string",
+                        "description": "The task or input to send to the subagent.",
+                    },
+                    "session_id": {
+                        "type": "string",
+                        "description": "Optional session ID to resume a previous background conversation.",
+                    },
+                },
+                "required": ["agent_name", "task"],
+            },
+        )
+        delegate_background.__tool_schema__ = delegate_bg_schema  # type: ignore[attr-defined]
+        self.tool_registry.register(delegate_background)
+
+        async def collect_result(task_id: str) -> str:  # noqa: D401
+            info = agent_ref._bg_manager.get(task_id)
+            if info is None:
+                return f"Unknown task_id: {task_id}"
+            if info.status == "running":
+                return f"Task {task_id} is still running (agent={info.agent_name})."
+            agent_ref._bg_manager.mark_notified(task_id)
+            if info.status == "completed":
+                return info.result or "(empty result)"
+            if info.status == "failed":
+                return f"Task failed: {info.error or 'unknown error'}"
+            return f"Task status: {info.status}"
+
+        collect_schema = ToolSchema(
+            name="collect_result",
+            description="Collect the result of a background task by task_id.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "The task_id returned by delegate_background.",
+                    },
+                },
+                "required": ["task_id"],
+            },
+        )
+        collect_result.__tool_schema__ = collect_schema  # type: ignore[attr-defined]
+        self.tool_registry.register(collect_result)
+
+        async def cancel_background_task(task_id: str) -> str:  # noqa: D401
+            cancelled = agent_ref._bg_manager.cancel(task_id)
+            if cancelled:
+                return f"Task {task_id} cancelled."
+            return f"Task {task_id} not found or already finished."
+
+        cancel_schema = ToolSchema(
+            name="cancel_background_task",
+            description="Cancel a running background task.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "The task_id to cancel.",
+                    },
+                },
+                "required": ["task_id"],
+            },
+        )
+        cancel_background_task.__tool_schema__ = cancel_schema  # type: ignore[attr-defined]
+        self.tool_registry.register(cancel_background_task)
+        """Register memory_store, memory_recall, and memory_forget tool closures.
+
+        Only called when ``self.memory`` is not None.
+        """
+        if self.memory is None:
+            return
+
+        from sage.tools.decorator import tool as _tool
+
+        memory_ref = self.memory
+
+        @_tool
+        async def memory_store(key: str, value: str) -> str:
+            """Store a key-value pair in the agent's semantic memory backend."""
+            await memory_ref.store(f"{key}: {value}", metadata={"key": key})
+            return f"Stored: {key}"
+
+        @_tool
+        async def memory_recall(query: str) -> str:
+            """Recall entries from the agent's semantic memory backend."""
+            entries = await memory_ref.recall(query)
+            if not entries:
+                return f"No matches for: {query}"
+            return "\n".join(f"- {e.content}" for e in entries)
+
+        @_tool
+        async def memory_forget(memory_id: str) -> str:
+            """Forget/delete a specific memory entry by its ID."""
+            result = await memory_ref.forget(memory_id)
+            return f"Memory {memory_id} {'deleted' if result else 'not found'}"
+
+        self.tool_registry.register(memory_store)
+        self.tool_registry.register(memory_recall)
+        self.tool_registry.register(memory_forget)
+
     def _register_skill_tool(self) -> None:
         """Register ``use_skill`` tool when the agent has skills.
 
@@ -1113,6 +1252,29 @@ class Agent:
         use_skill.__tool_schema__.parameters["properties"]["name"]["enum"] = sorted(skill_map)
         self.tool_registry.register(use_skill)
 
+    async def _inject_background_notifications(self, messages: list[Message]) -> None:
+        """Append system messages for any completed-but-unnotified background tasks."""
+        completed = self._bg_manager.get_completed_unnotified()
+        for info in completed:
+            if info.status == "completed":
+                note = f"[Background task {info.task_id} completed] Agent '{info.agent_name}' finished. Use collect_result to retrieve the output."
+            elif info.status == "failed":
+                note = f"[Background task {info.task_id} failed] Agent '{info.agent_name}' error: {info.error or 'unknown'}"
+            else:
+                note = f"[Background task {info.task_id} {info.status}] Agent '{info.agent_name}'"
+            messages.append(Message(role="system", content=note))
+            self._bg_manager.mark_notified(info.task_id)
+            await self._emit(
+                HookEvent.BACKGROUND_TASK_COMPLETED,
+                {
+                    "task_id": info.task_id,
+                    "agent_name": info.agent_name,
+                    "status": info.status,
+                    "result": info.result,
+                    "error": info.error,
+                },
+            )
+
     def _build_messages(self, input: str, memory_context: str | None = None) -> list[Message]:
         """Build the full message list including conversation history.
 
@@ -1127,7 +1289,10 @@ class Agent:
         # System message from description/body + skill catalog.
         system_parts: list[str] = []
         if self._body:
-            system_parts.append(self._body)
+            from sage.prompts.dynamic_builder import resolve_placeholder
+
+            resolved_body = resolve_placeholder(self._body, self.subagents)
+            system_parts.append(resolved_body)
         if self._identity_prompt:
             system_parts.append(self._identity_prompt)
         if self.skills:

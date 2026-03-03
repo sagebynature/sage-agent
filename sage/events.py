@@ -90,6 +90,17 @@ class LLMStreamDelta:
     turn: int
 
 
+@dataclass
+class BackgroundTaskCompleted:
+    """Emitted when a background agent task finishes (success, failure, or cancellation)."""
+
+    task_id: str
+    agent_name: str
+    status: str
+    result: str | None
+    error: str | None
+
+
 # ---------------------------------------------------------------------------
 # Mapping: event class → HookEvent
 # ---------------------------------------------------------------------------
@@ -103,6 +114,7 @@ EVENT_TYPE_MAP: dict[type, HookEvent] = {
     DelegationStarted: HookEvent.ON_DELEGATION,
     DelegationCompleted: HookEvent.ON_DELEGATION_COMPLETE,
     LLMStreamDelta: HookEvent.ON_LLM_STREAM_DELTA,
+    BackgroundTaskCompleted: HookEvent.BACKGROUND_TASK_COMPLETED,
 }
 
 
@@ -142,6 +154,13 @@ _FACTORIES: dict[type, Any] = {
     LLMStreamDelta: lambda d: LLMStreamDelta(
         delta=d.get("delta", ""),
         turn=d.get("turn", 0),
+    ),
+    BackgroundTaskCompleted: lambda d: BackgroundTaskCompleted(
+        task_id=d.get("task_id", ""),
+        agent_name=d.get("agent_name", ""),
+        status=d.get("status", ""),
+        result=d.get("result"),
+        error=d.get("error"),
     ),
 }
 

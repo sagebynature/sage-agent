@@ -21,6 +21,7 @@ class HookEvent(str, enum.Enum):
     ON_DELEGATION_COMPLETE = "on_delegation_complete"
     ON_LLM_STREAM_DELTA = "on_llm_stream_delta"
     ON_COMPACTION = "on_compaction"
+    BACKGROUND_TASK_COMPLETED = "background_task_completed"
 
 
 @runtime_checkable

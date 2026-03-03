@@ -1,20 +1,5 @@
 # Phase 3: Planning Pipeline Implementation Plan
 
-**Goal:** Implement a persistent, verifiable planning pipeline with cross-session continuity, pre-planning gap analysis, and adversarial plan review.
-
-**Architecture:**
-- **Persistence (Boulder State):** A JSON-backed state manager (`PlanStateManager`) that tracks plan progress, task statuses, and associated session IDs in a `.sage/plans/` directory.
-- **Gap Analysis (Metis):** A pre-planning utility that uses the agent's LLM to classify task intent and identify hidden requirements/ambiguities before a plan is drafted.
-- **Plan Review (Momus):** An adversarial review loop that scores generated plans against a rubric (Clarity, Verifiability, Completeness) and iterates until the plan meets quality thresholds.
-
-**Tech Stack:** Python 3.10+, Pydantic v2, Pytest, Asyncio
-
-**Dependencies:**
-- Phase 1 (Tool restrictions for secure execution, Session continuity for context)
-- Phase 2 (Roles for specialized reviewers, Dynamic prompts for rubric injection)
-
----
-
 ### Task 1: Cross-Session Plan Persistence (Boulder State)
 
 **Files:**

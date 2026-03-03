@@ -1,11 +1,12 @@
-# Phase 2: Async Execution & Specialized Roles Implementation Plan
+# Phase 2: Async Execution & Dynamic Prompt Construction
 
-**Goal:** Enhance `sage-agent` with background task execution, specialized agent roles, and dynamic prompt construction to improve multi-agent orchestration efficiency.
+**Goal:** Enhance `sage-agent` with background task execution and dynamic prompt construction to improve multi-agent orchestration efficiency.
 
 **Architecture:**
 - **Background Execution:** A `BackgroundTaskManager` handles non-blocking agent delegations. New tools (`delegate_background`, `collect_result`, `cancel_task`) allow the orchestrator to manage parallel sub-tasks.
-- **Specialized Roles:** Role-based profile templates (Consultant, Searcher, Reviewer, Executor) provide pre-configured model defaults and tool restrictions, composing with Phase 1's restriction logic.
 - **Dynamic Prompts:** `AgentPromptMetadata` in frontmatter enables automatic construction of delegation tables and selection guides, reducing manual system prompt maintenance.
+
+**Decision:** Task 5 (Specialized Agent Roles) has been **dropped**. Role-like behavior (model defaults, tool restrictions, descriptions) is already expressible directly in agent frontmatter via existing config fields. Adding a separate roles layer would introduce unnecessary indirection without meaningful benefit.
 
 **Tech Stack:** Python 3.10+, Pydantic v2, Asyncio, LiteLLM
 
@@ -121,53 +122,6 @@ for t in completed:
 - `pytest tests/test_background.py` (New test file)
 - Call `delegate_background`, verify immediate return of `task_id`.
 - Wait, call `collect_result`, verify result matches subagent output.
-
----
-
-### Task 5: Specialized Agent Roles (Pre-configured Profiles)
-
-**Files:**
-- Create: `sage/roles/definitions.py` (Role dictionaries)
-- Modify: `sage/config.py` (Add `role` to `AgentConfig`)
-- Modify: `sage/agent.py` (Resolve role defaults in `from_config`)
-
-**Step 1: Define Role Profiles**
-```python
-# sage/roles/definitions.py
-ROLE_DEFAULTS = {
-    "consultant": {
-        "model": "gpt-4o",
-        "blocked_tools": ["shell", "file_write", "file_edit"],
-        "description": "Expert consultant, read-only access."
-    },
-    "searcher": {
-        "model": "gpt-4o-mini",
-        "allowed_tools": ["file_read", "grep", "ls"],
-        "description": "Fast codebase searcher."
-    }
-}
-```
-
-**Step 2: Update AgentConfig**
-```python
-# sage/config.py
-class AgentConfig(BaseModel):
-    # ...
-    role: Optional[str] = None
-```
-
-**Step 3: Resolve Roles in Agent Initialization**
-```python
-# sage/agent.py (in _from_agent_config)
-if config.role and config.role in ROLE_DEFAULTS:
-    defaults = ROLE_DEFAULTS[config.role]
-    if not config.model: config.model = defaults["model"]
-    # Merge blocked_tools and allowed_tools with Phase 1 logic
-```
-
-**Verification:**
-- Create agent with `role: consultant`.
-- Verify `agent.tool_registry.get_schemas()` does not contain `shell`.
 
 ---
 

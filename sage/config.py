@@ -198,6 +198,21 @@ class IdentityConfig(BaseModel):
     file: str | None = None
 
 
+class AgentPromptMetadata(BaseModel):
+    """Metadata that describes an agent's purpose and cost for dynamic prompt construction.
+
+    Orchestrator agents use this to build delegation tables at runtime,
+    replacing static hardcoded agent descriptions in system prompts.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    cost: Literal["free", "cheap", "moderate", "expensive"] = "cheap"
+    triggers: list[str] = Field(default_factory=list)
+    use_when: list[str] = Field(default_factory=list)
+    avoid_when: list[str] = Field(default_factory=list)
+
+
 class AgentConfig(BaseModel):
     """Top-level configuration for a Sage agent.
 
@@ -247,6 +262,7 @@ class AgentConfig(BaseModel):
     credential_scrubbing: CredentialScrubConfig | None = None
     query_classification: QueryClassificationConfig | None = None
     research: ResearchConfig | None = None
+    prompt_metadata: AgentPromptMetadata | None = None
     follow_through: FollowThroughConfig | None = None
     session: SessionConfig | None = None
     identity: IdentityConfig | None = None
