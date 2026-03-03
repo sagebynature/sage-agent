@@ -2,6 +2,39 @@
 
 <!-- version list -->
 
+## v1.5.0-rc.1 (2026-03-03)
+
+### Chores
+
+- Remove obsolete TUI design and implementation documents
+  ([`61ba674`](https://github.com/sagebynature/sage-agent/commit/61ba67457a41b915c8ad08c3ab0b2afd6f75b9af))
+
+- Update .gitignore and remove obsolete agent documentation
+  ([`79e3633`](https://github.com/sagebynature/sage-agent/commit/79e363305b5a5ecd5c274ccac38561d8ec3c22c2))
+
+- Update type-check command and add ty for type checking
+  ([`559f3ad`](https://github.com/sagebynature/sage-agent/commit/559f3adaf7bdffad976f38bb1d74b22fc6df4f57))
+
+### Documentation
+
+- Update README, add demo make targets, fix tool error logging
+  ([`c8780cf`](https://github.com/sagebynature/sage-agent/commit/c8780cf3a2d56c85e468d19663fc66049daa30fa))
+
+### Features
+
+- Enhance sage-agent with notepad system and model-specific prompt overlays
+  ([`4cf7c4b`](https://github.com/sagebynature/sage-agent/commit/4cf7c4b22da88f6a79cdb3d88a689503b4ea4435))
+
+- Implement Phase 1 foundation — tool restrictions, session continuity, category routing
+  ([`c95640d`](https://github.com/sagebynature/sage-agent/commit/c95640d3b58420c297113c8d9bcf23f6c09e64f7))
+
+- Implement Phase 2 — async background execution and dynamic prompt construction
+  ([`7f6435b`](https://github.com/sagebynature/sage-agent/commit/7f6435b40a7c4ba1e9b0701d104a1ff39a376523))
+
+- Implement Phase 3 planning pipeline and fix aiosqlite teardown race
+  ([`4450922`](https://github.com/sagebynature/sage-agent/commit/4450922f0caa507f126647fc44c180749183632e))
+
+
 ## v1.4.0-rc.1 (2026-03-02)
 
 ### Bug Fixes
