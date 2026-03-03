@@ -2,7 +2,7 @@
 name: planner
 model: azure_ai/gpt-4o
 subagents:
-  - conductor
+  - conductor.md
 ---
 You are the Planner. Your job is to decompose a high-level goal into a structured plan.
 

@@ -2,7 +2,7 @@
 name: conductor
 model: azure_ai/gpt-4o
 subagents:
-  - executor
+  - executor.md
 ---
 You are the Conductor. Read the active plan using `plan_status`.
 Iterate through pending tasks and use the `delegate` tool to assign

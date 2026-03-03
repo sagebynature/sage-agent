@@ -116,7 +116,8 @@ demo-orchestration:
 	@echo "    Prompt: a 3-step documentation task that exercises the full"
 	@echo "    create → analyze → review → delegate → persist loop."
 	@echo ""
-	uv run sage agent run examples/orchestrated_agents/planner \
+	SAGE_CONFIG_PATH=examples/orchestrated_agents/config.toml \
+	uv run sage agent run examples/orchestrated_agents/planner.md \
 		-i "Create and execute a 3-step plan to document Python's core async primitives: (1) explain what asyncio.run() does and when to use it, (2) explain asyncio.gather() and how it differs from running tasks sequentially, (3) explain asyncio.TaskGroup and when it is preferable to gather(). Execute all three steps."
 
 # Run both new feature demos back-to-back.

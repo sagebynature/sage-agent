@@ -65,6 +65,7 @@ CLAUDE.md
 
 # Generated example files
 *.db
+.sage/
 
 # Git worktrees
 .worktrees/
