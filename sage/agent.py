@@ -89,6 +89,15 @@ def _build_hook_registry(
             modifying=True,
         )
 
+    if config.planning:
+        from sage.hooks.builtin.notepad_injector import make_notepad_hook
+
+        registry.register(
+            HookEvent.PRE_LLM_CALL,
+            make_notepad_hook("default"),
+            modifying=True,
+        )
+
     return registry
 
 
@@ -1287,6 +1296,63 @@ class Agent:
             plan_review.__tool_schema__ = review_schema  # type: ignore[attr-defined]
             self.tool_registry.register(plan_review)
 
+        notepad_instance = __import__("sage.planning.notepad", fromlist=["Notepad"]).Notepad(
+            "default"
+        )
+
+        async def notepad_write(section: str, content: str, append: bool = True) -> str:
+            notepad_instance.write(section, content, append=append)
+            return f"Written to notepad section '{section}'."
+
+        write_schema = ToolSchema(
+            name="notepad_write",
+            description="Write content to a named section of the working notepad.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "section": {
+                        "type": "string",
+                        "description": "Section name (e.g. 'learnings', 'decisions', 'todo').",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Content to write.",
+                    },
+                    "append": {
+                        "type": "boolean",
+                        "description": "Append to existing content (true) or overwrite (false). Defaults to true.",
+                    },
+                },
+                "required": ["section", "content"],
+            },
+        )
+        notepad_write.__tool_schema__ = write_schema  # type: ignore[attr-defined]
+        self.tool_registry.register(notepad_write)
+
+        async def notepad_read(section: str | None = None) -> str:
+            if section:
+                result = notepad_instance.read(section)
+                return result if result else f"Section '{section}' is empty."
+            result = notepad_instance.read_all()
+            return result if result else "Notepad is empty."
+
+        read_schema = ToolSchema(
+            name="notepad_read",
+            description="Read content from the working notepad.  Omit section to read all sections.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "section": {
+                        "type": "string",
+                        "description": "Section name to read.  Omit to read all sections.",
+                    },
+                },
+                "required": [],
+            },
+        )
+        notepad_read.__tool_schema__ = read_schema  # type: ignore[attr-defined]
+        self.tool_registry.register(notepad_read)
+
     def _register_background_tools(self) -> None:
         """Register tools for launching, collecting, and cancelling background agent tasks."""
         subagent_names = list(self.subagents.keys())
@@ -1478,18 +1544,14 @@ class Agent:
                 },
             )
 
-    def _build_messages(self, input: str, memory_context: str | None = None) -> list[Message]:
-        """Build the full message list including conversation history.
+    def _build_system_message(self) -> str:
+        """Assemble the system prompt and apply model-specific overlays.
 
-        The returned list contains, in order:
-          1. System message (body + skill catalog)
-          2. Memory-context system message (if any)
-          3. Prior conversation history (user/assistant turns)
-          4. The new user message
+        Combines body, identity prompt, and skill catalog into a single string,
+        then passes it through the global overlay registry so model-specific
+        instructions (e.g. Gemini tool-call reminder, GPT step hints) are
+        appended automatically.
         """
-        messages: list[Message] = []
-
-        # System message from description/body + skill catalog.
         system_parts: list[str] = []
         if self._body:
             from sage.prompts.dynamic_builder import resolve_placeholder
@@ -1510,8 +1572,27 @@ class Agent:
                     line += f": {skill.description}"
                 catalog_lines.append(line)
             system_parts.append("\n".join(catalog_lines))
-        if system_parts:
-            messages.append(Message(role="system", content="\n\n".join(system_parts)))
+
+        base_prompt = "\n\n".join(system_parts)
+
+        from sage.prompts.overlays import registry as overlay_registry
+
+        return overlay_registry.apply(self.model, base_prompt)
+
+    def _build_messages(self, input: str, memory_context: str | None = None) -> list[Message]:
+        """Build the full message list including conversation history.
+
+        The returned list contains, in order:
+          1. System message (body + skill catalog, overlays applied)
+          2. Memory-context system message (if any)
+          3. Prior conversation history (user/assistant turns)
+          4. The new user message
+        """
+        messages: list[Message] = []
+
+        system_content = self._build_system_message()
+        if system_content:
+            messages.append(Message(role="system", content=system_content))
 
         # Prepend recalled memory as a system-level context block.
         if memory_context:

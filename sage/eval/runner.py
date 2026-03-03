@@ -132,7 +132,7 @@ class EvalRunner:
             # API calls and cost calculations use the correct model.
             agent.model = self.model
             if hasattr(agent.provider, "model"):
-                agent.provider.model = self.model
+                setattr(agent.provider, "model", self.model)
 
             # Always run each case in its own temp directory so that file
             # writes are isolated (especially important when models run in

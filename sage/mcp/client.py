@@ -9,8 +9,8 @@ from typing import Any
 
 import anyio
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp import ClientSession, StdioServerParameters  # type: ignore[import-not-found]
+from mcp.client.stdio import stdio_client  # type: ignore[import-not-found]
 
 from sage.exceptions import SageError
 from sage.models import ToolSchema
@@ -96,7 +96,7 @@ class MCPClient:
                     ClientSession(read_stream, write_stream)
                 )
             elif self._transport == "sse":
-                from mcp.client.sse import sse_client
+                from mcp.client.sse import sse_client  # type: ignore[import-not-found]
 
                 if not self._url:
                     raise SageError("URL required for SSE transport")

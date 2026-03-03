@@ -161,7 +161,7 @@ class SQLiteMemory:
 
             if self._vec_available:
                 try:
-                    import sqlite_vec
+                    import sqlite_vec  # type: ignore[import-not-found]
 
                     rowid = cursor.lastrowid
                     embedding_bytes = sqlite_vec.serialize_float32(embedding_array)
@@ -231,7 +231,7 @@ class SQLiteMemory:
 
     async def _recall_vec(self, query_embedding: list[float], limit: int) -> list[MemoryEntry]:
         """O(log n) ANN recall using sqlite-vec vec_distance_cosine."""
-        import sqlite_vec
+        import sqlite_vec  # type: ignore[import-not-found]
 
         query_array = np.array(query_embedding, dtype=np.float32)
         query_bytes = sqlite_vec.serialize_float32(query_array)

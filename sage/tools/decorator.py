@@ -5,7 +5,7 @@ from __future__ import annotations
 import inspect
 import types
 import typing
-from typing import Any, Callable, Union, get_args, get_origin
+from typing import Any, Callable, Union, cast, get_args, get_origin
 
 from pydantic import BaseModel
 
@@ -109,7 +109,7 @@ def _build_schema(fn: Callable[..., Any]) -> ToolSchema:
         parameters["required"] = required
 
     return ToolSchema(
-        name=fn.__name__,
+        name=cast(types.FunctionType, fn).__name__,
         description=description,
         parameters=parameters,
     )

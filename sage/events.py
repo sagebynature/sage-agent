@@ -179,4 +179,4 @@ def from_hook_data(event_class: type[E], data: dict[str, Any]) -> E:
         KeyError: If *event_class* is not a known event type.
     """
     factory = _FACTORIES[event_class]
-    return factory(data)  # type: ignore[no-any-return]
+    return factory(data)

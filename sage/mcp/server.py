@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from typing import Any
-from mcp.server import Server
-from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+from mcp.server import Server  # type: ignore[import-not-found]
+from mcp.server.stdio import stdio_server  # type: ignore[import-not-found]
+from mcp.types import TextContent, Tool  # type: ignore[import-not-found]
 
 from sage.tools.registry import ToolRegistry
 
@@ -20,7 +20,7 @@ class MCPServer:
         self._setup_handlers()
 
     def _setup_handlers(self) -> None:
-        @self._server.list_tools()  # type: ignore[no-untyped-call, untyped-decorator]
+        @self._server.list_tools()
         async def list_tools() -> list[Tool]:
             schemas = self._registry.get_schemas()
             return [
@@ -32,7 +32,7 @@ class MCPServer:
                 for s in schemas
             ]
 
-        @self._server.call_tool()  # type: ignore[untyped-decorator]
+        @self._server.call_tool()
         async def call_tool(
             name: str, arguments: dict[str, Any] | None = None
         ) -> list[TextContent]:

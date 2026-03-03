@@ -245,7 +245,7 @@ async def run_assertion(
     # -- json_schema --
     if isinstance(assertion, JsonSchemaAssertion):
         try:
-            import jsonschema  # type: ignore[import-untyped]  # optional dep
+            import jsonschema  # optional dep
 
             try:
                 data = json.loads(output)

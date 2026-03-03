@@ -92,7 +92,7 @@ def setup_tracing(config: Any) -> None:
         return
 
     try:
-        from opentelemetry import trace  # noqa: PLC0415
+        from opentelemetry import trace  # noqa: PLC0415  # type: ignore[import-not-found]
         from opentelemetry.sdk.resources import Resource  # type: ignore[import-not-found]
         from opentelemetry.sdk.trace import TracerProvider  # type: ignore[import-not-found]
         from opentelemetry.sdk.trace.export import (  # type: ignore[import-not-found]

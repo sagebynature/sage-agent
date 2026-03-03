@@ -1,19 +1,5 @@
 # Phase 4: Polish Implementation Plan
 
-**Goal:** Enhance sage-agent with model-specific prompt optimizations, a formal 3-layer planning architecture, and a persistent notepad system for long-running tasks.
-
-**Architecture:**
-- **Model-Specific Prompt Overlays:** A registry-based system that modifies the system prompt based on the detected LLM provider to mitigate model-specific failure modes.
-- **3-Layer Planning Architecture:** A reference architecture consisting of Planner, Conductor, and Executor agents, powered by a new `ConductorMixin` for structured task iteration.
-- **Notepad System:** A persistent working memory system that allows agents to maintain structured notes (learnings, decisions, issues) across turns and sessions, surviving context compaction.
-
-**Tech Stack:** Python 3.10+, Pydantic v2, Pytest, Asyncio
-
-**Dependencies:**
-- Phase 1 (Foundation)
-- Phase 2 (Async & Roles)
-- Phase 3 (Planning Pipeline)
-
 ---
 
 ### Task 1: Model-Specific Prompt Overlays

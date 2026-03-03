@@ -166,7 +166,7 @@ class EvalHistory:
             # Deserialize token usage
             try:
                 run_data["total_token_usage"] = json.loads(
-                    run_data.get("total_token_usage") or "{}"
+                    str(run_data.get("total_token_usage") or "{}")
                 )
             except json.JSONDecodeError:
                 run_data["total_token_usage"] = {}
@@ -179,18 +179,18 @@ class EvalHistory:
                 # Deserialize JSON fields
                 try:
                     row_dict["assertion_results"] = json.loads(
-                        row_dict.get("assertion_results") or "[]"
+                        str(row_dict.get("assertion_results") or "[]")
                     )
                 except json.JSONDecodeError:
                     row_dict["assertion_results"] = []
                 try:
                     row_dict["tool_calls_made"] = json.loads(
-                        row_dict.get("tool_calls_made") or "[]"
+                        str(row_dict.get("tool_calls_made") or "[]")
                     )
                 except json.JSONDecodeError:
                     row_dict["tool_calls_made"] = []
                 try:
-                    row_dict["token_usage"] = json.loads(row_dict.get("token_usage") or "{}")
+                    row_dict["token_usage"] = json.loads(str(row_dict.get("token_usage") or "{}"))
                 except json.JSONDecodeError:
                     row_dict["token_usage"] = {}
                 results.append(row_dict)
