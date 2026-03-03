@@ -34,7 +34,7 @@ format:
 	uv run ruff format $(SRC_DIR) tests
 
 type-check:
-	uv run mypy $(SRC_DIR)
+	uv run ty check $(SRC_DIR)
 
 test: sync lint format type-check
 	uv run pytest -v tests
