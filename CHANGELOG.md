@@ -2,6 +2,67 @@
 
 <!-- version list -->
 
+## v1.4.0 (2026-03-03)
+
+### Bug Fixes
+
+- **eval**: Improve path resolution for context files in EvalRunner
+  ([`b15b015`](https://github.com/sagebynature/sage-agent/commit/b15b0151dc81e2e25fc874875fb74e55c538bd69))
+
+- **provider**: Add drop_params for cross-provider streaming compatibility
+  ([`ec3db46`](https://github.com/sagebynature/sage-agent/commit/ec3db463f5bc382901ebee4d416ea682230356b5))
+
+- **tui**: Cancel in-flight title generation before starting agent call
+  ([`fb66a78`](https://github.com/sagebynature/sage-agent/commit/fb66a78aec237357997ebd55d54dcae186d334ac))
+
+- **tui**: Fix session title prompt to prevent echoing assistant response
+  ([`2ba26f5`](https://github.com/sagebynature/sage-agent/commit/2ba26f534d7fdf734c43577d10d5c828eeaa9bc2))
+
+- **tui**: Move title generation to after agent responds
+  ([`8b4a29b`](https://github.com/sagebynature/sage-agent/commit/8b4a29bfc186d8376208f692f5758eac5d89da12))
+
+- **tui**: Resolve chat scroll race condition and stuck scrollbar
+  ([`c447d2d`](https://github.com/sagebynature/sage-agent/commit/c447d2d13db613f4763bfa1b8a07a7f203eaaf35))
+
+- **tui**: Store asyncio task reference, remove hasattr guard, cancel on clear
+  ([`c359a07`](https://github.com/sagebynature/sage-agent/commit/c359a07e72d141c95696ac0361268dbc4d356175))
+
+### Chores
+
+- Update .gitignore and modify example agent commands
+  ([`dd330f2`](https://github.com/sagebynature/sage-agent/commit/dd330f24a842f9f6614cc8a3bb2a83d7ad6d6264))
+
+### Documentation
+
+- Add TUI separation design document
+  ([`a4fb9fe`](https://github.com/sagebynature/sage-agent/commit/a4fb9fe60cc785a42b84c1f0b033de524cf76abb))
+
+- Add TUI separation implementation plan
+  ([`ac3d4c4`](https://github.com/sagebynature/sage-agent/commit/ac3d4c449fb9d889913b8b007a0a920404744c7d))
+
+### Features
+
+- **agent**: Add reset_session() for full session state reset
+  ([`613399c`](https://github.com/sagebynature/sage-agent/commit/613399ce4c0334b2ad1cf2840f229a187349ee9d))
+
+- **tui**: Add session state and background title generation
+  ([`f0ccc09`](https://github.com/sagebynature/sage-agent/commit/f0ccc0907ffc6ccf96524c41bb7811d88340e3fb))
+
+- **tui**: Intent-focused session title prompt, ctrl+n for new session
+  ([`a2837cc`](https://github.com/sagebynature/sage-agent/commit/a2837cc83f6e38e4e34514539f5f7dedd6607ef1))
+
+- **tui**: Redesign status panel layout and add ctrl+b toggle
+  ([`b612f3c`](https://github.com/sagebynature/sage-agent/commit/b612f3ccf1188bc895782feb13294c95f04b2b86))
+
+- **tui**: Wire session lifecycle and update tests
+  ([`a405436`](https://github.com/sagebynature/sage-agent/commit/a405436e4acaa3c29d7c338a232fe3814e53d78e))
+
+### Refactoring
+
+- Remove TUI code from sage-agent (moved to sage-tui)
+  ([`8dca334`](https://github.com/sagebynature/sage-agent/commit/8dca33466b2c01547884c0a81957a3528131ee65))
+
+
 ## v1.3.0 (2026-03-02)
 
 ### Features
