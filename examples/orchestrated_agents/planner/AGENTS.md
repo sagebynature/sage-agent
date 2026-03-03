@@ -1,6 +1,6 @@
 ---
 name: planner
-model: gpt-4o
+model: azure_ai/gpt-4o
 subagents:
   - conductor
 ---

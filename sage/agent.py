@@ -896,7 +896,9 @@ class Agent:
 
         async def _safe_execute(tc: ToolCall) -> tuple[str, str]:
             if tc.name != "delegate":
-                logger.debug("Executing tool '%s': %s", tc.name, str(tc.arguments)[:120])
+                logger.debug(
+                    "[%s] Executing tool '%s': %s", self.name, tc.name, str(tc.arguments)[:120]
+                )
 
             try:
                 await self._emit(
@@ -924,10 +926,10 @@ class Agent:
             except SagePermissionError:
                 raise  # Never swallow permission errors — re-raise so the agent loop can handle them
             except ToolError as exc:
-                logger.error("Tool '%s' failed: %s", tc.name, exc)
+                logger.error("[%s] Tool '%s' failed: %s", self.name, tc.name, exc)
                 return tc.id, f"Error executing tool '{tc.name}': {exc}"
             except Exception as exc:
-                logger.error("Tool '%s' raised unexpected error: %s", tc.name, exc)
+                logger.error("[%s] Tool '%s' raised unexpected error: %s", self.name, tc.name, exc)
                 return tc.id, f"Error executing tool '{tc.name}': {exc}"
 
         # Split into parallel (allow/deny) and sequential (ask-gated) groups.

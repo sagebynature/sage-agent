@@ -48,7 +48,8 @@ async def web_fetch(url: str) -> str:
     except httpx.HTTPStatusError as exc:
         raise ToolError(f"HTTP {exc.response.status_code}: {url}") from exc
     except Exception as exc:
-        raise ToolError(f"web_fetch failed: {exc}") from exc
+        detail = str(exc) or type(exc).__name__
+        raise ToolError(f"web_fetch failed: {detail}") from exc
 
     content_type = response.headers.get("content-type", "")
     text = response.text
@@ -81,7 +82,8 @@ async def web_search(query: str, max_results: int = 5) -> str:
             )
             response.raise_for_status()
     except Exception as exc:
-        raise ToolError(f"web_search failed: {exc}") from exc
+        detail = str(exc) or type(exc).__name__
+        raise ToolError(f"web_search failed: {detail}") from exc
 
     # Parse results from DDG HTML.
     text = response.text

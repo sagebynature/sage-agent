@@ -1,6 +1,6 @@
 ---
 name: conductor
-model: gpt-4o
+model: azure_ai/gpt-4o
 subagents:
   - executor
 ---

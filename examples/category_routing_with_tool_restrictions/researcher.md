@@ -1,6 +1,6 @@
 ---
 name: researcher
-model: gpt-4o-mini
+model: azure_ai/gpt-4o-mini
 description: "Research-only agent with limited tools"
 allowed_tools:
   - web_fetch

@@ -1,0 +1,16 @@
+[env]
+AZURE_AI_API_KEY = "${AZURE_AI_API_KEY}"
+AZURE_AI_API_BASE = "${AZURE_AI_API_BASE}"
+
+[defaults]
+model = "azure_ai/kimi-k2.5"
+
+[categories.quick]
+model = "azure_ai/gpt-4o"
+
+[categories.deep]
+model = "azure_ai/claude-sonnet-4-6"
+
+[categories.deep.model_params]
+temperature = 0.2
+max_tokens = 4096

@@ -1,6 +1,6 @@
 ---
 name: safe-coder
-model: gpt-4o
+model: azure_ai/gpt-4o
 description: "A code assistant with restricted tool access"
 blocked_tools:
   - shell

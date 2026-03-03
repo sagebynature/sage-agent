@@ -26,6 +26,11 @@ You are a helpful AI assistant.
 
 Agents can have subagents. When they do, they automatically get a `delegate` tool — the LLM decides when and how to hand off work. It's orchestration without the orchestration code.
 
+The `delegate` tool accepts two optional parameters beyond the target agent and task:
+
+- **`session_id`** — resume a previous conversation with the subagent. Conversation history is persisted across calls and restored automatically. The result is prefixed with `[Session: <id>]` when a session ID is supplied.
+- **`category`** — route the delegation to a model defined in the `categories` block of `config.toml` (e.g. `"quick"` → `gpt-4o-mini`, `"deep"` → Claude Sonnet). The subagent's model is swapped at runtime without changing its config file.
+
 ### Tools via `@tool` Decorator
 
 Write a Python function. Decorate it with `@tool`. Sage auto-generates the JSON schema from your type hints. That's it. No manual schema wrangling.
@@ -45,6 +50,15 @@ Built-in tools included — or load them all at once with `sage.tools.builtins`:
 | Memory | `memory_store`, `memory_recall` |
 | Web | `web_fetch`, `web_search` |
 | Git | `git_status`, `git_diff`, `git_log`, `git_commit`, `git_undo`, `git_branch` |
+
+Per-agent tool restrictions are supported via frontmatter. `blocked_tools` hides specific tools from the LLM; `allowed_tools` is an explicit allowlist (all others are hidden). Blocklist takes precedence over allowlist.
+
+```markdown
+---
+blocked_tools: [shell, http_request]
+allowed_tools: [file_read, file_write, memory_store]
+---
+```
 
 ### Skills
 
@@ -84,7 +98,7 @@ Control what tools can do via a single `permission:` block in YAML frontmatter. 
 
 ### Hook System
 
-A lifecycle event bus for intercepting and extending agent behavior without modifying core code. Register async handlers against named `HookEvent` values (`PRE_LLM_CALL`, `POST_LLM_CALL`, `POST_TOOL_EXECUTE`, `ON_DELEGATION`, `ON_COMPACTION`, …). Built-in hooks cover credential scrubbing, query-based model routing, bail-out retry (follow-through), and automatic memory injection. Hooks that raise never crash the agent — errors are logged and swallowed.
+A lifecycle event bus for intercepting and extending agent behavior without modifying core code. Register async handlers against named `HookEvent` values (`PRE_LLM_CALL`, `POST_LLM_CALL`, `POST_TOOL_EXECUTE`, `ON_DELEGATION`, `ON_COMPACTION`, `ON_PLAN_CREATED`, `BACKGROUND_TASK_COMPLETED`, …). Built-in hooks cover credential scrubbing, query-based model routing, bail-out retry (follow-through), automatic memory injection, notepad injection, and plan analysis. Hooks that raise never crash the agent — errors are logged and swallowed.
 
 ```python
 from sage.hooks.registry import HookRegistry
@@ -106,6 +120,14 @@ Agent-to-agent messaging and lifecycle primitives for multi-agent systems:
 - **MessageBus** — in-memory per-agent inboxes with TTL expiry, idempotency, overflow protection, and broadcast delivery
 - **CancellationScope** — propagate cancel signals across async tasks; child scopes inherit parent cancellation
 - **SessionManager** — create, track, and destroy concurrent agent sessions with typed metadata
+- **BackgroundTaskManager** — launch subagent runs as non-blocking asyncio tasks. The orchestrator gets a `delegate_background` tool and receives completion notifications injected into the next turn's message stream. Supports polling (`background_status`) and cancellation (`background_cancel`).
+
+```python
+# Orchestrator gets these tools automatically when subagents are present:
+# delegate_background(agent_name, task) → task_id
+# background_status(task_id) → status + result
+# background_cancel(task_id) → bool
+```
 
 ### Context Management
 
@@ -117,6 +139,70 @@ A full interactive terminal UI built with [Textual](https://github.com/Textualiz
 
 ```bash
 sage tui --agent-config AGENTS.md
+```
+
+### Planning Pipeline
+
+A structured plan-then-execute loop for long-horizon tasks. Enable it via `planning:` in frontmatter.
+
+- **`plan_create`** — agents call this tool to create a named plan with an ordered list of task descriptions. State persists to disk under `.sage/plans/`.
+- **`plan_status` / `plan_update` / `plan_complete`** — query and mutate plan state across turns and sessions.
+- **`notepad_write` / `notepad_read`** — persistent markdown working memory scoped to a plan. Notes are stored under `.sage/notepads/<plan_name>/` and injected automatically before each LLM call via the built-in notepad hook.
+- **Plan analysis** — optional `ON_PLAN_CREATED` hook that makes an LLM call to identify ambiguities, missing dependencies, ordering issues, and risks in a newly created plan. Enable via `planning.analysis.enabled: true`.
+- **Review loop** — `review_loop(plan, reviewer, reviser)` iterates through review-revise cycles using the `PlanReviewer` protocol. The shipped `LLMPlanReviewer` evaluates specificity, success criteria, and dependencies. Configurable via `planning.review`.
+- **`ConductorMixin`** — mixin for orchestrator agents that drives plan execution: reads the plan, delegates each pending task to an `executor` subagent, and persists results after each step.
+
+```markdown
+---
+name: planner
+model: gpt-4o
+planning:
+  analysis:
+    enabled: true
+  review:
+    enabled: true
+    max_iterations: 3
+---
+You are a planning agent. Use plan_create to structure work, then execute step by step.
+```
+
+### Prompt System
+
+**Model-specific overlays** — lightweight transformations applied to the assembled system prompt after all content (body, identity, skills) has been joined. Each overlay targets a model family and appends model-tuned instructions.
+
+Built-in overlays:
+- `GeminiOverlay` — appends a tool-call enforcement reminder for `gemini/*` models
+- `GPTOverlay` — appends a "format reasoning in clear steps" hint for `gpt-*` models
+
+Register custom overlays via `overlay_registry.register(my_overlay)` from `sage.prompts`.
+
+**Dynamic delegation table** — orchestrator agents can include `{{DELEGATION_TABLE}}` in their system prompt body. Sage replaces this placeholder at runtime with a markdown table of all available subagents, derived from each agent's `prompt_metadata` frontmatter field.
+
+```markdown
+---
+name: orchestrator
+model: gpt-4o
+subagents: [researcher, summarizer]
+---
+You are the orchestrator.
+
+{{DELEGATION_TABLE}}
+
+Use the delegate tool to assign work.
+```
+
+```markdown
+# researcher/AGENTS.md
+---
+name: researcher
+model: gpt-4o
+description: "Finds primary sources and synthesizes citations"
+prompt_metadata:
+  cost: moderate
+  use_when: ["deep research", "fact checking", "citations needed"]
+  avoid_when: ["simple questions", "quick lookups"]
+  triggers: ["research", "find sources", "citations"]
+---
 ```
 
 ### Protocol-Based Architecture
@@ -303,6 +389,27 @@ research:
 
 session:
   enabled: true
+
+# Per-agent tool restrictions
+blocked_tools: [shell, http_request]   # always hidden from the LLM
+# allowed_tools: [file_read, memory_store]  # allowlist (all others hidden)
+
+# Planning pipeline (Phase 3)
+planning:
+  analysis:
+    enabled: true                      # Analyze new plans for gaps/risks
+    prompt: "custom prompt (optional)" # Override DEFAULT_ANALYSIS_PROMPT
+  review:
+    enabled: true
+    max_iterations: 3
+    prompt: "custom review prompt"     # Override DEFAULT_REVIEW_PROMPT
+
+# Dynamic prompt metadata (used by {{DELEGATION_TABLE}} in orchestrators)
+prompt_metadata:
+  cost: cheap                          # free | cheap | moderate | expensive
+  triggers: ["research", "summarize"]
+  use_when: ["deep research needed"]
+  avoid_when: ["simple questions"]
 ---
 
 You are a helpful AI assistant.
@@ -328,6 +435,16 @@ model = "gpt-4o-mini"
 max_turns = 5
 # Optional: limit this agent to a subset of the global skill pool
 # skills = ["git-master", "terraform"]
+
+# Category-based model routing — used by the `category` parameter on `delegate`
+[categories.quick]
+model = "gpt-4o-mini"
+
+[categories.deep]
+model = "anthropic/claude-sonnet-4-20250514"
+
+[categories.deep.model_params]
+temperature = 0.2
 ```
 
 Override priority: **main config defaults < per-agent overrides < frontmatter**.
@@ -341,15 +458,26 @@ sage/
   models.py         # Message, ToolCall, ToolSchema, Usage, etc.
   exceptions.py     # SageError, ConfigError, ProviderError, ToolError
   frontmatter.py    # YAML frontmatter parser
-  main_config.py    # TOML main config support
+  main_config.py    # TOML main config support (categories, per-agent overrides)
   research.py       # Pre-response research system
   providers/        # ProviderProtocol + LiteLLMProvider
-  tools/            # @tool decorator, ToolRegistry, ToolDispatcher, builtins
+  tools/            # @tool decorator, ToolRegistry (allowlist/blocklist), builtins
   skills/           # Skill loader (markdown-based reusable capabilities)
   orchestrator/     # Orchestrator (parallel, race) + Pipeline (>>)
   memory/           # MemoryProtocol, SQLiteMemory, FileMemory, compaction
   hooks/            # HookRegistry, HookEvent, built-in hooks
+                    #   builtin/notepad_injector.py  — injects notepad before LLM call
+                    #   builtin/plan_analyzer.py     — ON_PLAN_CREATED analysis hook
   coordination/     # MessageBus, CancellationScope, SessionManager
+                    #   background.py  — BackgroundTaskManager + BackgroundTaskInfo
+  planning/         # Planning pipeline
+                    #   state.py     — PlanState, PlanStateManager, PlanTask
+                    #   notepad.py   — Notepad (persistent markdown working memory)
+                    #   review.py    — PlanReviewer protocol, LLMPlanReviewer, review_loop()
+                    #   conductor.py — ConductorMixin (plan-driven orchestration)
+  prompts/          # Prompt construction utilities
+                    #   overlays.py        — PromptOverlay protocol, OverlayRegistry, built-ins
+                    #   dynamic_builder.py — build_delegation_table(), build_orchestrator_prompt()
   parsing/          # Multi-format tool call parser, JSON repair
   mcp/              # MCPClient + MCPServer
   permissions/      # PermissionProtocol, policy rules, interactive prompts
@@ -380,7 +508,8 @@ sage/
 - [`examples/permissions_agent/`](examples/permissions_agent/) — Permission policies
 - [`examples/safe_coder/`](examples/safe_coder/) — Code generation with safety
 - [`examples/devtools_agent/`](examples/devtools_agent/) — Developer tools
-- [`examples/claude_agent/`](examples/claude_agent/) — Anthropic Claude model
+- [`examples/phase1_foundation/`](examples/phase1_foundation/) — Tool restrictions, session continuity, category routing (`orchestrator.md` → `researcher.md` + `safe-coder`)
+- [`examples/orchestrated_agents/`](examples/orchestrated_agents/) — Conductor/planner/executor pattern with planning pipeline
 
 ## Requirements
 
