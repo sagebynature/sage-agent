@@ -7,9 +7,10 @@ import json
 import logging
 import re
 import time
+from dataclasses import dataclass
 from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypeVar, cast, overload
+from typing import TYPE_CHECKING, Any, NoReturn, TypeVar, cast, overload
 
 from sage.config import AgentConfig, load_config
 from sage.hooks.base import HookEvent
@@ -40,6 +41,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+
+
+@dataclass(slots=True)
+class _TurnExecutionResult:
+    final_text: str | None
+    streamed_chunks: list[str] | None
+    tool_calls_executed: bool
 
 
 def _build_hook_registry(
@@ -505,38 +513,10 @@ class Agent:
             for turn in range(self.max_turns):
                 self._current_turn = turn
                 logger.debug("Turn %d/%d", turn + 1, self.max_turns)
-                await self._inject_background_notifications(messages)
-                tool_schemas = self.tool_registry.get_schemas() or None
-                await self._emit(
-                    HookEvent.PRE_LLM_CALL,
-                    {
-                        "model": self.model,
-                        "messages": messages,
-                        "tool_schemas": tool_schemas,
-                        "turn": turn,
-                    },
-                )
-                result: CompletionResult = await self.provider.complete(
-                    messages, tools=tool_schemas
-                )
-                self._cumulative_usage += result.usage
-                n_tool_calls = len(result.message.tool_calls) if result.message.tool_calls else 0
-                await self._emit(
-                    HookEvent.POST_LLM_CALL,
-                    {
-                        "result": result,
-                        "turn": turn,
-                        "usage": result.usage,
-                        "n_tool_calls": n_tool_calls,
-                    },
-                )
-
-                messages.append(result.message)
-
-                # No tool calls means the model is done.
-                if not result.message.tool_calls:
+                turn_result = await self._execute_turn(messages, turn=turn, streaming=False)
+                if not turn_result.tool_calls_executed:
                     logger.info("Agent '%s' run complete after %d turn(s)", self.name, turn + 1)
-                    final_output = result.message.content or ""
+                    final_output = turn_result.final_text or ""
                     agent_span.set_attribute("turn_count", turn + 1)
                     await self._post_loop_cleanup(input, final_output)
                     if response_model is not None:
@@ -547,15 +527,12 @@ class Agent:
                         return response_model.model_validate_json(cleaned)  # type: ignore[attr-defined, no-any-return]
                     return final_output
 
-                await self._execute_tool_calls(result.message.tool_calls, messages)
-
-            # Max turns exceeded — persist partial progress, then raise.
-            logger.warning("Agent '%s' reached max_turns (%d)", self.name, self.max_turns)
-            agent_span.set_attribute("turn_count", self.max_turns)
-            last_content = self._extract_final_output(messages)
-            if last_content:
-                await self._store_memory(input, last_content)
-            raise MaxTurnsExceeded(turns=self.max_turns, last_content=last_content)
+            await self._raise_max_turns_exceeded(
+                input=input,
+                messages=messages,
+                agent_span=agent_span,
+                during_stream=False,
+            )
 
     async def stream(self, input: str) -> AsyncIterator[str]:
         """Streaming variant of :meth:`run` — yields text chunks as they arrive.
@@ -580,79 +557,132 @@ class Agent:
             for turn in range(self.max_turns):
                 self._current_turn = turn
                 logger.debug("Stream turn %d/%d", turn + 1, self.max_turns)
-                await self._inject_background_notifications(messages)
-                tool_schemas = self.tool_registry.get_schemas() or None
-                await self._emit(
-                    HookEvent.PRE_LLM_CALL,
-                    {
-                        "model": self.model,
-                        "messages": messages,
-                        "tool_schemas": tool_schemas,
-                        "turn": turn,
-                    },
-                )
-
-                # Accumulate the full assistant content and tool calls for this turn.
-                turn_content = ""
-                turn_tool_calls: list[ToolCall] | None = None
-                turn_usage: Usage | None = None
-
-                async for chunk in self.provider.stream(messages, tools=tool_schemas):  # type: ignore[attr-defined]
-                    if chunk.delta:
-                        turn_content += chunk.delta
-                        await self._emit(
-                            HookEvent.ON_LLM_STREAM_DELTA,
-                            {"delta": chunk.delta, "turn": turn},
-                        )
-                        yield chunk.delta
-                    if chunk.tool_calls:
-                        turn_tool_calls = chunk.tool_calls
-                    if chunk.usage is not None:
-                        turn_usage = chunk.usage
-
-                if turn_usage is not None:
-                    self._cumulative_usage += turn_usage
-
-                # Build the assistant message for the conversation history.
-                assistant_msg = Message(
-                    role="assistant",
-                    content=turn_content or None,
-                    tool_calls=turn_tool_calls,
-                )
-                messages.append(assistant_msg)
-                n_tool_calls_stream = len(turn_tool_calls) if turn_tool_calls else 0
-                await self._emit(
-                    HookEvent.POST_LLM_CALL,
-                    {
-                        "result": assistant_msg,
-                        "turn": turn,
-                        "usage": turn_usage,
-                        "n_tool_calls": n_tool_calls_stream,
-                    },
-                )
-
-                # No tool calls means the model is done.
-                if not turn_tool_calls:
+                turn_result = await self._execute_turn(messages, turn=turn, streaming=True)
+                for chunk in turn_result.streamed_chunks or []:
+                    yield chunk
+                if not turn_result.tool_calls_executed:
                     logger.info(
                         "Agent '%s' stream complete after %d turn(s)",
                         self.name,
                         turn + 1,
                     )
                     agent_span.set_attribute("turn_count", turn + 1)
-                    await self._post_loop_cleanup(input, turn_content)
+                    await self._post_loop_cleanup(input, turn_result.final_text or "")
                     return
 
-                await self._execute_tool_calls(turn_tool_calls, messages)
-
-            # Max turns exceeded — persist partial progress, then raise.
-            logger.warning(
-                "Agent '%s' reached max_turns (%d) during stream", self.name, self.max_turns
+            await self._raise_max_turns_exceeded(
+                input=input,
+                messages=messages,
+                agent_span=agent_span,
+                during_stream=True,
             )
-            agent_span.set_attribute("turn_count", self.max_turns)
-            last_content = self._extract_final_output(messages)
-            if last_content:
-                await self._store_memory(input, last_content)
-            raise MaxTurnsExceeded(turns=self.max_turns, last_content=last_content)
+
+    async def _execute_turn(
+        self,
+        messages: list[Message],
+        *,
+        turn: int,
+        streaming: bool,
+    ) -> _TurnExecutionResult:
+        await self._inject_background_notifications(messages)
+        tool_schemas = self.tool_registry.get_schemas() or None
+        await self._emit(
+            HookEvent.PRE_LLM_CALL,
+            {
+                "model": self.model,
+                "messages": messages,
+                "tool_schemas": tool_schemas,
+                "turn": turn,
+            },
+        )
+
+        if not streaming:
+            result: CompletionResult = await self.provider.complete(messages, tools=tool_schemas)
+            self._cumulative_usage += result.usage
+            n_tool_calls = len(result.message.tool_calls) if result.message.tool_calls else 0
+            await self._emit(
+                HookEvent.POST_LLM_CALL,
+                {
+                    "result": result,
+                    "turn": turn,
+                    "usage": result.usage,
+                    "n_tool_calls": n_tool_calls,
+                },
+            )
+            messages.append(result.message)
+            if not result.message.tool_calls:
+                return _TurnExecutionResult(
+                    final_text=result.message.content or "",
+                    streamed_chunks=None,
+                    tool_calls_executed=False,
+                )
+            await self._execute_tool_calls(result.message.tool_calls, messages)
+            return _TurnExecutionResult(
+                final_text=None,
+                streamed_chunks=None,
+                tool_calls_executed=True,
+            )
+
+        turn_content = ""
+        turn_tool_calls: list[ToolCall] | None = None
+        turn_usage: Usage | None = None
+        streamed_chunks: list[str] = []
+        async for chunk in self.provider.stream(messages, tools=tool_schemas):  # type: ignore[attr-defined]
+            if chunk.delta:
+                turn_content += chunk.delta
+                streamed_chunks.append(chunk.delta)
+                await self._emit(
+                    HookEvent.ON_LLM_STREAM_DELTA, {"delta": chunk.delta, "turn": turn}
+                )
+            if chunk.tool_calls:
+                turn_tool_calls = chunk.tool_calls
+            if chunk.usage is not None:
+                turn_usage = chunk.usage
+
+        if turn_usage is not None:
+            self._cumulative_usage += turn_usage
+        assistant_msg = Message(
+            role="assistant", content=turn_content or None, tool_calls=turn_tool_calls
+        )
+        messages.append(assistant_msg)
+        n_tool_calls_stream = len(turn_tool_calls) if turn_tool_calls else 0
+        await self._emit(
+            HookEvent.POST_LLM_CALL,
+            {
+                "result": assistant_msg,
+                "turn": turn,
+                "usage": turn_usage,
+                "n_tool_calls": n_tool_calls_stream,
+            },
+        )
+        if not turn_tool_calls:
+            return _TurnExecutionResult(
+                final_text=turn_content,
+                streamed_chunks=streamed_chunks,
+                tool_calls_executed=False,
+            )
+        await self._execute_tool_calls(turn_tool_calls, messages)
+        return _TurnExecutionResult(
+            final_text=None,
+            streamed_chunks=streamed_chunks,
+            tool_calls_executed=True,
+        )
+
+    async def _raise_max_turns_exceeded(
+        self,
+        input: str,
+        messages: list[Message],
+        *,
+        agent_span: Any,
+        during_stream: bool,
+    ) -> NoReturn:
+        suffix = " during stream" if during_stream else ""
+        logger.warning("Agent '%s' reached max_turns (%d)%s", self.name, self.max_turns, suffix)
+        agent_span.set_attribute("turn_count", self.max_turns)
+        last_content = self._extract_final_output(messages)
+        if last_content:
+            await self._store_memory(input, last_content)
+        raise MaxTurnsExceeded(turns=self.max_turns, last_content=last_content)
 
     def _detect_context_window_limit(self) -> None:
         if self._context_window_detected:
