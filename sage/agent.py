@@ -36,7 +36,9 @@ if TYPE_CHECKING:
     from sage.memory.base import MemoryProtocol
     from sage.mcp.client import MCPClient
     from sage.orchestrator.pipeline import Pipeline
+    from sage.permissions.base import PermissionProtocol
     from sage.providers.base import ProviderProtocol
+    from sage.context.token_budget import TokenBudget
 
 logger = logging.getLogger(__name__)
 
@@ -50,18 +52,121 @@ class _TurnExecutionResult:
     tool_calls_executed: bool
 
 
-def _build_hook_registry(
-    config: "AgentConfig", memory: "MemoryProtocol | None" = None
-) -> "HookRegistry":
+def _build_mcp_clients(config: "AgentConfig", agent_config: "AgentConfig") -> list["MCPClient"]:
+    _ = config
+    mcp_clients: list[MCPClient] = []
+    if agent_config.mcp_servers:
+        from sage.mcp.client import MCPClient
+
+        for mcp_cfg in agent_config.mcp_servers.values():
+            mcp_clients.append(
+                MCPClient(
+                    transport=mcp_cfg.transport,
+                    command=mcp_cfg.command,
+                    url=mcp_cfg.url,
+                    args=mcp_cfg.args,
+                    env=mcp_cfg.env,
+                )
+            )
+    return mcp_clients
+
+
+def _build_memory_backend(
+    config: "AgentConfig", agent_config: "AgentConfig"
+) -> "MemoryProtocol | None":
+    _ = config
+    memory: MemoryProtocol | None = None
+    if agent_config.memory is not None and agent_config.memory.backend == "sqlite":
+        from sage.memory.embedding import LiteLLMEmbedding
+        from sage.memory.sqlite_backend import SQLiteMemory
+
+        logger.info(
+            "Building memory backend for '%s': backend=%s, embedding=%s, path=%s",
+            agent_config.name,
+            agent_config.memory.backend,
+            agent_config.memory.embedding,
+            agent_config.memory.path,
+        )
+        embedding = LiteLLMEmbedding(agent_config.memory.embedding)
+        memory = SQLiteMemory(
+            path=agent_config.memory.path, embedding=embedding, config=agent_config.memory
+        )
+    elif agent_config.memory is not None and agent_config.memory.backend == "file":
+        from sage.memory.file_backend import FileMemory
+
+        logger.info(
+            "Building file memory backend for '%s': path=%s",
+            agent_config.name,
+            agent_config.memory.path,
+        )
+        memory = FileMemory(agent_config.memory.path)
+    return memory
+
+
+def _build_permission_handler(agent_config: "AgentConfig") -> "PermissionProtocol | None":
+    permission_handler: PermissionProtocol | None = None
+    if agent_config.permission is not None:
+        from sage.permissions.base import PermissionAction
+        from sage.permissions.policy import CategoryPermissionRule, PolicyPermissionHandler
+        from sage.tools.registry import CATEGORY_TOOLS
+
+        rules: list[CategoryPermissionRule] = []
+        for category in CATEGORY_TOOLS:
+            category_permission = getattr(agent_config.permission, category, None)
+            if category_permission is None:
+                continue
+            if isinstance(category_permission, dict):
+                rules.append(
+                    CategoryPermissionRule(
+                        category=category,
+                        action=PermissionAction.ASK,
+                        patterns={
+                            pattern: PermissionAction(action)
+                            for pattern, action in category_permission.items()
+                        },
+                    )
+                )
+                continue
+            rules.append(
+                CategoryPermissionRule(
+                    category=category,
+                    action=PermissionAction(category_permission),
+                )
+            )
+
+        permission_handler = PolicyPermissionHandler(
+            rules=rules,
+            default=PermissionAction.ASK,
+        )
+    return permission_handler
+
+
+def _build_token_budget(agent_config: "AgentConfig") -> "TokenBudget | None":
+    token_budget: TokenBudget | None = None
+    if agent_config.context is not None:
+        from sage.context.token_budget import TokenBudget
+
+        try:
+            token_budget = TokenBudget(
+                model=agent_config.model,
+                compaction_threshold=agent_config.context.compaction_threshold,
+                reserve_tokens=agent_config.context.reserve_tokens,
+            )
+        except Exception as exc:
+            logger.warning("Failed to create TokenBudget: %s", exc)
+    return token_budget
+
+
+def _build_hook_registry(agent_config: "AgentConfig") -> "HookRegistry":
     """Build a HookRegistry from agent config, wiring built-in hooks."""
     registry = HookRegistry()
 
-    if config.credential_scrubbing is not None and config.credential_scrubbing.enabled:
+    if agent_config.credential_scrubbing is not None and agent_config.credential_scrubbing.enabled:
         from sage.hooks.builtin.credential_scrubber import make_credential_scrubber
 
         registry.register(HookEvent.POST_TOOL_EXECUTE, make_credential_scrubber())
 
-    if config.query_classification is not None and config.query_classification.rules:
+    if agent_config.query_classification is not None and agent_config.query_classification.rules:
         from sage.hooks.builtin.query_classifier import ClassificationRule, make_query_classifier
 
         rules = [
@@ -71,33 +176,29 @@ def _build_hook_registry(
                 priority=r.priority,
                 target_model=r.model,
             )
-            for r in config.query_classification.rules
+            for r in agent_config.query_classification.rules
         ]
         registry.register(HookEvent.PRE_LLM_CALL, make_query_classifier(rules))
 
-    if config.follow_through is not None and config.follow_through.enabled:
+    if agent_config.follow_through is not None and agent_config.follow_through.enabled:
         from sage.hooks.builtin.follow_through import make_follow_through_hook
 
         registry.register(HookEvent.POST_LLM_CALL, make_follow_through_hook())
 
-    if config.memory is not None and config.memory.auto_load and memory is not None:
-        from sage.hooks.builtin.auto_memory import make_auto_memory_hook
-
-        registry.register(
-            HookEvent.PRE_LLM_CALL,
-            make_auto_memory_hook(memory, max_memories=config.memory.auto_load_top_k),
-        )
-
-    if config.planning and config.planning.analysis and config.planning.analysis.enabled:
+    if (
+        agent_config.planning
+        and agent_config.planning.analysis
+        and agent_config.planning.analysis.enabled
+    ):
         from sage.hooks.builtin.plan_analyzer import make_plan_analyzer
 
         registry.register(
             HookEvent.ON_PLAN_CREATED,
-            make_plan_analyzer(prompt=config.planning.analysis.prompt),
+            make_plan_analyzer(prompt=agent_config.planning.analysis.prompt),
             modifying=True,
         )
 
-    if config.planning:
+    if agent_config.planning:
         from sage.hooks.builtin.notepad_injector import make_notepad_hook
 
         registry.register(
@@ -107,6 +208,130 @@ def _build_hook_registry(
         )
 
     return registry
+
+
+def _wire_post_construction(
+    agent: Agent,
+    config: dict[str, Any],
+    agent_config: AgentConfig,
+) -> None:
+    permission_handler = cast("PermissionProtocol | None", config["permission_handler"])
+    token_budget = cast("TokenBudget | None", config["token_budget"])
+    base_dir = cast(Path, config["base_dir"])
+
+    if agent_config.allowed_tools is not None or agent_config.blocked_tools is not None:
+        agent.tool_registry.set_restrictions(
+            allowed=agent_config.allowed_tools,
+            blocked=agent_config.blocked_tools,
+        )
+
+    if agent_config.permission is not None:
+        agent.tool_registry.register_from_permissions(
+            agent_config.permission,
+            extensions=agent_config.extensions or None,
+        )
+    elif agent_config.extensions:
+        for extension_path in agent_config.extensions:
+            agent.tool_registry.load_from_module(extension_path)
+
+    if agent.memory is not None:
+        agent._register_memory_tools()
+
+    if (
+        agent_config.memory is not None
+        and agent_config.memory.auto_load
+        and agent.memory is not None
+    ):
+        from sage.hooks.builtin.auto_memory import make_auto_memory_hook
+
+        agent._hook_registry.register(
+            HookEvent.PRE_LLM_CALL,
+            make_auto_memory_hook(agent.memory, max_memories=agent_config.memory.auto_load_top_k),
+        )
+
+    if permission_handler is not None:
+        agent.tool_registry.set_permission_handler(permission_handler)
+
+    shell_allow: frozenset[str] | None = None
+    if agent_config.permission is not None and isinstance(agent_config.permission.shell, dict):
+        patterns = [
+            k for k, v in agent_config.permission.shell.items() if v == "allow" and k != "*"
+        ]
+        if patterns:
+            shell_allow = frozenset(patterns)
+
+    if agent_config.sandbox is not None:
+        from sage.tools._sandbox import build_sandbox
+        from sage.tools.builtins import make_sandboxed_shell
+
+        sandbox = build_sandbox(agent_config.sandbox)
+        sandboxed_shell = make_sandboxed_shell(sandbox, allowed_commands=shell_allow)
+        agent.tool_registry.register(sandboxed_shell)
+    elif shell_allow is not None:
+        from sage.tools.builtins import make_shell
+
+        agent.tool_registry.register(make_shell(allowed_commands=shell_allow))
+
+    agent._token_budget = token_budget
+    agent._git_config = agent_config.git
+    agent._memory_config = agent_config.memory
+
+    if (
+        agent_config.identity is not None
+        and agent_config.identity.format == "aieos"
+        and agent_config.identity.file
+    ):
+        try:
+            from sage.identity.aieos import format_identity_prompt, load_identity
+
+            identity_path = (
+                base_dir / agent_config.identity.file
+                if not Path(agent_config.identity.file).is_absolute()
+                else Path(agent_config.identity.file)
+            )
+            identity = load_identity(identity_path)
+            agent._identity_prompt = format_identity_prompt(identity)
+        except Exception as exc:
+            logger.warning(
+                "Failed to load AIEOS identity from %s: %s", agent_config.identity.file, exc
+            )
+
+    if agent_config.tracing is not None:
+        setup_tracing(agent_config.tracing)
+
+    if agent_config.planning is not None:
+        agent._register_planning_tools(agent_config)
+
+
+def _construct_agent(
+    cls: type[Agent],
+    agent_config: AgentConfig,
+    subagents: dict[str, Agent],
+    skills: list[Skill],
+    mcp_clients: list[MCPClient],
+    memory: MemoryProtocol | None,
+    hook_registry: HookRegistry,
+) -> Agent:
+    return cls(
+        name=agent_config.name,
+        model=agent_config.model,
+        description=agent_config.description,
+        max_turns=agent_config.max_turns,
+        max_depth=agent_config.max_depth,
+        subagents=subagents,
+        body=agent_config._body,
+        model_params=agent_config.model_params.to_kwargs() or None,
+        skills=skills or None,
+        mcp_clients=mcp_clients or None,
+        memory=memory,
+        compaction_threshold=agent_config.memory.compaction_threshold
+        if agent_config.memory is not None
+        else 50,
+        parallel_tool_execution=agent_config.parallel_tool_execution,
+        tool_timeout=agent_config.tool_timeout,
+        hook_registry=hook_registry,
+        prompt_metadata=agent_config.prompt_metadata,
+    )
 
 
 class Agent:
@@ -252,216 +477,28 @@ class Agent:
     ) -> Agent:
         """Recursively build an agent (and subagents) from config."""
         global_skills = global_skills or []
-        subagents: dict[str, Agent] = {}
-        for sub_config in config.subagents:
-            subagents[sub_config.name] = cls._from_agent_config(
-                sub_config,
-                base_dir,
-                global_skills=global_skills,
+        subagents = {
+            sub_config.name: cls._from_agent_config(
+                sub_config, base_dir, global_skills=global_skills
             )
-
+            for sub_config in config.subagents
+        }
         skills = filter_skills_by_names(global_skills, config.skills)
-
-        # Build MCP clients from config.
-        mcp_clients: list[MCPClient] = []
-        if config.mcp_servers:
-            from sage.mcp.client import MCPClient
-
-            for mcp_cfg in config.mcp_servers.values():
-                mcp_clients.append(
-                    MCPClient(
-                        transport=mcp_cfg.transport,
-                        command=mcp_cfg.command,
-                        url=mcp_cfg.url,
-                        args=mcp_cfg.args,
-                        env=mcp_cfg.env,
-                    )
-                )
-
-        # Build memory backend from config.
-        memory: MemoryProtocol | None = None
-        if config.memory is not None and config.memory.backend == "sqlite":
-            from sage.memory.embedding import LiteLLMEmbedding
-            from sage.memory.sqlite_backend import SQLiteMemory
-
-            logger.info(
-                "Building memory backend for '%s': backend=%s, embedding=%s, path=%s",
-                config.name,
-                config.memory.backend,
-                config.memory.embedding,
-                config.memory.path,
-            )
-            embedding = LiteLLMEmbedding(config.memory.embedding)
-            memory = SQLiteMemory(
-                path=config.memory.path, embedding=embedding, config=config.memory
-            )
-        elif config.memory is not None and config.memory.backend == "file":
-            from sage.memory.file_backend import FileMemory
-
-            logger.info(
-                "Building file memory backend for '%s': path=%s",
-                config.name,
-                config.memory.path,
-            )
-            memory = FileMemory(config.memory.path)
-
-        # Build permission handler from config.
-        permission_handler = None
-        if config.permission is not None:
-            from sage.permissions.base import PermissionAction
-            from sage.permissions.policy import CategoryPermissionRule, PolicyPermissionHandler
-            from sage.tools.registry import CATEGORY_TOOLS
-
-            rules: list[CategoryPermissionRule] = []
-            for category in CATEGORY_TOOLS:
-                category_permission = getattr(config.permission, category, None)
-                if category_permission is None:
-                    continue
-                if isinstance(category_permission, dict):
-                    rules.append(
-                        CategoryPermissionRule(
-                            category=category,
-                            action=PermissionAction.ASK,
-                            patterns={
-                                pattern: PermissionAction(action)
-                                for pattern, action in category_permission.items()
-                            },
-                        )
-                    )
-                    continue
-                rules.append(
-                    CategoryPermissionRule(
-                        category=category,
-                        action=PermissionAction(category_permission),
-                    )
-                )
-
-            permission_handler = PolicyPermissionHandler(
-                rules=rules,
-                default=PermissionAction.ASK,
-            )
-
-        # Build token budget from config.
-        token_budget = None
-        if config.context is not None:
-            from sage.context.token_budget import TokenBudget
-
-            try:
-                token_budget = TokenBudget(
-                    model=config.model,
-                    compaction_threshold=config.context.compaction_threshold,
-                    reserve_tokens=config.context.reserve_tokens,
-                )
-            except Exception as exc:
-                logger.warning("Failed to create TokenBudget: %s", exc)
-
-        # Build hook registry from config.
-        hook_registry = _build_hook_registry(config, memory)
-
-        agent = cls(
-            name=config.name,
-            model=config.model,
-            description=config.description,
-            max_turns=config.max_turns,
-            max_depth=config.max_depth,
-            subagents=subagents,
-            body=config._body,
-            model_params=config.model_params.to_kwargs() or None,
-            skills=skills or None,
-            mcp_clients=mcp_clients or None,
-            memory=memory,
-            compaction_threshold=config.memory.compaction_threshold
-            if config.memory is not None
-            else 50,
-            parallel_tool_execution=config.parallel_tool_execution,
-            tool_timeout=config.tool_timeout,
-            hook_registry=hook_registry,
-            prompt_metadata=config.prompt_metadata,
+        mcp_clients = _build_mcp_clients(config, config)
+        memory = _build_memory_backend(config, config)
+        permission_handler = _build_permission_handler(config)
+        token_budget = _build_token_budget(config)
+        hook_registry = _build_hook_registry(config)
+        agent = _construct_agent(cls, config, subagents, skills, mcp_clients, memory, hook_registry)
+        _wire_post_construction(
+            agent,
+            {
+                "base_dir": base_dir,
+                "permission_handler": permission_handler,
+                "token_budget": token_budget,
+            },
+            config,
         )
-
-        # Apply tool restrictions from config.
-        if config.allowed_tools is not None or config.blocked_tools is not None:
-            agent.tool_registry.set_restrictions(
-                allowed=config.allowed_tools,
-                blocked=config.blocked_tools,
-            )
-
-        if config.permission is not None:
-            agent.tool_registry.register_from_permissions(
-                config.permission,
-                extensions=config.extensions or None,
-            )
-        elif config.extensions:
-            for extension_path in config.extensions:
-                agent.tool_registry.load_from_module(extension_path)
-
-        # When a semantic memory backend is configured, replace the JSON
-        # memory_store / memory_recall tools with closures that delegate to it.
-        # This registration happens AFTER register_from_permissions so the
-        # semantic versions overwrite any previously registered JSON tools.
-        if memory is not None:
-            agent._register_memory_tools()
-
-        # Wire permission handler into tool registry.
-        if permission_handler is not None:
-            agent.tool_registry.set_permission_handler(permission_handler)
-
-        # Extract explicit "allow" fnmatch patterns from the dict form of
-        # ``permission.shell``.  Commands matching these patterns bypass the
-        # dangerous-command blocklist.  The catch-all ``"*"`` is excluded so
-        # a broad default doesn't accidentally disable all safety checks.
-        shell_allow: frozenset[str] | None = None
-        if config.permission is not None and isinstance(config.permission.shell, dict):
-            patterns = [k for k, v in config.permission.shell.items() if v == "allow" and k != "*"]
-            if patterns:
-                shell_allow = frozenset(patterns)
-
-        # Wire sandbox: replace the module-level shell tool with a per-agent
-        # sandboxed version when sandbox config is present.
-        if config.sandbox is not None:
-            from sage.tools._sandbox import build_sandbox
-            from sage.tools.builtins import make_sandboxed_shell
-
-            sandbox = build_sandbox(config.sandbox)
-            sandboxed_shell = make_sandboxed_shell(sandbox, allowed_commands=shell_allow)
-            agent.tool_registry.register(sandboxed_shell)
-        elif shell_allow is not None:
-            from sage.tools.builtins import make_shell
-
-            agent.tool_registry.register(make_shell(allowed_commands=shell_allow))
-
-        # Store token budget for later use.
-        agent._token_budget = token_budget
-        agent._git_config = config.git
-        agent._memory_config = config.memory
-
-        # Load AIEOS identity if configured.
-        if (
-            config.identity is not None
-            and config.identity.format == "aieos"
-            and config.identity.file
-        ):
-            try:
-                from sage.identity.aieos import format_identity_prompt, load_identity
-
-                identity_path = (
-                    base_dir / config.identity.file
-                    if not Path(config.identity.file).is_absolute()
-                    else Path(config.identity.file)
-                )
-                identity = load_identity(identity_path)
-                agent._identity_prompt = format_identity_prompt(identity)
-            except Exception as exc:
-                logger.warning(
-                    "Failed to load AIEOS identity from %s: %s", config.identity.file, exc
-                )
-
-        if config.tracing is not None:
-            setup_tracing(config.tracing)
-
-        if config.planning is not None:
-            agent._register_planning_tools(config)
-
         return agent
 
     # ── Execution methods ─────────────────────────────────────────────
