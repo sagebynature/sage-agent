@@ -144,7 +144,7 @@ class SQLiteMemory:
 
     async def store(self, content: str, metadata: dict[str, Any] | None = None) -> str:
         """Store *content* with an embedding and return the memory ID."""
-        self._ensure_open()
+        db = self._ensure_open()
 
         async with span("memory.store", {"content_length": len(content)}):
             memory_id = uuid.uuid4().hex
@@ -154,7 +154,7 @@ class SQLiteMemory:
             meta_json = json.dumps(metadata or {})
             created_at = datetime.now(timezone.utc).isoformat()
 
-            cursor = await self._db.execute(  # type: ignore[union-attr]
+            cursor = await db.execute(
                 "INSERT INTO memories (id, content, embedding, metadata, created_at) VALUES (?, ?, ?, ?, ?)",
                 (memory_id, content, embedding_blob, meta_json, created_at),
             )
@@ -165,7 +165,7 @@ class SQLiteMemory:
 
                     rowid = cursor.lastrowid
                     embedding_bytes = sqlite_vec.serialize_float32(embedding_array)
-                    await self._db.execute(  # type: ignore[union-attr]
+                    await db.execute(
                         "INSERT INTO memory_vec(rowid, embedding) VALUES (?, ?)",
                         [rowid, embedding_bytes],
                     )
@@ -175,7 +175,7 @@ class SQLiteMemory:
                         exc,
                     )
 
-            await self._db.commit()  # type: ignore[union-attr]
+            await db.commit()
             logger.debug("Stored memory id=%s, content_preview=%.80s", memory_id, content)
             return memory_id
 
@@ -196,14 +196,38 @@ class SQLiteMemory:
             mem_span.set_attribute("result_count", len(results))
             return results
 
-    async def _recall_numpy(self, query_embedding: list[float], limit: int) -> list[MemoryEntry]:
+    async def _recall_numpy(
+        self,
+        query_embedding: list[float],
+        limit: int,
+        top_k_preselect: int = 1000,
+    ) -> list[MemoryEntry]:
         """O(n) numpy cosine-similarity recall (original implementation)."""
+        db = self._ensure_open()
         query_vec = np.array(query_embedding, dtype=np.float32)
 
-        cursor = await self._db.execute(  # type: ignore[union-attr]
-            "SELECT id, content, embedding, metadata, created_at FROM memories"
-        )
-        rows = list(await cursor.fetchall())
+        total_rows = 0
+        if top_k_preselect > 0:
+            count_cursor = await db.execute("SELECT COUNT(*) FROM memories")
+            count_row = await count_cursor.fetchone()
+            total_rows = int(count_row[0]) if count_row is not None else 0
+
+        if top_k_preselect > 0 and total_rows > top_k_preselect:
+            cursor = await db.execute(
+                """
+                SELECT id, content, embedding, metadata, created_at
+                FROM memories
+                ORDER BY rowid DESC
+                LIMIT ?
+                """,
+                (top_k_preselect,),
+            )
+            rows = list(await cursor.fetchall())
+        else:
+            cursor = await db.execute(
+                "SELECT id, content, embedding, metadata, created_at FROM memories"
+            )
+            rows = list(await cursor.fetchall())
 
         scored: list[tuple[float, MemoryEntry]] = []
         for row_id, content, emb_blob, meta_json, created_at in rows:
@@ -222,7 +246,8 @@ class SQLiteMemory:
         results = [entry for _, entry in scored[:limit]]
         top_scores = [f"{s:.4f}" for s, _ in scored[:limit]]
         logger.debug(
-            "Recall complete (numpy): candidates=%d, returned=%d, top_scores=%s",
+            "Recall complete (numpy): total_rows=%d, candidates=%d, returned=%d, top_scores=%s",
+            total_rows if top_k_preselect > 0 else len(rows),
             len(rows),
             len(results),
             top_scores,
@@ -231,12 +256,13 @@ class SQLiteMemory:
 
     async def _recall_vec(self, query_embedding: list[float], limit: int) -> list[MemoryEntry]:
         """O(log n) ANN recall using sqlite-vec vec_distance_cosine."""
+        db = self._ensure_open()
         import sqlite_vec  # type: ignore[import-not-found]
 
         query_array = np.array(query_embedding, dtype=np.float32)
         query_bytes = sqlite_vec.serialize_float32(query_array)
 
-        rows = await self._db.execute_fetchall(  # type: ignore[union-attr]
+        rows = await db.execute_fetchall(
             """
             SELECT m.id, m.content, m.metadata, m.created_at,
                    vec_distance_cosine(mv.embedding, ?) AS distance
@@ -271,17 +297,17 @@ class SQLiteMemory:
 
     async def clear(self) -> None:
         """Delete all stored memories."""
-        self._ensure_open()
+        db = self._ensure_open()
         logger.info("Clearing all stored memories")
-        await self._db.execute("DELETE FROM memories")  # type: ignore[union-attr]
+        await db.execute("DELETE FROM memories")
         if self._vec_available:
-            await self._db.execute("DELETE FROM memory_vec")  # type: ignore[union-attr]
-        await self._db.commit()  # type: ignore[union-attr]
+            await db.execute("DELETE FROM memory_vec")
+        await db.commit()
 
     async def get(self, memory_id: str) -> MemoryEntry | None:
         """Retrieve a single memory entry by *memory_id*, or None if not found."""
-        self._ensure_open()
-        cursor = await self._db.execute(  # type: ignore[union-attr]
+        db = self._ensure_open()
+        cursor = await db.execute(
             "SELECT id, content, metadata, created_at FROM memories WHERE id = ?",
             (memory_id,),
         )
@@ -297,8 +323,8 @@ class SQLiteMemory:
 
     async def list_entries(self, *, limit: int = 50, offset: int = 0) -> list[MemoryEntry]:
         """Return a paginated list of memory entries ordered by most-recently created."""
-        self._ensure_open()
-        cursor = await self._db.execute(  # type: ignore[union-attr]
+        db = self._ensure_open()
+        cursor = await db.execute(
             "SELECT id, content, metadata, created_at FROM memories ORDER BY created_at DESC LIMIT ? OFFSET ?",
             (limit, offset),
         )
@@ -315,20 +341,18 @@ class SQLiteMemory:
 
     async def forget(self, memory_id: str) -> bool:
         """Delete the entry with *memory_id*. Return True if found and deleted, False if not found."""
-        self._ensure_open()
-        cursor = await self._db.execute(  # type: ignore[union-attr]
+        db = self._ensure_open()
+        cursor = await db.execute(
             "DELETE FROM memories WHERE id = ?",
             (memory_id,),
         )
-        await self._db.commit()  # type: ignore[union-attr]
+        await db.commit()
         return cursor.rowcount > 0
 
     async def count(self) -> int:
         """Return the total number of stored memory entries."""
-        self._ensure_open()
-        cursor = await self._db.execute(  # type: ignore[union-attr]
-            "SELECT COUNT(*) FROM memories"
-        )
+        db = self._ensure_open()
+        cursor = await db.execute("SELECT COUNT(*) FROM memories")
         row = await cursor.fetchone()
         return int(row[0]) if row else 0
 
@@ -347,9 +371,10 @@ class SQLiteMemory:
     # Internals
     # ------------------------------------------------------------------
 
-    def _ensure_open(self) -> None:
+    def _ensure_open(self) -> aiosqlite.Connection:
         if self._db is None:
             raise SageMemoryError("Database not initialized. Call 'initialize()' first.")
+        return self._db
 
     @staticmethod
     def _cosine_similarity(

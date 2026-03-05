@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import time
 from typing import Any
 
 import pytest
@@ -36,6 +38,42 @@ class TestJSONMode:
         await mem.store("entry three", {})
 
         assert await mem.count() == 3
+
+    @pytest.mark.asyncio
+    async def test_json_cache_invalidated_on_store(self, tmp_path: Any) -> None:
+        mem = FileMemory(tmp_path / "mem.json", format="json")
+        await mem.store("entry one", {})
+
+        assert await mem.count() == 1
+        assert mem._cache is not None
+
+        await mem.store("entry two", {})
+        assert mem._cache is None
+        assert await mem.count() == 2
+
+    @pytest.mark.asyncio
+    async def test_json_count_detects_external_file_changes(self, tmp_path: Any) -> None:
+        file_path = tmp_path / "mem.json"
+        mem = FileMemory(file_path, format="json")
+        await mem.store("entry one", {})
+
+        assert await mem.count() == 1
+        assert mem._cache is not None
+
+        time.sleep(0.1)
+        data = json.loads(file_path.read_text(encoding="utf-8"))
+        data.append(
+            {
+                "id": "external-entry",
+                "content": "entry from external writer",
+                "metadata": {},
+                "score": 0.0,
+                "created_at": "2024-01-01T00:00:00+00:00",
+            }
+        )
+        file_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+        assert await mem.count() == 2
 
     @pytest.mark.asyncio
     async def test_json_list_entries(self, tmp_path: Any) -> None:
