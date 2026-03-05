@@ -197,7 +197,7 @@ def register_planning_tools(agent: Agent, config: Any) -> None:
     notepad_instance = __import__("sage.planning.notepad", fromlist=["Notepad"]).Notepad("default")
 
     async def notepad_write(section: str, content: str, append: bool = True) -> str:
-        notepad_instance.write(section, content, append=append)
+        await notepad_instance.write(section, content, append=append)
         return f"Written to notepad section '{section}'."
 
     write_schema = ToolSchema(
@@ -227,9 +227,9 @@ def register_planning_tools(agent: Agent, config: Any) -> None:
 
     async def notepad_read(section: str | None = None) -> str:
         if section:
-            result = notepad_instance.read(section)
+            result = await notepad_instance.read(section)
             return result if result else f"Section '{section}' is empty."
-        result = notepad_instance.read_all()
+        result = await notepad_instance.read_all()
         return result if result else "Notepad is empty."
 
     read_schema = ToolSchema(

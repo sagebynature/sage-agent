@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Protocol
 
 from sage.models import Message
 from sage.providers.base import ProviderProtocol
@@ -12,6 +13,59 @@ logger = logging.getLogger(__name__)
 MAX_SUMMARY_CHARS: int = 2000
 MAX_SOURCE_CHARS: int = 12000
 MAX_BULLET_POINTS: int = 12
+
+
+class CompactionController(Protocol):
+    async def compact(
+        self,
+        messages: list[Message],
+        *,
+        provider: ProviderProtocol,
+    ) -> list[Message]: ...
+
+
+class DefaultCompactionController:
+    def __init__(
+        self,
+        *,
+        threshold: int = 50,
+        keep_recent: int = 10,
+        max_summary_chars: int = MAX_SUMMARY_CHARS,
+        max_source_chars: int = MAX_SOURCE_CHARS,
+        max_bullet_points: int = MAX_BULLET_POINTS,
+    ) -> None:
+        self.threshold = threshold
+        self.keep_recent = keep_recent
+        self.max_summary_chars = max_summary_chars
+        self.max_source_chars = max_source_chars
+        self.max_bullet_points = max_bullet_points
+
+    async def compact(
+        self,
+        messages: list[Message],
+        *,
+        provider: ProviderProtocol,
+    ) -> list[Message]:
+        return await compact_messages(
+            messages,
+            provider=provider,
+            threshold=self.threshold,
+            keep_recent=self.keep_recent,
+            max_summary_chars=self.max_summary_chars,
+            max_source_chars=self.max_source_chars,
+            max_bullet_points=self.max_bullet_points,
+        )
+
+
+class NullCompactionController:
+    async def compact(
+        self,
+        messages: list[Message],
+        *,
+        provider: ProviderProtocol | None = None,
+    ) -> list[Message]:
+        _ = provider
+        return messages
 
 
 async def compact_messages(

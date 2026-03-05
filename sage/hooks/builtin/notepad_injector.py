@@ -38,7 +38,7 @@ def make_notepad_hook(
         if event is not HookEvent.PRE_LLM_CALL:
             return None
 
-        content = notepad.read_all()
+        content = await notepad.read_all()
         if not content:
             return None
 

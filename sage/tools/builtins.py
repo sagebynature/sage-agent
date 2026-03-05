@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import json
+import asyncio
 import logging
-import os
 import re
-import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -234,7 +232,7 @@ async def file_read(path: str) -> str:
     file_path = _validate_path(path)
     if not file_path.is_file():
         raise ToolError(f"File not found: {path}")
-    return file_path.read_text(encoding="utf-8")
+    return await asyncio.to_thread(file_path.read_text, encoding="utf-8")
 
 
 @tool
@@ -246,7 +244,7 @@ async def file_write(path: str, content: str) -> str:
     logger.debug("file_write: %s (%d bytes)", path, len(content))
     file_path = _validate_path(path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
-    file_path.write_text(content, encoding="utf-8")
+    await asyncio.to_thread(file_path.write_text, content, encoding="utf-8")
     return f"Wrote {len(content)} bytes to {path}"
 
 
@@ -329,92 +327,3 @@ async def http_request(
         return f"HTTP Error {exc.response.status_code}: {exc.response.text[:1000]}"
     except Exception as exc:
         raise ToolError(f"http_request failed: {exc}") from exc
-
-
-# ---------------------------------------------------------------------------
-# Memory tools
-# ---------------------------------------------------------------------------
-
-_MEMORY_PATH_DEFAULT = Path.home() / ".sage" / "memory_store.json"
-
-
-def _memory_path() -> Path:
-    """Return the memory storage path (overridable via SAGE_MEMORY_PATH)."""
-    env = os.environ.get("SAGE_MEMORY_PATH", "")
-    return Path(env) if env else _MEMORY_PATH_DEFAULT
-
-
-def _load_memory() -> dict[str, str]:
-    path = _memory_path()
-    if not path.exists():
-        return {}
-    try:
-        with open(path, encoding="utf-8") as f:
-            data: dict[str, str] = json.load(f)
-            return data
-    except Exception:
-        return {}
-
-
-def _save_memory(data: dict[str, str]) -> None:
-    path = _memory_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-
-
-@tool
-async def memory_store(key: str, value: str) -> str:
-    """Persist a key-value pair to long-term memory.
-
-    Memory survives across sessions and is stored locally at
-    ``~/.sage/memory_store.json`` (override with ``SAGE_MEMORY_PATH``).
-
-    Args:
-        key: The key to store under.
-        value: The value to store (any string).
-
-    Returns:
-        Confirmation message.
-    """
-    warnings.warn(
-        "The JSON memory_store tool is deprecated. Configure a 'memory:' backend "
-        "in your agent frontmatter to use semantic memory instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    logger.debug("memory_store: key=%s", key)
-    data = _load_memory()
-    data[key] = value
-    _save_memory(data)
-    return f"Stored: {key}"
-
-
-@tool
-async def memory_recall(query: str) -> str:
-    """Search long-term memory for entries matching the query.
-
-    Performs a case-insensitive substring match on both keys and values.
-
-    Args:
-        query: Search string to match against stored keys and values.
-
-    Returns:
-        JSON object of matching entries, or a message if nothing matches.
-    """
-    warnings.warn(
-        "The JSON memory_recall tool is deprecated. Configure a 'memory:' backend "
-        "in your agent frontmatter to use semantic memory instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    logger.debug("memory_recall: %s", query[:100])
-    data = _load_memory()
-    if not data:
-        return "No memories stored yet"
-
-    q = query.lower()
-    matches = {k: v for k, v in data.items() if q in k.lower() or q in v.lower()}
-    if not matches:
-        return f"No matches for: {query}"
-    return json.dumps(matches, indent=2)

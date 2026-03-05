@@ -33,6 +33,7 @@ from sage.skills.loader import (
 from sage.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
+    from sage.memory.compaction import CompactionController
     from sage.memory.base import MemoryProtocol
     from sage.mcp.client import MCPClient
     from sage.orchestrator.pipeline import Pipeline
@@ -76,30 +77,32 @@ def _build_memory_backend(
 ) -> "MemoryProtocol | None":
     _ = config
     memory: MemoryProtocol | None = None
-    if agent_config.memory is not None and agent_config.memory.backend == "sqlite":
-        from sage.memory.embedding import LiteLLMEmbedding
-        from sage.memory.sqlite_backend import SQLiteMemory
+    if agent_config.memory is not None:
+        from sage.memory.registry import get_backend
 
-        logger.info(
-            "Building memory backend for '%s': backend=%s, embedding=%s, path=%s",
-            agent_config.name,
-            agent_config.memory.backend,
-            agent_config.memory.embedding,
-            agent_config.memory.path,
-        )
-        embedding = LiteLLMEmbedding(agent_config.memory.embedding)
-        memory = SQLiteMemory(
-            path=agent_config.memory.path, embedding=embedding, config=agent_config.memory
-        )
-    elif agent_config.memory is not None and agent_config.memory.backend == "file":
-        from sage.memory.file_backend import FileMemory
+        factory = get_backend(agent_config.memory.backend)
+        kwargs: dict[str, Any] = {"path": agent_config.memory.path}
 
-        logger.info(
-            "Building file memory backend for '%s': path=%s",
-            agent_config.name,
-            agent_config.memory.path,
-        )
-        memory = FileMemory(agent_config.memory.path)
+        if agent_config.memory.backend == "sqlite":
+            from sage.memory.embedding import LiteLLMEmbedding
+
+            logger.info(
+                "Building memory backend for '%s': backend=%s, embedding=%s, path=%s",
+                agent_config.name,
+                agent_config.memory.backend,
+                agent_config.memory.embedding,
+                agent_config.memory.path,
+            )
+            embedding = LiteLLMEmbedding(agent_config.memory.embedding)
+            kwargs.update({"embedding": embedding, "config": agent_config.memory})
+        elif agent_config.memory.backend == "file":
+            logger.info(
+                "Building file memory backend for '%s': path=%s",
+                agent_config.name,
+                agent_config.memory.path,
+            )
+
+        memory = factory(**kwargs)
     return memory
 
 
@@ -379,6 +382,7 @@ class Agent:
         skills: list[Skill] | None = None,
         mcp_clients: list[MCPClient] | None = None,
         compaction_threshold: int = 50,
+        compaction_controller: CompactionController | None = None,
         parallel_tool_execution: bool = True,
         tool_timeout: float | None = None,
         hook_registry: HookRegistry | None = None,
@@ -431,6 +435,15 @@ class Agent:
 
         # Default to LiteLLM provider if none supplied.
         self.provider: ProviderProtocol = provider or LiteLLMProvider(model, **(model_params or {}))  # type: ignore[assignment]
+        self._provider: ProviderProtocol = self.provider
+
+        from sage.memory.compaction import DefaultCompactionController
+
+        self._compaction_controller = compaction_controller or DefaultCompactionController()
+        if compaction_controller is None and isinstance(
+            self._compaction_controller, DefaultCompactionController
+        ):
+            self._compaction_controller.threshold = compaction_threshold
 
         # Build tool registry from the supplied tool list.
         self.tool_registry = ToolRegistry(default_timeout=tool_timeout)
@@ -1273,23 +1286,19 @@ class Agent:
         Returns (compacted_history, strategy_name).
         """
         from sage.memory.compaction import (
-            compact_messages,
+            DefaultCompactionController,
             deterministic_trim,
             emergency_drop,
         )
 
-        # Strategy 1: LLM summarization via compact_messages (with correct threshold)
         try:
-            result = await compact_messages(
-                history,
-                self.provider,
-                threshold=self._compaction_threshold,
-                keep_recent=10,
-            )
+            if isinstance(self._compaction_controller, DefaultCompactionController):
+                self._compaction_controller.threshold = self._compaction_threshold
+            result = await self._compaction_controller.compact(history, provider=self._provider)
             if len(result) < len(history):
                 return result, "compact_messages"
         except Exception as exc:
-            logger.warning("compact_messages failed, falling back to emergency_drop: %s", exc)
+            logger.warning("Compaction controller failed, falling back to emergency_drop: %s", exc)
 
         # Strategy 2: emergency drop (preserves system/last-user/tool results)
         try:

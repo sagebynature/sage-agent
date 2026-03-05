@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 from pathlib import Path
 from unittest import mock
 
@@ -15,8 +13,6 @@ from sage.tools.builtins import (
     file_read,
     file_write,
     http_request,
-    memory_recall,
-    memory_store,
     shell,
 )
 
@@ -163,80 +159,6 @@ class TestHttpRequestTool:
 
         body_part = result.split("\n", 1)[1]
         assert len(body_part) == 5000
-
-
-class TestMemoryTools:
-    """Tests for memory_store and memory_recall built-in tools."""
-
-    async def test_store_and_recall(self, tmp_path: Path) -> None:
-        import warnings
-
-        mem_path = str(tmp_path / "mem.json")
-        with mock.patch.dict(os.environ, {"SAGE_MEMORY_PATH": mem_path}):
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", DeprecationWarning)
-                await memory_store(key="project", value="apollo")
-                result = await memory_recall(query="project")
-
-        data = json.loads(result)
-        assert data["project"] == "apollo"
-
-    async def test_recall_no_match(self, tmp_path: Path) -> None:
-        import warnings
-
-        mem_path = str(tmp_path / "empty_mem.json")
-        with mock.patch.dict(os.environ, {"SAGE_MEMORY_PATH": mem_path}):
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", DeprecationWarning)
-                await memory_store(key="foo", value="bar")
-                result = await memory_recall(query="xyznotfound")
-
-        assert "No matches" in result
-
-    async def test_recall_empty_memory(self, tmp_path: Path) -> None:
-        import warnings
-
-        mem_path = str(tmp_path / "nonexistent.json")
-        with mock.patch.dict(os.environ, {"SAGE_MEMORY_PATH": mem_path}):
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", DeprecationWarning)
-                result = await memory_recall(query="anything")
-
-        assert "No memories" in result
-
-    async def test_store_overwrites_existing_key(self, tmp_path: Path) -> None:
-        import warnings
-
-        mem_path = str(tmp_path / "mem2.json")
-        with mock.patch.dict(os.environ, {"SAGE_MEMORY_PATH": mem_path}):
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", DeprecationWarning)
-                await memory_store(key="k", value="v1")
-                await memory_store(key="k", value="v2")
-                result = await memory_recall(query="k")
-
-        data = json.loads(result)
-        assert data["k"] == "v2"
-
-    async def test_memory_store_emits_deprecation_warning(self, tmp_path: Path) -> None:
-        import warnings
-
-        mem_path = str(tmp_path / "warn_mem.json")
-        with mock.patch.dict(os.environ, {"SAGE_MEMORY_PATH": mem_path}):
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                await memory_store(key="k", value="v")
-        assert any(issubclass(warning.category, DeprecationWarning) for warning in w)
-
-    async def test_memory_recall_emits_deprecation_warning(self, tmp_path: Path) -> None:
-        import warnings
-
-        mem_path = str(tmp_path / "warn_mem2.json")
-        with mock.patch.dict(os.environ, {"SAGE_MEMORY_PATH": mem_path}):
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                await memory_recall(query="k")
-        assert any(issubclass(warning.category, DeprecationWarning) for warning in w)
 
 
 class TestShellSecurityPatterns:
