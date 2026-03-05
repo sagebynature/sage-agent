@@ -536,22 +536,15 @@ class Agent:
     async def run(self, input: str, *, response_model: type[T] | None = None) -> str | T:
         """Main execution loop: LLM call -> tool execution -> repeat until done.
 
-        The loop runs for at most ``max_turns`` iterations.  Each iteration
-        calls the provider, checks for tool calls in the response, executes
-        them, and feeds the results back.  The loop terminates when the model
+        Loops for at most ``max_turns`` iterations. Terminates when the model
         produces a response with no tool calls or ``max_turns`` is exceeded.
+        Conversation history accumulates across calls.
 
-        Conversation history is accumulated across calls so that subsequent
-        invocations see the full multi-turn context.
+        MCP servers connect on first call; memory is recalled before the first
+        turn and persisted after the final response.
 
-        MCP servers are connected on first call and their tools are registered
-        into the tool registry.  Memory is recalled before the first turn and
-        persisted after the final response.
-
-        When ``response_model`` is provided (a Pydantic model class), a system
-        message is injected instructing the LLM to respond with JSON matching
-        the model's schema.  The final output is then parsed and returned as an
-        instance of that model instead of a raw string.
+        If ``response_model`` is provided, a JSON schema prompt is injected and
+        the final output is parsed into that Pydantic model.
         """
         logger.info("Agent '%s' run started: %s", self.name, input[:80])
         messages = await self._pre_loop_setup(input)
