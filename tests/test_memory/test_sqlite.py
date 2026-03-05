@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import time
 from typing import Any
 
 import numpy as np
@@ -118,6 +119,63 @@ class TestSQLiteMemoryRecall:
     async def test_recall_empty_database(self, memory: SQLiteMemory) -> None:
         results = await memory.recall("anything")
         assert results == []
+
+    @pytest.mark.asyncio
+    async def test_recall_numpy_preselect_uses_recent_rows_only(self, memory: SQLiteMemory) -> None:
+        old_text = "sentinel oldest memory"
+        await memory.store(old_text)
+        for i in range(1200):
+            await memory.store(f"recent memory {i}")
+
+        query_embedding = (await memory._embedding.embed([old_text]))[0]
+        limited_results = await memory._recall_numpy(query_embedding, limit=5, top_k_preselect=1000)
+        full_results = await memory._recall_numpy(query_embedding, limit=5, top_k_preselect=5000)
+
+        assert all(entry.content != old_text for entry in limited_results)
+        assert any(entry.content == old_text for entry in full_results)
+
+    @pytest.mark.asyncio
+    async def test_recall_numpy_small_dataset_behavior_unchanged(
+        self, memory: SQLiteMemory
+    ) -> None:
+        for i in range(50):
+            await memory.store(f"entry {i}")
+
+        query_embedding = (await memory._embedding.embed(["entry 7"]))[0]
+        default_results = await memory._recall_numpy(query_embedding, limit=5)
+        explicit_results = await memory._recall_numpy(
+            query_embedding, limit=5, top_k_preselect=1000
+        )
+
+        assert [entry.id for entry in explicit_results] == [entry.id for entry in default_results]
+
+    @pytest.mark.asyncio
+    async def test_recall_numpy_preselect_benchmark(self, tmp_path: Any) -> None:
+        mem = SQLiteMemory(
+            path=str(tmp_path / "preselect_benchmark.db"),
+            embedding=DeterministicEmbedding(),
+        )
+        await mem.initialize()
+        try:
+            for i in range(5000):
+                await mem.store(f"benchmark memory {i}")
+
+            query_embedding = (await mem._embedding.embed(["benchmark memory 4999"]))[0]
+
+            start = time.perf_counter()
+            capped_results = await mem._recall_numpy(query_embedding, limit=5, top_k_preselect=1000)
+            capped_elapsed = time.perf_counter() - start
+
+            start = time.perf_counter()
+            full_results = await mem._recall_numpy(query_embedding, limit=5, top_k_preselect=10000)
+            full_elapsed = time.perf_counter() - start
+
+            assert len(capped_results) == 5
+            assert len(full_results) == 5
+            assert capped_elapsed >= 0.0
+            assert full_elapsed >= 0.0
+        finally:
+            await mem.close()
 
 
 class TestSQLiteMemoryClear:

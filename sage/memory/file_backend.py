@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,6 +39,8 @@ class FileMemory:
     ) -> None:
         self._path = Path(path)
         self._format = format
+        self._cache: list[MemoryEntry] | None = None
+        self._cache_mtime: float = 0.0
 
     # ------------------------------------------------------------------
     # MemoryProtocol methods
@@ -45,7 +48,7 @@ class FileMemory:
 
     async def store(self, content: str, metadata: dict[str, Any] | None = None) -> str:
         """Store content and return the assigned memory ID."""
-        meta = metadata or {}
+        meta = metadata if isinstance(metadata, dict) else {}
         memory_id = uuid4().hex
         created_at = datetime.now(timezone.utc).isoformat()
         entry = MemoryEntry(
@@ -59,6 +62,7 @@ class FileMemory:
             self._json_append(entry)
         else:
             self._markdown_write(entry)
+        self._cache = None
         logger.debug("FileMemory stored id=%s content_preview=%.80s", memory_id, content)
         return memory_id
 
@@ -100,6 +104,7 @@ class FileMemory:
                 for md_file in self._path.glob("*.md"):
                     md_file.unlink()
                 logger.debug("FileMemory (markdown) cleared: %s", self._path)
+        self._cache = None
 
     # ------------------------------------------------------------------
     # Enriched MemoryProtocol methods (Task 5 extension)
@@ -120,12 +125,21 @@ class FileMemory:
     async def forget(self, memory_id: str) -> bool:
         """Delete a specific memory entry by ID. Returns True if deleted, False if not found."""
         if self._format == "json":
-            return self._json_forget(memory_id)
+            deleted = self._json_forget(memory_id)
         else:
-            return self._markdown_forget(memory_id)
+            deleted = self._markdown_forget(memory_id)
+        if deleted:
+            self._cache = None
+        return deleted
 
     async def count(self) -> int:
         """Return the total number of stored entries."""
+        if self._cache is not None and self._format == "json":
+            try:
+                if os.path.getmtime(self._path) == self._cache_mtime:
+                    return len(self._cache)
+            except OSError:
+                pass
         return len(self._load_all())
 
     async def health_check(self) -> dict[str, Any]:
@@ -156,7 +170,24 @@ class FileMemory:
             return []
         try:
             data = json.loads(self._path.read_text(encoding="utf-8"))
-            return [MemoryEntry(**d) for d in data]
+            entries: list[MemoryEntry] = []
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+                payload = dict(item)
+                if "content" not in payload:
+                    if "value" in payload:
+                        payload["content"] = str(payload["value"])
+                    elif "key" in payload:
+                        payload["content"] = str(payload["key"])
+                    else:
+                        payload["content"] = ""
+                if "created_at" not in payload and "timestamp" in payload:
+                    payload["created_at"] = str(payload["timestamp"])
+                if not isinstance(payload.get("metadata"), dict):
+                    payload["metadata"] = {}
+                entries.append(MemoryEntry(**payload))
+            return entries
         except Exception as exc:
             logger.warning("FileMemory failed to load JSON at %s: %s", self._path, exc)
             return []
@@ -246,7 +277,19 @@ class FileMemory:
     def _load_all(self) -> list[MemoryEntry]:
         """Load all entries regardless of format."""
         if self._format == "json":
-            return self._json_load()
+            if self._cache is not None:
+                try:
+                    if os.path.getmtime(self._path) == self._cache_mtime:
+                        return self._cache
+                except OSError:
+                    pass
+            entries = self._json_load()
+            self._cache = entries
+            try:
+                self._cache_mtime = os.path.getmtime(self._path)
+            except OSError:
+                self._cache_mtime = 0.0
+            return entries
         else:
             return self._markdown_load_all()
 
