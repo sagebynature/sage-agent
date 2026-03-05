@@ -438,6 +438,57 @@ class TestAgentStreamWithTools:
         assert "Paris" in stored_content
 
 
+class TestRunStreamEquivalence:
+    @pytest.mark.asyncio
+    async def test_run_and_stream_same_tool_calls_and_output(self) -> None:
+        prompt = "What is 2 + 3?"
+        tool_calls = [ToolCall(id="tc_eq", name="add", arguments={"a": 2, "b": 3})]
+        responses = [_tool_call_result(tool_calls), _text_result("2 + 3 = 5")]
+
+        run_provider = MockProvider(responses)
+        stream_provider = MockProvider(responses)
+        run_agent = Agent(name="equiv-run", model="test-model", tools=[add], provider=run_provider)
+        stream_agent = Agent(
+            name="equiv-stream",
+            model="test-model",
+            tools=[add],
+            provider=stream_provider,
+        )
+
+        run_output = await run_agent.run(prompt)
+        stream_chunks: list[str] = []
+        async for chunk in stream_agent.stream(prompt):
+            stream_chunks.append(chunk)
+        stream_output = "".join(stream_chunks)
+
+        assert run_output == "2 + 3 = 5"
+        assert stream_output == run_output
+
+        def _extract_tool_call_sequence(provider: MockProvider) -> list[list[tuple[str, str]]]:
+            sequence: list[list[tuple[str, str]]] = []
+            for call in provider.call_args:
+                turn_calls: list[tuple[str, str]] = []
+                for msg in call["messages"]:
+                    if msg.role == "assistant" and msg.tool_calls:
+                        turn_calls.extend((tc.id, tc.name) for tc in msg.tool_calls)
+                if turn_calls:
+                    sequence.append(turn_calls)
+            return sequence
+
+        assert _extract_tool_call_sequence(run_provider) == _extract_tool_call_sequence(
+            stream_provider
+        )
+
+        run_tool_messages = [m for m in run_provider.call_args[1]["messages"] if m.role == "tool"]
+        stream_tool_messages = [
+            m for m in stream_provider.call_args[1]["messages"] if m.role == "tool"
+        ]
+        assert [m.tool_call_id for m in run_tool_messages] == [
+            m.tool_call_id for m in stream_tool_messages
+        ]
+        assert [m.content for m in run_tool_messages] == [m.content for m in stream_tool_messages]
+
+
 class TestAgentDelegate:
     """Tests for Agent.delegate — subagent delegation."""
 
