@@ -68,6 +68,32 @@ class NullCompactionController:
         return messages
 
 
+async def run_compaction_chain(
+    history: list[Message],
+    controller: CompactionController,
+    provider: ProviderProtocol,
+    threshold: int,
+) -> tuple[list[Message], str]:
+    try:
+        if isinstance(controller, DefaultCompactionController):
+            controller.threshold = threshold
+        result = await controller.compact(history, provider=provider)
+        if len(result) < len(history):
+            return result, "compact_messages"
+    except Exception as exc:
+        logger.warning("Compaction controller failed, falling back to emergency_drop: %s", exc)
+
+    try:
+        result = emergency_drop(history)
+        if len(result) < len(history):
+            return result, "emergency_drop"
+    except Exception as exc:
+        logger.warning("emergency_drop failed, falling back to deterministic_trim: %s", exc)
+
+    result = deterministic_trim(history, target_count=threshold)
+    return result, "deterministic_trim"
+
+
 async def compact_messages(
     messages: list[Message],
     provider: ProviderProtocol,
