@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any
 
 from sage.hooks.base import HookEvent
 from sage.models import ToolSchema
+from sage.planning.notepad import Notepad
 from sage.planning.state import PlanState, PlanStateManager, PlanTask
 
 if TYPE_CHECKING:
@@ -194,7 +195,7 @@ def register_planning_tools(agent: Agent, config: Any) -> None:
         plan_review.__tool_schema__ = review_schema  # type: ignore[attr-defined]
         agent.tool_registry.register(plan_review)
 
-    notepad_instance = __import__("sage.planning.notepad", fromlist=["Notepad"]).Notepad("default")
+    notepad_instance = Notepad("default")
 
     async def notepad_write(section: str, content: str, append: bool = True) -> str:
         await notepad_instance.write(section, content, append=append)
