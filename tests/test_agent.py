@@ -2661,40 +2661,6 @@ class TestMemoryToolUnification:
         assert "project: apollo" in recall_result
         mock_memory.recall.assert_called_once_with("project")
 
-    @pytest.mark.asyncio
-    async def test_json_memory_tools_used_without_backend(self) -> None:
-        """Without a memory backend, the JSON memory_store / memory_recall are still available."""
-        import warnings
-
-        provider = MockProvider([_text_result("done")])
-        agent = Agent(
-            name="no-mem-test",
-            model="test-model",
-            provider=provider,
-        )
-
-        # Manually load the builtin JSON memory tools.
-        agent.tool_registry.load_from_module("memory_store")
-        agent.tool_registry.load_from_module("memory_recall")
-
-        # Both tools should be registered.
-        schemas = {s.name for s in agent.tool_registry.get_schemas()}
-        assert "memory_store" in schemas
-        assert "memory_recall" in schemas
-
-        # Calling them should emit DeprecationWarning (JSON backend).
-        import os
-        import tempfile
-        from unittest.mock import patch
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            mem_path = os.path.join(tmp_dir, "mem.json")
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                with patch.dict(os.environ, {"SAGE_MEMORY_PATH": mem_path}):
-                    await agent.tool_registry.execute("memory_store", {"key": "k", "value": "v"})
-            assert any(issubclass(warning.category, DeprecationWarning) for warning in w)
-
 
 # ── Memory Relevance Filter Tests ─────────────────────────────────────────────
 

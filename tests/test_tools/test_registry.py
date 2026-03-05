@@ -201,18 +201,6 @@ class TestBuiltinNameResolution:
         names = {s.name for s in registry.get_schemas()}
         assert "http_request" in names
 
-    def test_bare_memory_store_loads_builtin(self) -> None:
-        registry = ToolRegistry()
-        registry.load_from_module("memory_store")
-        names = {s.name for s in registry.get_schemas()}
-        assert "memory_store" in names
-
-    def test_bare_memory_recall_loads_builtin(self) -> None:
-        registry = ToolRegistry()
-        registry.load_from_module("memory_recall")
-        names = {s.name for s in registry.get_schemas()}
-        assert "memory_recall" in names
-
     def test_legacy_builtin_prefix_still_works(self) -> None:
         """builtin: prefix is still accepted for backwards compatibility."""
         registry = ToolRegistry()
@@ -230,8 +218,6 @@ class TestBuiltinNameResolution:
             "file_read",
             "file_write",
             "http_request",
-            "memory_store",
-            "memory_recall",
         }.issubset(names)
 
 
@@ -409,8 +395,6 @@ class TestRegisterFromPermissions:
             "http_request",
             "web_fetch",
             "web_search",
-            "memory_store",
-            "memory_recall",
         }.issubset(names)
 
     def test_register_from_permissions_extensions(self) -> None:

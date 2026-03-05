@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Literal
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -10,6 +11,7 @@ from sage.memory.compaction import (
     MAX_BULLET_POINTS,
     MAX_SOURCE_CHARS,
     MAX_SUMMARY_CHARS,
+    NullCompactionController,
     compact_messages,
     prune_tool_outputs,
 )
@@ -21,7 +23,7 @@ from sage.models import CompletionResult, Message, Usage
 # ---------------------------------------------------------------------------
 
 
-def _msg(role: str, content: str) -> Message:
+def _msg(role: Literal["system", "user", "assistant", "tool"], content: str) -> Message:
     return Message(role=role, content=content)
 
 
@@ -123,6 +125,17 @@ class TestCompactMessagesSummaryPrompt:
         assert "important fact 49" in user_prompt
         # Recent messages should not be in the summary prompt
         assert "important fact 50" not in user_prompt
+
+
+class TestNullCompactionController:
+    @pytest.mark.asyncio
+    async def test_returns_messages_unchanged(self) -> None:
+        messages = [_msg("user", "hello"), _msg("assistant", "hi")]
+        controller = NullCompactionController()
+
+        result = await controller.compact(messages, provider=None)
+
+        assert result is messages
 
 
 # ---------------------------------------------------------------------------

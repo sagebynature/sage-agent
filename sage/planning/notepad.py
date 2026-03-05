@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 
@@ -17,22 +18,26 @@ class Notepad:
         self.base_dir = root / plan_name
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
-    def write(self, section: str, content: str, *, append: bool = True) -> None:
+    async def write(self, section: str, content: str, *, append: bool = True) -> None:
         path = self.base_dir / f"{section}.md"
         mode = "a" if append else "w"
-        with path.open(mode) as fh:
-            fh.write(content + "\n")
 
-    def read(self, section: str) -> str:
+        def _write() -> None:
+            with path.open(mode) as fh:
+                fh.write(content + "\n")
+
+        await asyncio.to_thread(_write)
+
+    async def read(self, section: str) -> str:
         path = self.base_dir / f"{section}.md"
         if not path.exists():
             return ""
-        return path.read_text()
+        return await asyncio.to_thread(path.read_text)
 
-    def read_all(self) -> str:
+    async def read_all(self) -> str:
         sections: list[str] = []
         for path in sorted(self.base_dir.glob("*.md")):
-            content = path.read_text()
+            content = await asyncio.to_thread(path.read_text)
             if content.strip():
                 sections.append(f"### {path.stem.upper()}\n{content}")
         return "\n\n".join(sections)

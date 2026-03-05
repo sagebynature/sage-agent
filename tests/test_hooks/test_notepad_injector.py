@@ -51,7 +51,7 @@ class TestHookInjectsNotepad:
     async def test_injects_notepad_content_as_system_message(self, tmp_path: Path) -> None:
         from sage.planning.notepad import Notepad
 
-        Notepad("plan-b", base_dir=tmp_path).write("learnings", "Python is great")
+        await Notepad("plan-b", base_dir=tmp_path).write("learnings", "Python is great")
         hook = make_notepad_hook("plan-b", base_dir=tmp_path)
         data = {"messages": [_user_msg("continue")]}
         result = await hook(HookEvent.PRE_LLM_CALL, data)
@@ -66,7 +66,7 @@ class TestHookInjectsNotepad:
     async def test_injects_after_existing_system_message(self, tmp_path: Path) -> None:
         from sage.planning.notepad import Notepad
 
-        Notepad("plan-c", base_dir=tmp_path).write("notes", "important note")
+        await Notepad("plan-c", base_dir=tmp_path).write("notes", "important note")
         hook = make_notepad_hook("plan-c", base_dir=tmp_path)
         data = {"messages": [_system_msg("You are helpful."), _user_msg("go")]}
         result = await hook(HookEvent.PRE_LLM_CALL, data)
@@ -82,7 +82,7 @@ class TestHookInjectsNotepad:
     async def test_prepends_when_no_system_message(self, tmp_path: Path) -> None:
         from sage.planning.notepad import Notepad
 
-        Notepad("plan-d", base_dir=tmp_path).write("notes", "note A")
+        await Notepad("plan-d", base_dir=tmp_path).write("notes", "note A")
         hook = make_notepad_hook("plan-d", base_dir=tmp_path)
         data = {"messages": [_user_msg("question")]}
         result = await hook(HookEvent.PRE_LLM_CALL, data)
@@ -98,8 +98,8 @@ class TestHookInjectsNotepad:
         from sage.planning.notepad import Notepad
 
         notepad = Notepad("plan-e", base_dir=tmp_path)
-        notepad.write("learnings", "learned X")
-        notepad.write("decisions", "decided Y")
+        await notepad.write("learnings", "learned X")
+        await notepad.write("decisions", "decided Y")
         hook = make_notepad_hook("plan-e", base_dir=tmp_path)
         data = {"messages": [_user_msg("next step")]}
         result = await hook(HookEvent.PRE_LLM_CALL, data)
@@ -114,7 +114,7 @@ class TestHookInjectsNotepad:
     async def test_does_not_mutate_original_messages(self, tmp_path: Path) -> None:
         from sage.planning.notepad import Notepad
 
-        Notepad("plan-f", base_dir=tmp_path).write("notes", "something")
+        await Notepad("plan-f", base_dir=tmp_path).write("notes", "something")
         hook = make_notepad_hook("plan-f", base_dir=tmp_path)
         original = [_user_msg("hi")]
         data = {"messages": original}
@@ -125,7 +125,7 @@ class TestHookInjectsNotepad:
     async def test_preserves_extra_data_keys(self, tmp_path: Path) -> None:
         from sage.planning.notepad import Notepad
 
-        Notepad("plan-g", base_dir=tmp_path).write("notes", "x")
+        await Notepad("plan-g", base_dir=tmp_path).write("notes", "x")
         hook = make_notepad_hook("plan-g", base_dir=tmp_path)
         data = {"messages": [_user_msg("go")], "model": "gpt-4o"}
         result = await hook(HookEvent.PRE_LLM_CALL, data)
