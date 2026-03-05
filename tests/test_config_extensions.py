@@ -9,7 +9,7 @@ from sage.config import (
     FollowThroughConfig,
     MemoryConfig,
     QueryClassificationConfig,
-    ResearchConfig,
+    ResearchFrontmatterConfig,
     SessionConfig,
 )
 
@@ -48,16 +48,16 @@ def test_query_classification_config_parsed():
 
 
 def test_research_config_parsed():
-    """ResearchConfig should parse enabled, max_sources, timeout."""
-    cfg = ResearchConfig(enabled=True, max_sources=5, timeout=15.0)
+    """ResearchFrontmatterConfig should parse enabled, max_sources, timeout."""
+    cfg = ResearchFrontmatterConfig(enabled=True, max_sources=5, timeout=15.0)
     assert cfg.enabled is True
     assert cfg.max_sources == 5
     assert cfg.timeout == 15.0
 
 
 def test_research_config_defaults():
-    """ResearchConfig should have disabled-by-default."""
-    cfg = ResearchConfig()
+    """ResearchFrontmatterConfig should have disabled-by-default."""
+    cfg = ResearchFrontmatterConfig()
     assert cfg.enabled is False
     assert cfg.max_sources == 3
     assert cfg.timeout == 10.0
