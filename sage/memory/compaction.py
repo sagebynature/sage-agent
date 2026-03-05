@@ -19,6 +19,9 @@ async def compact_messages(
     provider: ProviderProtocol,
     threshold: int = 50,
     keep_recent: int = 10,
+    max_summary_chars: int = MAX_SUMMARY_CHARS,
+    max_source_chars: int = MAX_SOURCE_CHARS,
+    max_bullet_points: int = MAX_BULLET_POINTS,
 ) -> list[Message]:
     """Compact *messages* when they exceed *threshold*.
 
@@ -55,16 +58,16 @@ async def compact_messages(
         len(to_keep),
     )
 
-    # Serialize messages to text; drop oldest first if it exceeds MAX_SOURCE_CHARS
+    # Serialize messages to text; drop oldest first if it exceeds max_source_chars
     candidates = list(to_summarize)
     summary_text = "\n".join(f"{m.role}: {m.content or '[tool call]'}" for m in candidates)
-    if len(summary_text) > MAX_SOURCE_CHARS:
+    if len(summary_text) > max_source_chars:
         logger.warning(
             "Source text (%d chars) exceeds MAX_SOURCE_CHARS (%d); truncating oldest messages",
             len(summary_text),
-            MAX_SOURCE_CHARS,
+            max_source_chars,
         )
-        while candidates and len(summary_text) > MAX_SOURCE_CHARS:
+        while candidates and len(summary_text) > max_source_chars:
             candidates.pop(0)
             summary_text = "\n".join(f"{m.role}: {m.content or '[tool call]'}" for m in candidates)
 
@@ -74,9 +77,9 @@ async def compact_messages(
                 role="system",
                 content=(
                     "Summarize the conversation as a bulleted list with at most "
-                    f"{MAX_BULLET_POINTS} items. "
+                    f"{max_bullet_points} items. "
                     "Each bullet point should start with '- ' and be a single concise statement. "
-                    f"Total output must be under {MAX_SUMMARY_CHARS} characters."
+                    f"Total output must be under {max_summary_chars} characters."
                 ),
             ),
             Message(role="user", content=summary_text),
@@ -85,20 +88,19 @@ async def compact_messages(
 
     raw_summary = summary_result.message.content or ""
 
-    # Post-process: enforce MAX_SUMMARY_CHARS by truncating at the last complete bullet
-    if len(raw_summary) > MAX_SUMMARY_CHARS:
+    # Post-process: enforce max_summary_chars by truncating at the last complete bullet
+    if len(raw_summary) > max_summary_chars:
         logger.warning(
             "LLM summary (%d chars) exceeds MAX_SUMMARY_CHARS (%d); truncating",
             len(raw_summary),
-            MAX_SUMMARY_CHARS,
+            max_summary_chars,
         )
-        # Find all bullet lines and keep as many as fit within the limit
         lines = raw_summary.splitlines(keepends=True)
         truncated_lines: list[str] = []
         total = 0
         last_bullet_end = 0
         for line in lines:
-            if total + len(line) > MAX_SUMMARY_CHARS:
+            if total + len(line) > max_summary_chars:
                 break
             truncated_lines.append(line)
             total += len(line)
@@ -106,12 +108,10 @@ async def compact_messages(
             if stripped.startswith("- ") or stripped.startswith("* "):
                 last_bullet_end = len(truncated_lines)
 
-        # Use up to the last complete bullet point if we found any
         if last_bullet_end > 0:
             raw_summary = "".join(truncated_lines[:last_bullet_end]).rstrip()
         else:
-            # No bullet points found — hard truncate
-            raw_summary = raw_summary[:MAX_SUMMARY_CHARS]
+            raw_summary = raw_summary[:max_summary_chars]
 
     summary_msg = Message(
         role="system",

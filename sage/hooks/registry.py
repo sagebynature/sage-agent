@@ -47,13 +47,19 @@ class HookRegistry:
 
     Safety guardrails
     -----------------
-    * At most ``_MAX_HANDLERS_PER_EVENT`` (10) handlers per event.
+    * At most *max_handlers* (default 10) handlers per event.
     * ``freeze()`` locks the registry against further registration.
     * A recursive-emit guard raises ``RuntimeError`` if the same event
       is emitted from within one of its own handlers.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        max_handlers: int = _MAX_HANDLERS_PER_EVENT,
+        handler_timeout: float = _HANDLER_TIMEOUT_SECONDS,
+    ) -> None:
+        self._max_handlers: int = max_handlers
+        self._handler_timeout: float = handler_timeout
         self._handlers: dict[HookEvent, list[_HandlerEntry]] = {event: [] for event in HookEvent}
         self._frozen: bool = False
         # Tracks which events are currently being emitted (recursive guard).
@@ -89,9 +95,9 @@ class HookRegistry:
         if self._frozen:
             raise ValueError("HookRegistry is frozen — no further registration allowed.")
         entries = self._handlers[event]
-        if len(entries) >= _MAX_HANDLERS_PER_EVENT:
+        if len(entries) >= self._max_handlers:
             raise ValueError(
-                f"Max {_MAX_HANDLERS_PER_EVENT} handlers per event reached for "
+                f"Max {self._max_handlers} handlers per event reached for "
                 f"{event!r}. Cannot register more."
             )
         entries.append(_HandlerEntry(handler=handler, priority=priority, modifying=modifying))
@@ -146,13 +152,13 @@ class HookRegistry:
         try:
             await asyncio.wait_for(
                 handler(event, data),
-                timeout=_HANDLER_TIMEOUT_SECONDS,
+                timeout=self._handler_timeout,
             )
         except asyncio.TimeoutError:
             logger.error(
                 "Hook handler %r timed out after %ss for event %r",
                 handler,
-                _HANDLER_TIMEOUT_SECONDS,
+                self._handler_timeout,
                 event,
             )
         except _RecursiveEmitError:
@@ -203,7 +209,7 @@ class HookRegistry:
             for entry in modifying_entries:
                 result = await asyncio.wait_for(
                     entry.handler(event, current),
-                    timeout=_HANDLER_TIMEOUT_SECONDS,
+                    timeout=self._handler_timeout,
                 )
                 if result is not None:
                     current = result

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import textwrap
 from collections.abc import AsyncIterator
@@ -1357,6 +1358,54 @@ class TestAgentMCPWiring:
         # Should not raise; agent still runs with no MCP tools.
         result = await agent.run("hi")
         assert result == "ok"
+
+    @pytest.mark.asyncio
+    async def test_mcp_initialization_is_parallel(self) -> None:
+        """Multiple MCP clients initialize in parallel via asyncio.gather()."""
+        import time
+        from unittest.mock import AsyncMock
+
+        from sage.models import ToolSchema
+
+        start_time = time.time()
+
+        async def slow_connect(client_id: int):
+            """Simulate slow connection."""
+            await asyncio.sleep(0.3)
+
+        mock_clients = []
+        for i in range(3):
+            mock_client = AsyncMock()
+            mock_client.connect = AsyncMock(side_effect=lambda cid=i: slow_connect(cid))
+            mock_client.discover_tools = AsyncMock(
+                return_value=[
+                    ToolSchema(name=f"tool_{i}", description=f"Tool {i}", parameters={}),
+                ]
+            )
+            mock_clients.append(mock_client)
+
+        provider = MockProvider([_text_result("done")])
+        agent = Agent(
+            name="parallel-mcp",
+            model="test-model",
+            provider=provider,
+            mcp_clients=mock_clients,
+        )
+
+        await agent.run("test")
+
+        elapsed = time.time() - start_time
+
+        # If sequential: 3 * 0.3s = 0.9s+
+        # If parallel: ~0.3s + overhead
+        # Assert it took less than 0.7s to prove parallelism
+        assert elapsed < 0.7, (
+            f"Initialization took {elapsed:.2f}s, expected < 0.7s (would be ~0.9s if sequential)"
+        )
+
+        # Verify all clients were connected
+        for mock_client in mock_clients:
+            mock_client.connect.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_from_config_creates_mcp_clients(self, tmp_path: Path) -> None:
