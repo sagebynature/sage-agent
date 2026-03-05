@@ -1093,40 +1093,9 @@ class Agent:
         register_delegation_tools(self)
 
     def _register_memory_tools(self) -> None:
-        """Register memory_store, memory_recall, and memory_forget tool closures.
+        from sage.tools.agent_tools.memory import register_memory_tools
 
-        Only called when ``self.memory`` is not None.
-        """
-        if self.memory is None:
-            return
-
-        from sage.tools.decorator import tool as _tool
-
-        memory_ref = self.memory
-
-        @_tool
-        async def memory_store(key: str, value: str) -> str:
-            """Store a key-value pair in the agent's semantic memory backend."""
-            await memory_ref.store(f"{key}: {value}", metadata={"key": key})
-            return f"Stored: {key}"
-
-        @_tool
-        async def memory_recall(query: str) -> str:
-            """Recall entries from the agent's semantic memory backend."""
-            entries = await memory_ref.recall(query)
-            if not entries:
-                return f"No matches for: {query}"
-            return "\n".join(f"- {e.content}" for e in entries)
-
-        @_tool
-        async def memory_forget(memory_id: str) -> str:
-            """Forget/delete a specific memory entry by its ID."""
-            result = await memory_ref.forget(memory_id)
-            return f"Memory {memory_id} {'deleted' if result else 'not found'}"
-
-        self.tool_registry.register(memory_store)
-        self.tool_registry.register(memory_recall)
-        self.tool_registry.register(memory_forget)
+        register_memory_tools(self)
 
     def _register_planning_tools(self, config: Any) -> None:
         from sage.tools.agent_tools.planning import register_planning_tools
@@ -1168,64 +1137,14 @@ class Agent:
             )
 
     def _build_system_message(self) -> str:
-        """Assemble the system prompt and apply model-specific overlays.
+        from sage.context.message_builder import build_system_message
 
-        Combines body, identity prompt, and skill catalog into a single string,
-        then passes it through the global overlay registry so model-specific
-        instructions (e.g. Gemini tool-call reminder, GPT step hints) are
-        appended automatically.
-        """
-        system_parts: list[str] = []
-        if self._body:
-            from sage.prompts.dynamic_builder import resolve_placeholder
-
-            resolved_body = resolve_placeholder(self._body, self.subagents)
-            system_parts.append(resolved_body)
-        if self._identity_prompt:
-            system_parts.append(self._identity_prompt)
-        if self.skills:
-            catalog_lines = [
-                "## Available Skills",
-                "Use the `use_skill` tool to load a skill's full instructions.",
-                "",
-            ]
-            for skill in self.skills:
-                line = f"- **{skill.name}**"
-                if skill.description:
-                    line += f": {skill.description}"
-                catalog_lines.append(line)
-            system_parts.append("\n".join(catalog_lines))
-
-        base_prompt = "\n\n".join(system_parts)
-
-        from sage.prompts.overlays import registry as overlay_registry
-
-        return overlay_registry.apply(self.model, base_prompt)
+        return build_system_message(self)
 
     def _build_messages(self, input: str, memory_context: str | None = None) -> list[Message]:
-        """Build the full message list including conversation history.
+        from sage.context.message_builder import build_messages
 
-        The returned list contains, in order:
-          1. System message (body + skill catalog, overlays applied)
-          2. Memory-context system message (if any)
-          3. Prior conversation history (user/assistant turns)
-          4. The new user message
-        """
-        messages: list[Message] = []
-
-        system_content = self._build_system_message()
-        if system_content:
-            messages.append(Message(role="system", content=system_content))
-
-        # Prepend recalled memory as a system-level context block.
-        if memory_context:
-            messages.append(Message(role="system", content=f"[Relevant memory]\n{memory_context}"))
-
-        # Insert prior conversation turns.
-        messages.extend(self._conversation_history)
-
-        messages.append(Message(role="user", content=input))
-        return messages
+        return build_messages(self, input, memory_context)
 
     async def _maybe_compact_history(self) -> bool:
         """Compact conversation history when it exceeds the threshold."""
@@ -1281,36 +1200,14 @@ class Agent:
         return True
 
     async def _run_compaction_chain(self, history: list[Message]) -> tuple[list[Message], str]:
-        """Try LLM summarization, fall back to emergency_drop, then deterministic_trim.
+        from sage.memory.compaction import run_compaction_chain
 
-        Returns (compacted_history, strategy_name).
-        """
-        from sage.memory.compaction import (
-            DefaultCompactionController,
-            deterministic_trim,
-            emergency_drop,
+        return await run_compaction_chain(
+            history,
+            self._compaction_controller,
+            self._provider,
+            self._compaction_threshold,
         )
-
-        try:
-            if isinstance(self._compaction_controller, DefaultCompactionController):
-                self._compaction_controller.threshold = self._compaction_threshold
-            result = await self._compaction_controller.compact(history, provider=self._provider)
-            if len(result) < len(history):
-                return result, "compact_messages"
-        except Exception as exc:
-            logger.warning("Compaction controller failed, falling back to emergency_drop: %s", exc)
-
-        # Strategy 2: emergency drop (preserves system/last-user/tool results)
-        try:
-            result = emergency_drop(history)
-            if len(result) < len(history):
-                return result, "emergency_drop"
-        except Exception as exc:
-            logger.warning("emergency_drop failed, falling back to deterministic_trim: %s", exc)
-
-        # Strategy 3: deterministic trim (always succeeds)
-        result = deterministic_trim(history, target_count=self._compaction_threshold)
-        return result, "deterministic_trim"
 
     def clear_history(self) -> None:
         """Reset the conversation history for a fresh session."""
