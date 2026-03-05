@@ -267,6 +267,7 @@ class AgentConfig(BaseModel):
     description: str = ""  # display/discovery ONLY - NOT sent to model
     _body: str = PrivateAttr(default="")  # markdown body = system prompt
     permission: Permission | None = None
+    shell_dangerous_patterns: list[str] | None = None
     extensions: list[str] = Field(default_factory=list)
     memory: MemoryConfig | None = None
     subagents: list[AgentConfig] = Field(default_factory=list)

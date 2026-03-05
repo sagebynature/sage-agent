@@ -263,17 +263,28 @@ def _wire_post_construction(
         if patterns:
             shell_allow = frozenset(patterns)
 
+    shell_dangerous_patterns = agent_config.shell_dangerous_patterns
+
     if agent_config.sandbox is not None:
         from sage.tools._sandbox import build_sandbox
         from sage.tools.builtins import make_sandboxed_shell
 
         sandbox = build_sandbox(agent_config.sandbox)
-        sandboxed_shell = make_sandboxed_shell(sandbox, allowed_commands=shell_allow)
+        sandboxed_shell = make_sandboxed_shell(
+            sandbox,
+            allowed_commands=shell_allow,
+            dangerous_patterns=shell_dangerous_patterns,
+        )
         agent.tool_registry.register(sandboxed_shell)
-    elif shell_allow is not None:
+    elif shell_allow is not None or shell_dangerous_patterns is not None:
         from sage.tools.builtins import make_shell
 
-        agent.tool_registry.register(make_shell(allowed_commands=shell_allow))
+        agent.tool_registry.register(
+            make_shell(
+                allowed_commands=shell_allow,
+                dangerous_patterns=shell_dangerous_patterns,
+            )
+        )
 
     agent._token_budget = token_budget
     agent._git_config = agent_config.git
@@ -543,39 +554,23 @@ class Agent:
         instance of that model instead of a raw string.
         """
         logger.info("Agent '%s' run started: %s", self.name, input[:80])
-
         messages = await self._pre_loop_setup(input)
+        self._handle_response_model(messages, response_model)
 
         async with span("agent.run", {"agent.name": self.name, "model": self.model}) as agent_span:
-            if response_model is not None:
-                schema = response_model.model_json_schema()  # type: ignore[attr-defined]
-                schema_instruction = Message(
-                    role="system",
-                    content=f"Respond with valid JSON matching this schema:\n{json.dumps(schema, indent=2)}",
-                )
-                # Insert after any existing system messages, before the first non-system message.
-                insert_idx = next(
-                    (i for i, m in enumerate(messages) if m.role != "system"),
-                    len(messages),
-                )
-                messages.insert(insert_idx, schema_instruction)
-
             for turn in range(self.max_turns):
                 self._current_turn = turn
                 logger.debug("Turn %d/%d", turn + 1, self.max_turns)
                 turn_result = await self._execute_turn(messages, turn=turn, streaming=False)
-                if not turn_result.tool_calls_executed:
-                    logger.info("Agent '%s' run complete after %d turn(s)", self.name, turn + 1)
-                    final_output = turn_result.final_text or ""
-                    agent_span.set_attribute("turn_count", turn + 1)
-                    await self._post_loop_cleanup(input, final_output)
-                    if response_model is not None:
-                        # Strip markdown code fences that some LLMs wrap around JSON.
-                        cleaned = re.sub(
-                            r"^```(?:json)?\n?|```$", "", final_output.strip(), flags=re.MULTILINE
-                        ).strip()
-                        return response_model.model_validate_json(cleaned)  # type: ignore[attr-defined, no-any-return]
+                if turn_result.tool_calls_executed:
+                    continue
+                logger.info("Agent '%s' run complete after %d turn(s)", self.name, turn + 1)
+                final_output = turn_result.final_text or ""
+                agent_span.set_attribute("turn_count", turn + 1)
+                await self._post_loop_cleanup(input, final_output)
+                if response_model is None:
                     return final_output
+                return self._parse_response_model_output(response_model, final_output)
 
             await self._raise_max_turns_exceeded(
                 input=input,
@@ -598,7 +593,6 @@ class Agent:
         invocations see the full multi-turn context.
         """
         logger.info("Agent '%s' stream started: %s", self.name, input[:80])
-
         messages = await self._pre_loop_setup(input)
 
         async with span(
@@ -610,15 +604,12 @@ class Agent:
                 turn_result = await self._execute_turn(messages, turn=turn, streaming=True)
                 for chunk in turn_result.streamed_chunks or []:
                     yield chunk
-                if not turn_result.tool_calls_executed:
-                    logger.info(
-                        "Agent '%s' stream complete after %d turn(s)",
-                        self.name,
-                        turn + 1,
-                    )
-                    agent_span.set_attribute("turn_count", turn + 1)
-                    await self._post_loop_cleanup(input, turn_result.final_text or "")
-                    return
+                if turn_result.tool_calls_executed:
+                    continue
+                logger.info("Agent '%s' stream complete after %d turn(s)", self.name, turn + 1)
+                agent_span.set_attribute("turn_count", turn + 1)
+                await self._post_loop_cleanup(input, turn_result.final_text or "")
+                return
 
             await self._raise_max_turns_exceeded(
                 input=input,
@@ -626,6 +617,23 @@ class Agent:
                 agent_span=agent_span,
                 during_stream=True,
             )
+
+    def _handle_response_model(
+        self, messages: list[Message], response_model: type[T] | None
+    ) -> None:
+        if response_model is None:
+            return
+        schema = response_model.model_json_schema()  # type: ignore[attr-defined]
+        schema_instruction = Message(
+            role="system",
+            content=f"Respond with valid JSON matching this schema:\n{json.dumps(schema, indent=2)}",
+        )
+        insert_idx = next((i for i, m in enumerate(messages) if m.role != "system"), len(messages))
+        messages.insert(insert_idx, schema_instruction)
+
+    def _parse_response_model_output(self, response_model: type[T], final_output: str) -> T:
+        cleaned = re.sub(r"^```(?:json)?\n?|```$", "", final_output.strip(), flags=re.MULTILINE)
+        return response_model.model_validate_json(cleaned.strip())  # type: ignore[attr-defined, no-any-return]
 
     async def _execute_turn(
         self,

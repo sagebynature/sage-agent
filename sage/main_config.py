@@ -52,6 +52,7 @@ class ConfigOverrides(BaseModel):
     max_turns: int | None = None
     max_depth: int | None = None
     permission: Permission | None = None
+    shell_dangerous_patterns: list[str] | None = None
     context: ContextConfig | None = None
     extensions: list[str] | None = None
     mcp_servers: dict[str, MCPServerConfig] | None = None

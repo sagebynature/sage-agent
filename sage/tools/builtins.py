@@ -82,14 +82,19 @@ _DANGEROUS_PATTERNS: list[str] = [
 ]
 
 
-def _check_dangerous_patterns(command: str) -> None:
+def _check_dangerous_patterns(command: str, patterns: list[str] | None = None) -> None:
     """Raise ToolError if *command* matches any dangerous pattern."""
-    for pattern in _DANGEROUS_PATTERNS:
+    effective_patterns = patterns if patterns is not None else _DANGEROUS_PATTERNS
+    for pattern in effective_patterns:
         if re.search(pattern, command, re.IGNORECASE):
             raise ToolError(f"Command rejected \u2014 matches dangerous pattern: {pattern}")
 
 
-def _validate_shell_command(command: str, allowed_commands: frozenset[str] | None = None) -> None:
+def _validate_shell_command(
+    command: str,
+    allowed_commands: frozenset[str] | None = None,
+    dangerous_patterns: list[str] | None = None,
+) -> None:
     """Validate each segment of a chained command independently.
 
     When *allowed_commands* contains fnmatch patterns (from the dict form of
@@ -105,13 +110,13 @@ def _validate_shell_command(command: str, allowed_commands: frozenset[str] | Non
                 return  # Explicitly allowed by permission config — skip blocklist
 
     # Check full command first — catches pipe-to-shell and base64-decode-pipe patterns
-    _check_dangerous_patterns(command)
+    _check_dangerous_patterns(command, dangerous_patterns)
     # Also check each chained segment independently
     segments = re.split(r"\s*(?:&&|\|\||;|\|)\s*", command)
     for segment in segments:
         segment = segment.strip()
         if segment:
-            _check_dangerous_patterns(segment)
+            _check_dangerous_patterns(segment, dangerous_patterns)
 
 
 @tool
@@ -142,7 +147,10 @@ async def shell(command: str) -> str:
     return output.strip()
 
 
-def make_shell(allowed_commands: frozenset[str] | None = None) -> Any:
+def make_shell(
+    allowed_commands: frozenset[str] | None = None,
+    dangerous_patterns: list[str] | None = None,
+) -> Any:
     """Build a ``@tool``-decorated ``shell`` with explicit command allowlist.
 
     *allowed_commands* are fnmatch patterns extracted from the dict form of
@@ -165,7 +173,7 @@ def make_shell(allowed_commands: frozenset[str] | None = None) -> Any:
         import asyncio
 
         logger.debug("shell: %s", command[:100])
-        _validate_shell_command(command, allowed_commands)
+        _validate_shell_command(command, allowed_commands, dangerous_patterns)
 
         proc = await asyncio.create_subprocess_shell(
             command,
@@ -185,7 +193,9 @@ def make_shell(allowed_commands: frozenset[str] | None = None) -> Any:
 
 
 def make_sandboxed_shell(
-    sandbox: SandboxExecutor, allowed_commands: frozenset[str] | None = None
+    sandbox: SandboxExecutor,
+    allowed_commands: frozenset[str] | None = None,
+    dangerous_patterns: list[str] | None = None,
 ) -> Any:
     """Build a ``@tool``-decorated ``shell`` function bound to *sandbox*.
 
@@ -207,7 +217,7 @@ def make_sandboxed_shell(
         inherited environment variables (blocking ``$SHELL`` / env-var bypass).
         """
         logger.debug("shell (sandboxed): %s", command[:100])
-        _validate_shell_command(command, allowed_commands)
+        _validate_shell_command(command, allowed_commands, dangerous_patterns)
         stdout, stderr = await sandbox.execute(command)
         output = stdout
         if stderr.strip():

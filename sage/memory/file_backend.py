@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -59,7 +60,7 @@ class FileMemory:
             created_at=created_at,
         )
         if self._format == "json":
-            self._json_append(entry)
+            await self._json_append(entry)
         else:
             self._markdown_write(entry)
         self._cache = None
@@ -68,7 +69,7 @@ class FileMemory:
 
     async def recall(self, query: str, limit: int = 10) -> list[MemoryEntry]:
         """Recall memories using keyword scoring (no embeddings)."""
-        all_entries = self._load_all()
+        all_entries = await self._load_all()
         if not all_entries:
             return []
 
@@ -112,20 +113,20 @@ class FileMemory:
 
     async def get(self, memory_id: str) -> MemoryEntry | None:
         """Return a single entry by ID, or None if not found."""
-        for entry in self._load_all():
+        for entry in await self._load_all():
             if entry.id == memory_id:
                 return entry
         return None
 
     async def list_entries(self, *, limit: int = 50, offset: int = 0) -> list[MemoryEntry]:
         """Return a paginated list of all entries."""
-        all_entries = self._load_all()
+        all_entries = await self._load_all()
         return all_entries[offset : offset + limit]
 
     async def forget(self, memory_id: str) -> bool:
         """Delete a specific memory entry by ID. Returns True if deleted, False if not found."""
         if self._format == "json":
-            deleted = self._json_forget(memory_id)
+            deleted = await self._json_forget(memory_id)
         else:
             deleted = self._markdown_forget(memory_id)
         if deleted:
@@ -140,12 +141,12 @@ class FileMemory:
                     return len(self._cache)
             except OSError:
                 pass
-        return len(self._load_all())
+        return len(await self._load_all())
 
     async def health_check(self) -> dict[str, Any]:
         """Return a health status dict."""
         try:
-            count = len(self._load_all())
+            count = len(await self._load_all())
             return {
                 "status": "ok",
                 "format": self._format,
@@ -164,12 +165,13 @@ class FileMemory:
     # JSON backend internals
     # ------------------------------------------------------------------
 
-    def _json_load(self) -> list[MemoryEntry]:
+    async def _json_load(self) -> list[MemoryEntry]:
         """Load all entries from the JSON file."""
         if not self._path.exists():
             return []
         try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
+            raw = await asyncio.to_thread(self._path.read_text, encoding="utf-8")
+            data = json.loads(raw)
             entries: list[MemoryEntry] = []
             for item in data:
                 if not isinstance(item, dict):
@@ -192,25 +194,26 @@ class FileMemory:
             logger.warning("FileMemory failed to load JSON at %s: %s", self._path, exc)
             return []
 
-    def _json_save(self, entries: list[MemoryEntry]) -> None:
+    async def _json_save(self, entries: list[MemoryEntry]) -> None:
         """Write all entries to the JSON file, creating parent dirs as needed."""
         self._path.parent.mkdir(parents=True, exist_ok=True)
         data = [e.model_dump() for e in entries]
-        self._path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        payload = json.dumps(data, indent=2)
+        await asyncio.to_thread(self._path.write_text, payload, encoding="utf-8")
 
-    def _json_append(self, entry: MemoryEntry) -> None:
+    async def _json_append(self, entry: MemoryEntry) -> None:
         """Append a single entry to the JSON file."""
-        entries = self._json_load()
+        entries = await self._json_load()
         entries.append(entry)
-        self._json_save(entries)
+        await self._json_save(entries)
 
-    def _json_forget(self, memory_id: str) -> bool:
+    async def _json_forget(self, memory_id: str) -> bool:
         """Remove an entry by ID from JSON storage. Returns True if found."""
-        entries = self._json_load()
+        entries = await self._json_load()
         new_entries = [e for e in entries if e.id != memory_id]
         if len(new_entries) == len(entries):
             return False
-        self._json_save(new_entries)
+        await self._json_save(new_entries)
         return True
 
     # ------------------------------------------------------------------
@@ -274,7 +277,7 @@ class FileMemory:
     # Unified loader
     # ------------------------------------------------------------------
 
-    def _load_all(self) -> list[MemoryEntry]:
+    async def _load_all(self) -> list[MemoryEntry]:
         """Load all entries regardless of format."""
         if self._format == "json":
             if self._cache is not None:
@@ -283,7 +286,7 @@ class FileMemory:
                         return self._cache
                 except OSError:
                     pass
-            entries = self._json_load()
+            entries = await self._json_load()
             self._cache = entries
             try:
                 self._cache_mtime = os.path.getmtime(self._path)
