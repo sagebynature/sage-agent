@@ -72,7 +72,7 @@ class QueryClassificationConfig(BaseModel):
     rules: list[ClassificationRuleConfig] = Field(default_factory=list)
 
 
-class ResearchConfig(BaseModel):
+class ResearchFrontmatterConfig(BaseModel):
     """Configuration for the pre-response research phase."""
 
     enabled: bool = False
@@ -283,7 +283,7 @@ class AgentConfig(BaseModel):
     tool_timeout: float | None = None
     credential_scrubbing: CredentialScrubConfig | None = None
     query_classification: QueryClassificationConfig | None = None
-    research: ResearchConfig | None = None
+    research: ResearchFrontmatterConfig | None = None
     prompt_metadata: AgentPromptMetadata | None = None
     follow_through: FollowThroughConfig | None = None
     session: SessionConfig | None = None
