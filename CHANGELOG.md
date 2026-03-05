@@ -2,6 +2,55 @@
 
 <!-- version list -->
 
+## v1.6.0-rc.1 (2026-03-05)
+
+### Bug Fixes
+
+- **f4**: Reduce run/stream to <=30 lines, wire dangerous_patterns config, async file_backend I/O
+  ([`f27dd13`](https://github.com/sagebynature/sage-agent/commit/f27dd132b4475c30593f6417d853ce17f366f5d9))
+
+### Chores
+
+- **agent**: Trim docstrings to bring agent.py under 1400 lines
+  ([`caa69a5`](https://github.com/sagebynature/sage-agent/commit/caa69a584cbb6115bac929f7e47cd42c9b805215))
+
+- **agent**: Update sage-agent version to 1.5.0
+  ([`d78d66e`](https://github.com/sagebynature/sage-agent/commit/d78d66e8a5a9defef7fdd3953cd0c7f3ae8b18cd))
+
+- **cicd**: Update commit message format in pyproject.toml
+  ([`254df0d`](https://github.com/sagebynature/sage-agent/commit/254df0dce91fc6b5a08185397a2e781dc8b19b26))
+
+- **cleanup**: Rename duplicate ResearchConfig, consolidate config models, remove dead code
+  ([`7c8332e`](https://github.com/sagebynature/sage-agent/commit/7c8332e35f90c9e76d6e7c4196acc546c321bd26))
+
+### Features
+
+- **config**: Expose hardcoded constants + parallelize MCP init
+  ([`278bef4`](https://github.com/sagebynature/sage-agent/commit/278bef45e81e430e1f6a3ea09fe0d96385ef4319))
+
+### Performance Improvements
+
+- **memory**: Optimize recall paths for sqlite and file backends
+  ([`69493da`](https://github.com/sagebynature/sage-agent/commit/69493dadc3c4f31b92eb5d9333d513b0762e9cb1))
+
+### Refactoring
+
+- **agent**: Extract _execute_turn from run/stream duplication
+  ([`00c00a2`](https://github.com/sagebynature/sage-agent/commit/00c00a2f152958d4348b6f02db89c1a7a9978467))
+
+- **agent**: Extract factory builders from _from_agent_config
+  ([`543ac70`](https://github.com/sagebynature/sage-agent/commit/543ac70e5cbc49aaf09405c9e3b2482142249d6b))
+
+- **agent**: Extract message builder and memory tools to reduce agent.py to <1400 LOC
+  ([`7ac70f2`](https://github.com/sagebynature/sage-agent/commit/7ac70f2be3340da59203f79842254e16c7e9ada9))
+
+- **agent**: Extract tool registration to sage/tools/agent_tools/
+  ([`f0738ab`](https://github.com/sagebynature/sage-agent/commit/f0738ab5e26c3a2206315cf5f67643a884cbe1f3))
+
+- **misc**: Remove deprecated tools, fix async I/O, add memory registry, extract compaction
+  ([`0745cc1`](https://github.com/sagebynature/sage-agent/commit/0745cc1507534efcf4cf4b31e87c3a0261a1df40))
+
+
 ## v1.5.0 (2026-03-03)
 
 ### Chores
