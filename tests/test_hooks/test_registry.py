@@ -391,3 +391,64 @@ class TestHookRegistryErrorLogging:
             )
             or len(caplog.records) > 0
         )
+
+
+# ---------------------------------------------------------------------------
+# Tests: HookRegistry — custom constructor parameters (Task 10)
+# ---------------------------------------------------------------------------
+
+
+class TestHookRegistryCustomParams:
+    def test_default_max_handlers_is_10(self) -> None:
+        reg = HookRegistry()
+        assert reg._max_handlers == 10
+
+    def test_default_handler_timeout_is_5(self) -> None:
+        reg = HookRegistry()
+        assert reg._handler_timeout == 5.0
+
+    def test_custom_max_handlers_accepted(self) -> None:
+        reg = HookRegistry(max_handlers=3)
+        assert reg._max_handlers == 3
+
+    def test_custom_handler_timeout_accepted(self) -> None:
+        reg = HookRegistry(handler_timeout=1.0)
+        assert reg._handler_timeout == 1.0
+
+    def test_custom_max_handlers_and_timeout_together(self) -> None:
+        reg = HookRegistry(max_handlers=3, handler_timeout=1.0)
+        assert reg._max_handlers == 3
+        assert reg._handler_timeout == 1.0
+
+    def test_custom_max_handlers_enforced_on_register(self) -> None:
+        reg = HookRegistry(max_handlers=3)
+        for i in range(3):
+
+            async def h(event: HookEvent, data: dict[str, Any], _i: int = i) -> None:
+                pass
+
+            reg.register(HookEvent.PRE_LLM_CALL, h)
+        with pytest.raises(ValueError, match="[Mm]ax"):
+
+            async def extra(event: HookEvent, data: dict[str, Any]) -> None:
+                pass
+
+            reg.register(HookEvent.PRE_LLM_CALL, extra)
+
+    @pytest.mark.asyncio
+    async def test_custom_timeout_triggers_on_slow_handler(self) -> None:
+        reg = HookRegistry(max_handlers=5, handler_timeout=0.05)
+        timed_out = []
+
+        async def slow(event: HookEvent, data: dict[str, Any]) -> None:
+            import asyncio as _asyncio
+
+            await _asyncio.sleep(10)
+
+        async def fast(event: HookEvent, data: dict[str, Any]) -> None:
+            timed_out.append("fast_ran")
+
+        reg.register(HookEvent.PRE_LLM_CALL, slow)
+        reg.register(HookEvent.PRE_LLM_CALL, fast)
+        await reg.emit_void(HookEvent.PRE_LLM_CALL, {})
+        assert "fast_ran" in timed_out

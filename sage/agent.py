@@ -1304,7 +1304,9 @@ class Agent:
         if self._mcp_initialized or not self.mcp_clients:
             return
 
-        for client in self.mcp_clients:
+        # Parallelize initialization: connect all clients concurrently
+        async def _initialize_client(client):
+            """Initialize a single MCP client and register its tools."""
             try:
                 await client.connect()
                 schemas = await client.discover_tools()
@@ -1315,8 +1317,22 @@ class Agent:
                 )
                 for schema in schemas:
                     self.tool_registry.register_mcp_tool(schema, client)
+                return None  # Success
             except Exception as exc:
-                logger.error("Failed to initialize MCP server: %s", exc)
+                logger.error("Failed to initialize MCP server %s: %s", client, exc)
+                return exc  # Return the exception
+
+        # Run all initializations in parallel
+        results = await asyncio.gather(
+            *[_initialize_client(client) for client in self.mcp_clients], return_exceptions=True
+        )
+
+        # Log any failures (exceptions are already logged above, this just counts them)
+        failed_count = sum(1 for r in results if isinstance(r, Exception))
+        if failed_count > 0:
+            logger.warning(
+                "%d of %d MCP client(s) failed to initialize", failed_count, len(self.mcp_clients)
+            )
 
         self._mcp_initialized = True
 
