@@ -96,6 +96,7 @@ describe("wireIntegration", () => {
       METHODS.USAGE_UPDATE,
       METHODS.COMPACTION_STARTED,
       METHODS.ERROR,
+      METHODS.RUN_COMPLETED,
     ]);
   });
 
@@ -253,6 +254,19 @@ describe("wireIntegration", () => {
     });
 
     expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it("routes run/completed notification to SET_STREAMING false", () => {
+    const { client, emit } = createMockClient();
+    wireIntegration({ client, dispatch, getState });
+
+    emit(METHODS.RUN_COMPLETED, {
+      runId: "run-1",
+      status: "success",
+    });
+
+    const actionTypes = dispatch.mock.calls.map(([action]) => action.type);
+    expect(actionTypes).toContain("SET_STREAMING");
   });
 
   it("wires CommandExecutor with provided client and dispatch", async () => {
