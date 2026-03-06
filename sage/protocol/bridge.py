@@ -179,7 +179,7 @@ class EventBridge:
                 "completionTokens": stats["completion_tokens"],
                 "totalCost": stats["cost"],
                 "model": getattr(self._agent, "model", ""),
-                "contextUsagePercent": 0,
+                "contextUsagePercent": self._get_context_usage_percent(),
                 "agent_path": self._get_agent_path(),
             },
         )
@@ -198,6 +198,16 @@ class EventBridge:
         current = _agent_path_var.get()
         if len(current) > 1:
             _agent_path_var.set(current[:-1])
+
+    def _get_context_usage_percent(self) -> int:
+        """Get context window usage as an integer percentage (0-100)."""
+        if hasattr(self._agent, "get_usage_stats"):
+            raw_stats = self._agent.get_usage_stats()
+            if isinstance(raw_stats, dict):
+                pct = raw_stats.get("usage_percentage")
+                if isinstance(pct, (int, float)) and pct is not None:
+                    return int(round(pct * 100))
+        return 0
 
     def _extract_usage_stats(self) -> dict[str, int | float]:
         if hasattr(self._agent, "cumulative_usage"):
