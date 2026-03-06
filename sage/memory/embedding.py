@@ -108,3 +108,22 @@ class OllamaEmbedding:
             raise ProviderError(
                 f"Ollama /api/embed returned unexpected body: {response.text[:200]}"
             ) from exc
+
+
+def create_embedding(model_str: str) -> EmbeddingProtocol:
+    """Return an :class:`EmbeddingProtocol` for *model_str*.
+
+    Prefix routing:
+
+    * ``"ollama/<model>"``  →  :class:`OllamaEmbedding`
+    * anything else         →  :class:`LiteLLMEmbedding`
+
+    Raises :class:`ValueError` if the ``ollama/`` prefix is present but
+    no model name follows.
+    """
+    if model_str.startswith("ollama/"):
+        model = model_str[len("ollama/") :]
+        if not model:
+            raise ValueError("ollama/ prefix requires a model name, e.g. 'ollama/nomic-embed-text'")
+        return OllamaEmbedding(model)
+    return LiteLLMEmbedding(model_str)
