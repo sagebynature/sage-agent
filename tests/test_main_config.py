@@ -55,6 +55,7 @@ class TestConfigOverrides:
         assert overrides.context is None
         assert overrides.extensions is None
         assert overrides.mcp_servers is None
+        assert overrides.memory is None  # new line
 
     def test_model_dump_excludes_none(self) -> None:
         overrides = ConfigOverrides(model="gpt-4o", max_turns=20)
@@ -64,6 +65,16 @@ class TestConfigOverrides:
     def test_extra_fields_rejected(self) -> None:
         with pytest.raises(Exception):
             ConfigOverrides(unknown_field="value")  # type: ignore[call-arg]
+
+    def test_memory_field_default_none(self) -> None:
+        overrides = ConfigOverrides()
+        assert overrides.memory is None
+
+    def test_memory_field_accepts_memory_config(self) -> None:
+        overrides = ConfigOverrides(memory={"backend": "sqlite", "path": "mem.db"})  # type: ignore[arg-type]
+        assert overrides.memory is not None
+        assert overrides.memory.backend == "sqlite"
+        assert overrides.memory.path == "mem.db"
 
 
 class TestAgentOverrides:
@@ -280,6 +291,16 @@ max_turns = 5
         )
         with pytest.raises(ConfigError, match="Invalid main config"):
             load_main_config(toml_path)
+
+    def test_defaults_memory_parsed_from_toml(self, tmp_path: Path) -> None:
+        toml_path = _write_toml(
+            tmp_path / "config.toml",
+            '[defaults.memory]\nembedding = "ollama/nomic-embed-text"\n',
+        )
+        cfg = load_main_config(toml_path)
+        assert cfg is not None
+        assert cfg.defaults.memory is not None
+        assert cfg.defaults.memory.embedding == "ollama/nomic-embed-text"
 
     def test_unreadable_file_raises(self, tmp_path: Path) -> None:
         missing = tmp_path / "does_not_exist.toml"

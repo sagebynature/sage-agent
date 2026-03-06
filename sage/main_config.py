@@ -57,12 +57,12 @@ class ConfigOverrides(BaseModel):
     extensions: list[str] | None = None
     mcp_servers: dict[str, MCPServerConfig] | None = None
     planning: PlanningConfig | None = None
+    memory: MemoryConfig | None = None
 
 
 class AgentOverrides(ConfigOverrides):
-    """Per-agent overrides — adds memory and skills allowlist."""
+    """Per-agent overrides — adds skills allowlist."""
 
-    memory: MemoryConfig | None = None
     skills: list[str] | None = None
 
 
