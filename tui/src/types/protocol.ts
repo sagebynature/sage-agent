@@ -161,6 +161,12 @@ export interface ErrorPayload {
   recoverable: boolean;
 }
 
+export interface RunCompletedPayload {
+  runId: string;
+  status: "success" | "error" | "cancelled";
+  error?: string;
+}
+
 // Method name constants
 export const METHODS = {
   INITIALIZE: "initialize",
@@ -184,4 +190,5 @@ export const METHODS = {
   USAGE_UPDATE: "usage/update",
   COMPACTION_STARTED: "compaction/started",
   ERROR: "error",
+  RUN_COMPLETED: "run/completed",
 } as const;
