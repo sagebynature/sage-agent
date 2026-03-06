@@ -53,7 +53,7 @@ Merge precedence (highest wins per field): frontmatter > `[agents.x.memory]` > `
 
 ## Error Handling
 
-No new error handling required. `MemoryConfig`'s existing Pydantic validation (`extra="forbid"`, `Literal` constraints) catches invalid fields or values at parse time, before any merge logic runs. Behaviour is identical to today's per-agent memory validation.
+`MemoryConfig` does not set `extra="forbid"`; unknown frontmatter memory keys are silently dropped. Invalid values for `Literal`-constrained fields (`backend`, `vector_search`, `relevance_filter`) are caught at `AgentConfig` construction time when the merged dict is passed to Pydantic. A non-dict `memory:` value in frontmatter (e.g. `memory: true`) raises `ConfigError` with a clear message from the type guard in `_merge_memory`.
 
 ## Testing
 
