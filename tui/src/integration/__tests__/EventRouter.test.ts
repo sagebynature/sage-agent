@@ -266,4 +266,52 @@ describe("EventRouter", () => {
     expect(warnSpy).toHaveBeenCalledTimes(1);
     expect(dispatched).toHaveLength(0);
   });
+
+  it("maps run/completed success to SET_STREAMING false and finalizes message", () => {
+    const router = createEventRouter(dispatch);
+
+    // Simulate an active stream first
+    router.handleNotification(METHODS.STREAM_DELTA, { delta: "hi", turn: 1 });
+
+    dispatched.length = 0; // clear previous dispatches
+
+    router.handleNotification(METHODS.RUN_COMPLETED, {
+      runId: "run-1",
+      status: "success",
+    });
+
+    const types = dispatched.map((a) => a.type);
+    expect(types).toContain("SET_STREAMING");
+    const streamingAction = dispatched.find((a) => a.type === "SET_STREAMING");
+    expect(streamingAction).toEqual({ type: "SET_STREAMING", isStreaming: false });
+  });
+
+  it("maps run/completed error to SET_STREAMING false and SET_ERROR", () => {
+    const router = createEventRouter(dispatch);
+
+    router.handleNotification(METHODS.RUN_COMPLETED, {
+      runId: "run-2",
+      status: "error",
+      error: "model exploded",
+    });
+
+    const types = dispatched.map((a) => a.type);
+    expect(types).toContain("SET_STREAMING");
+    expect(types).toContain("SET_ERROR");
+    const errorAction = dispatched.find((a) => a.type === "SET_ERROR");
+    expect(errorAction).toEqual({ type: "SET_ERROR", error: "model exploded" });
+  });
+
+  it("maps run/completed cancelled to SET_STREAMING false without error", () => {
+    const router = createEventRouter(dispatch);
+
+    router.handleNotification(METHODS.RUN_COMPLETED, {
+      runId: "run-3",
+      status: "cancelled",
+    });
+
+    const types = dispatched.map((a) => a.type);
+    expect(types).toContain("SET_STREAMING");
+    expect(types).not.toContain("SET_ERROR");
+  });
 });

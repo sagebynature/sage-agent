@@ -6,6 +6,7 @@ import {
   type DelegationCompletedPayload,
   type DelegationStartedPayload,
   type ErrorPayload,
+  type RunCompletedPayload,
   type PermissionRequestPayload,
   type StreamDeltaPayload,
   type ToolCompletedPayload,
@@ -60,6 +61,9 @@ export class EventRouter {
           return;
         case METHODS.ERROR:
           this.handleError(this.parseError(params));
+          return;
+        case METHODS.RUN_COMPLETED:
+          this.handleRunCompleted(this.parseRunCompleted(params));
           return;
         default:
           console.warn(`Unknown notification method: ${method}`, params);
@@ -239,6 +243,30 @@ export class EventRouter {
     });
   }
 
+  private handleRunCompleted(params: RunCompletedPayload): void {
+    this.flushBatch();
+
+    // Mark the last streaming message as complete
+    if (this.currentMessageId) {
+      this.dispatch({
+        type: "UPDATE_MESSAGE",
+        id: this.currentMessageId,
+        updates: { isStreaming: false },
+      });
+    }
+
+    // Reset stream tracking state
+    this.currentTurn = null;
+    this.currentMessageId = null;
+    this.accumulatedContent = "";
+
+    this.dispatch({ type: "SET_STREAMING", isStreaming: false });
+
+    if (params.status === "error" && params.error) {
+      this.dispatch({ type: "SET_ERROR", error: params.error });
+    }
+  }
+
   private handleError(params: ErrorPayload): void {
     this.dispatch({
       type: "SET_ERROR",
@@ -335,6 +363,18 @@ export class EventRouter {
     return {
       reason: this.asString(params.reason),
       beforeTokens: this.asNumber(params.beforeTokens),
+    };
+  }
+
+  private parseRunCompleted(params: Record<string, unknown>): RunCompletedPayload {
+    const status = params.status;
+    return {
+      runId: this.asString(params.runId),
+      status:
+        status === "success" || status === "error" || status === "cancelled"
+          ? status
+          : "error",
+      error: this.asOptionalString(params.error),
     };
   }
 
