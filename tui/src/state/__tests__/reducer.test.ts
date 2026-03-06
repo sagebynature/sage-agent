@@ -252,20 +252,38 @@ describe("appReducer", () => {
     expect(state.agents[0]?.status).toBe("failed");
   });
 
-  it("BACKGROUND_TASK_UPDATE returns state unchanged", () => {
+  it("BACKGROUND_TASK_UPDATE adds system message for completed task", () => {
     const state = appReducer(INITIAL_STATE, {
       type: "BACKGROUND_TASK_UPDATE",
-      taskId: "task-1",
-      status: "running",
+      taskId: "bg-1",
+      status: "completed",
+      result: "Task finished",
     });
-    expect(state).toBe(INITIAL_STATE);
+    const bgMessages = state.messages.filter(m => m.role === "system");
+    expect(bgMessages.length).toBe(1);
+    expect(bgMessages[0].content).toContain("bg-1");
+    expect(bgMessages[0].content).toContain("completed");
   });
 
-  it("COMPACTION_STARTED returns state unchanged", () => {
+  it("BACKGROUND_TASK_UPDATE adds error message for failed task", () => {
+    const state = appReducer(INITIAL_STATE, {
+      type: "BACKGROUND_TASK_UPDATE",
+      taskId: "bg-2",
+      status: "failed",
+      error: "something broke",
+    });
+    const bgMessages = state.messages.filter(m => m.role === "system");
+    expect(bgMessages.length).toBe(1);
+    expect(bgMessages[0].content).toContain("something broke");
+  });
+
+  it("COMPACTION_STARTED adds system message", () => {
     const state = appReducer(INITIAL_STATE, {
       type: "COMPACTION_STARTED",
-      reason: "context limit reached",
+      reason: "context window 80% full",
     });
-    expect(state).toBe(INITIAL_STATE);
+    const sysMessages = state.messages.filter(m => m.role === "system");
+    expect(sysMessages.length).toBe(1);
+    expect(sysMessages[0].content).toContain("compaction");
   });
 });
