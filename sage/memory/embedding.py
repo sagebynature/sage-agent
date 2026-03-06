@@ -123,7 +123,7 @@ def create_embedding(model_str: str) -> EmbeddingProtocol:
     """
     if model_str.startswith("ollama/"):
         model = model_str[len("ollama/") :]
-        if not model:
+        if not model.strip():
             raise ValueError("ollama/ prefix requires a model name, e.g. 'ollama/nomic-embed-text'")
         return OllamaEmbedding(model)
     return LiteLLMEmbedding(model_str)
