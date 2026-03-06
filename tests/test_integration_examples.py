@@ -46,7 +46,7 @@ def _expected_tools(permission: Permission) -> set[str]:
         "safe_coder/AGENTS.md",
         "devtools_agent/AGENTS.md",
         "skills_agent/AGENTS.md",
-        "simple_assistant/AGENTS.md",
+        "simple_assistant.md",
         "custom_tools/AGENTS.md",
         "permissions_agent/AGENTS.md",
         "parallel_agents/AGENTS.md",
@@ -62,7 +62,7 @@ def test_example_loads(relpath: str) -> None:
 
 
 def test_simple_assistant_permissions() -> None:
-    config = load_config("simple_assistant/AGENTS.md")
+    config = load_config("simple_assistant.md")
     assert config.permission is not None
     assert config.permission.read == "allow"
     assert config.permission.shell == "allow"
@@ -112,7 +112,7 @@ def test_memory_agent_no_permission() -> None:
 
 
 def test_simple_assistant_has_permission() -> None:
-    config = load_config("simple_assistant/AGENTS.md")
+    config = load_config("simple_assistant.md")
     assert config.permission is not None
     assert config.permission.read == "allow"
     assert config.permission.shell == "allow"
@@ -133,7 +133,7 @@ def test_research_agent_extensions() -> None:
 @pytest.mark.parametrize(
     "relpath",
     [
-        "simple_assistant/AGENTS.md",
+        "simple_assistant.md",
         "mcp_agent/AGENTS.md",
         "safe_coder/AGENTS.md",
         "devtools_agent/AGENTS.md",

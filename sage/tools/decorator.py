@@ -60,7 +60,7 @@ def _annotation_to_json_schema(annotation: Any) -> dict[str, Any]:
         return schema
     if origin is dict:
         args = get_args(annotation)
-        schema = {"type": "object"}
+        schema: dict[str, Any] = {"type": "object"}
         if args and len(args) == 2:
             schema["additionalProperties"] = _annotation_to_json_schema(args[1])
         return schema

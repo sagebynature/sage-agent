@@ -1,6 +1,6 @@
 ---
 name: simple-assistant
-model: azure_ai/claude-sonnet-4-6
+model: openrouter/openrouter/free
 permission:
   read: allow
   shell: allow
