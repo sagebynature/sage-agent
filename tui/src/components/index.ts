@@ -1,7 +1,6 @@
 export * from './ToolDisplay.js';
 export * from './ToolCallCollapsible.js';
 export * from './ToolTimer.js';
-export * from './SplitView.js';
 export * from './sidebar/AgentTab.js';
 export * from './sidebar/UsageTab.js';
 export * from './sidebar/FilesTab.js';
