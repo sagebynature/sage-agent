@@ -92,7 +92,7 @@ class OllamaEmbedding:
         try:
             async with httpx.AsyncClient(timeout=_OLLAMA_TIMEOUT) as client:
                 response = await client.post(url, json={"model": self._model, "input": texts})
-        except (httpx.ConnectError, httpx.TimeoutException) as exc:
+        except httpx.TransportError as exc:
             raise ProviderError(
                 f"Cannot connect to Ollama at {self._base_url}. "
                 f"Is Ollama running? Set OLLAMA_API_BASE to override."
@@ -104,7 +104,7 @@ class OllamaEmbedding:
         try:
             data = response.json()
             return data["embeddings"]
-        except (KeyError, ValueError) as exc:
+        except (KeyError, TypeError, ValueError) as exc:
             raise ProviderError(
                 f"Ollama /api/embed returned unexpected body: {response.text[:200]}"
             ) from exc

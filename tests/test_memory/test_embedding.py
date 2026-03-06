@@ -174,6 +174,33 @@ class TestOllamaEmbedding:
             with pytest.raises(ProviderError, match="unexpected body"):
                 await emb.embed(["hello"])
 
+    @pytest.mark.asyncio
+    async def test_read_error(self) -> None:
+        with patch("sage.memory.embedding.httpx.AsyncClient") as mock_cls:
+            mock_client = AsyncMock()
+            mock_cls.return_value.__aenter__.return_value = mock_client
+            mock_client.post.side_effect = httpx.ReadError("connection reset")
+
+            emb = OllamaEmbedding("nomic-embed-text", base_url="http://localhost:11434")
+            with pytest.raises(ProviderError, match="Cannot connect to Ollama"):
+                await emb.embed(["hello"])
+
+    @pytest.mark.asyncio
+    async def test_json_array_response_body(self) -> None:
+        fake_response = MagicMock()
+        fake_response.status_code = 200
+        fake_response.json.return_value = [0.1, 0.2, 0.3]  # array, not object
+        fake_response.text = "[0.1, 0.2, 0.3]"
+
+        with patch("sage.memory.embedding.httpx.AsyncClient") as mock_cls:
+            mock_client = AsyncMock()
+            mock_cls.return_value.__aenter__.return_value = mock_client
+            mock_client.post.return_value = fake_response
+
+            emb = OllamaEmbedding("nomic-embed-text", base_url="http://localhost:11434")
+            with pytest.raises(ProviderError, match="unexpected body"):
+                await emb.embed(["hello"])
+
     def test_env_var_base_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("OLLAMA_API_BASE", "http://gpu-box:11434")
         emb = OllamaEmbedding("nomic-embed-text")
