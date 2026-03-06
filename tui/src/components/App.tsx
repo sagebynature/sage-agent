@@ -1,13 +1,19 @@
 import { Box, Text, useInput, useStdout } from "ink";
-import React, { Suspense, type ReactNode, useMemo, useState } from "react";
+import React, { Suspense, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PlanProvider } from "../contexts/PlanContext.js";
+import { SageClient } from "../ipc/client.js";
+import { SageClientContext, useSageClient } from "../ipc/hooks.js";
+import { wireIntegration } from "../integration/wiring.js";
 import { AppProvider, useApp } from "../state/AppContext.js";
+import type { AppState, PermissionDecision } from "../types/state.js";
 import type { SessionInfo } from "../types/protocol.js";
+import { METHODS } from "../types/protocol.js";
 import type { ViewMode } from "../types/state.js";
 import { ChatView } from "./ChatView.js";
 import { ErrorStates } from "./ErrorStates.js";
 import { InputArea } from "./InputArea.js";
 import { SessionPicker } from "./SessionPicker.js";
+import { PermissionPrompt } from "./PermissionPrompt.js";
 import { StatusBarFooter, StatusBarHeader } from "./StatusBar.js";
 
 const AgentTree = React.lazy(() =>
@@ -124,9 +130,77 @@ function ErrorView(): ReactNode {
 
 function AppShell(): ReactNode {
   const { state, dispatch } = useApp();
+  const client = useSageClient();
   const { stdout } = useStdout();
   const [columns] = useState(stdout?.columns ?? 80);
   const [rows] = useState(stdout?.rows ?? 24);
+  const stateRef = useRef<AppState>(state);
+  stateRef.current = state;
+
+  useEffect(() => {
+    const { cleanup } = wireIntegration({
+      client,
+      dispatch,
+      getState: () => stateRef.current,
+    });
+
+    client.spawn().catch((err: unknown) => {
+      dispatch({
+        type: "SET_ERROR",
+        error: err instanceof Error ? err.message : "Failed to connect to backend",
+      });
+    });
+
+    return () => {
+      cleanup();
+      client.dispose();
+    };
+  }, [client, dispatch]);
+
+  const handleSubmit = useCallback(async (text: string) => {
+    if (client.status !== "connected") return;
+
+    dispatch({
+      type: "ADD_MESSAGE",
+      message: {
+        id: `msg_${Date.now()}`,
+        role: "user",
+        content: text,
+        timestamp: Date.now(),
+        isStreaming: false,
+      },
+    });
+    dispatch({ type: "SET_STREAMING", isStreaming: true });
+
+    try {
+      await client.request(METHODS.AGENT_RUN, { message: text });
+    } catch (err: unknown) {
+      dispatch({
+        type: "SET_ERROR",
+        error: err instanceof Error ? err.message : "Failed to send message",
+      });
+      dispatch({ type: "SET_STREAMING", isStreaming: false });
+    }
+  }, [client, dispatch]);
+
+  const handlePermissionRespond = useCallback(
+    async (id: string, decision: PermissionDecision, modifiedArgs?: Record<string, unknown>) => {
+      dispatch({ type: "PERMISSION_RESPOND", id, decision });
+      try {
+        await client.request(METHODS.PERMISSION_RESPOND, {
+          request_id: id,
+          decision,
+          ...(modifiedArgs ? { arguments: modifiedArgs } : {}),
+        });
+      } catch (err: unknown) {
+        dispatch({
+          type: "SET_ERROR",
+          error: err instanceof Error ? err.message : "Failed to respond to permission",
+        });
+      }
+    },
+    [client, dispatch],
+  );
 
   useInput((input, key) => {
     if (key.ctrl && input === "b") {
@@ -173,17 +247,28 @@ function AppShell(): ReactNode {
       </Box>
 
       <StatusBarFooter />
-      <InputArea isActive={state.currentView !== "dashboard"} />
+      {state.permissions.filter((p) => p.status === "pending").map((perm) => (
+        <PermissionPrompt
+          key={perm.id}
+          request={perm}
+          onRespond={handlePermissionRespond}
+        />
+      ))}
+      <InputArea isActive={state.currentView !== "dashboard"} onSubmit={handleSubmit} />
     </Box>
   );
 }
 
 export function App(): ReactNode {
+  const clientRef = useRef(new SageClient());
+
   return (
-    <AppProvider>
-      <PlanProvider>
-        <AppShell />
-      </PlanProvider>
-    </AppProvider>
+    <SageClientContext value={clientRef.current}>
+      <AppProvider>
+        <PlanProvider>
+          <AppShell />
+        </PlanProvider>
+      </AppProvider>
+    </SageClientContext>
   );
 }
