@@ -220,6 +220,15 @@ function AppShell(): ReactNode {
     }
   }, [dispatch]);
 
+  const handleCancel = useCallback(async () => {
+    dispatch({ type: "SET_STREAMING", isStreaming: false });
+    try {
+      await client.request(METHODS.AGENT_CANCEL, {});
+    } catch {
+      // Best effort — backend may already be done
+    }
+  }, [client, dispatch]);
+
   useInput((input, key) => {
     if (key.ctrl && input === "b") {
       const nextView: ViewMode = state.currentView === "focused" ? "split" : "focused";
@@ -227,28 +236,28 @@ function AppShell(): ReactNode {
       return;
     }
 
-      if (key.ctrl && input === "c") {
-        if (state.isStreaming) {
-          dispatch({ type: "SET_STREAMING", isStreaming: false });
-        } else {
-          process.exit(0);
+    if (key.ctrl && input === "c") {
+      if (state.isStreaming) {
+        void handleCancel();
+      } else {
+        process.exit(0);
       }
       return;
     }
 
-      if (key.escape) {
-        if (state.isStreaming) {
-          dispatch({ type: "SET_STREAMING", isStreaming: false });
-          return;
-        }
-
-        if (state.error) {
-          dispatch({ type: "CLEAR_ERROR" });
-        }
-
+    if (key.escape) {
+      if (state.isStreaming) {
+        void handleCancel();
         return;
       }
-    });
+
+      if (state.error) {
+        dispatch({ type: "CLEAR_ERROR" });
+      }
+
+      return;
+    }
+  });
 
   return (
     <Box flexDirection="column" width={columns} height={rows}>
