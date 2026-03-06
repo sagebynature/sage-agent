@@ -14,6 +14,8 @@ from sage.providers.base import ProviderProtocol
 
 logger = logging.getLogger(__name__)
 
+_OLLAMA_TIMEOUT = 60.0
+
 
 @runtime_checkable
 class EmbeddingProtocol(Protocol):
@@ -88,9 +90,9 @@ class OllamaEmbedding:
         logger.debug("Embedding %d text(s) via Ollama model=%s", len(texts), self._model)
         url = f"{self._base_url}/api/embed"
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=_OLLAMA_TIMEOUT) as client:
                 response = await client.post(url, json={"model": self._model, "input": texts})
-        except httpx.ConnectError as exc:
+        except (httpx.ConnectError, httpx.TimeoutException) as exc:
             raise ProviderError(
                 f"Cannot connect to Ollama at {self._base_url}. "
                 f"Is Ollama running? Set OLLAMA_API_BASE to override."
@@ -99,5 +101,10 @@ class OllamaEmbedding:
             raise ProviderError(
                 f"Ollama /api/embed returned HTTP {response.status_code}: {response.text}"
             )
-        data = response.json()
-        return data["embeddings"]
+        try:
+            data = response.json()
+            return data["embeddings"]
+        except (KeyError, ValueError) as exc:
+            raise ProviderError(
+                f"Ollama /api/embed returned unexpected body: {response.text[:200]}"
+            ) from exc
