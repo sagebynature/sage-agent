@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 
@@ -318,3 +319,67 @@ async def test_agent_methods_error_when_agent_missing() -> None:
     )
 
     assert response["error"]["code"] == -32603
+
+
+@pytest.mark.asyncio
+async def test_agent_run_uses_stream_not_run() -> None:
+    """agent/run should call agent.stream(), not agent.run()."""
+    dispatcher, agent, _session_manager, server = _make_dispatcher()
+    async def fake_stream(message: str):
+        yield "hello "
+        yield "world"
+    agent.stream = MagicMock(side_effect=fake_stream)
+    server.send_notification = AsyncMock()
+
+    response = await dispatcher.dispatch(
+        {"jsonrpc": "2.0", "id": 20, "method": "agent/run", "params": {"message": "hi"}}
+    )
+
+    assert response["result"]["status"] == "started"
+    await asyncio.sleep(0.1)
+    agent.stream.assert_called_once_with("hi")
+
+
+@pytest.mark.asyncio
+async def test_agent_run_sends_completed_notification() -> None:
+    """When streaming finishes, dispatcher sends run/completed notification."""
+    dispatcher, agent, _session_manager, server = _make_dispatcher()
+    async def fake_stream(message: str):
+        yield "done"
+    agent.stream = MagicMock(side_effect=fake_stream)
+    server.send_notification = AsyncMock()
+
+    await dispatcher.dispatch(
+        {"jsonrpc": "2.0", "id": 21, "method": "agent/run", "params": {"message": "hi"}}
+    )
+    await asyncio.sleep(0.1)
+
+    calls = server.send_notification.await_args_list
+    completed_calls = [c for c in calls if c.args[0] == "run/completed"]
+    assert len(completed_calls) == 1
+    payload = completed_calls[0].args[1]
+    assert payload["status"] == "success"
+    assert "runId" in payload
+
+
+@pytest.mark.asyncio
+async def test_agent_run_sends_error_on_failure() -> None:
+    """When streaming raises, dispatcher sends run/completed with error."""
+    dispatcher, agent, _session_manager, server = _make_dispatcher()
+    async def failing_stream(message: str):
+        raise RuntimeError("model error")
+        yield  # make it a generator
+    agent.stream = MagicMock(side_effect=failing_stream)
+    server.send_notification = AsyncMock()
+
+    await dispatcher.dispatch(
+        {"jsonrpc": "2.0", "id": 22, "method": "agent/run", "params": {"message": "hi"}}
+    )
+    await asyncio.sleep(0.1)
+
+    calls = server.send_notification.await_args_list
+    completed_calls = [c for c in calls if c.args[0] == "run/completed"]
+    assert len(completed_calls) == 1
+    payload = completed_calls[0].args[1]
+    assert payload["status"] == "error"
+    assert "model error" in payload["error"]
