@@ -84,7 +84,7 @@ def _build_memory_backend(
         kwargs: dict[str, Any] = {"path": agent_config.memory.path}
 
         if agent_config.memory.backend == "sqlite":
-            from sage.memory.embedding import LiteLLMEmbedding
+            from sage.memory.embedding import create_embedding
 
             logger.info(
                 "Building memory backend for '%s': backend=%s, embedding=%s, path=%s",
@@ -93,7 +93,7 @@ def _build_memory_backend(
                 agent_config.memory.embedding,
                 agent_config.memory.path,
             )
-            embedding = LiteLLMEmbedding(agent_config.memory.embedding)
+            embedding = create_embedding(agent_config.memory.embedding)
             kwargs.update({"embedding": embedding, "config": agent_config.memory})
         elif agent_config.memory.backend == "file":
             logger.info(
