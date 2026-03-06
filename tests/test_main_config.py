@@ -711,6 +711,12 @@ class TestMergeAgentConfigMemory:
         assert merged["memory"]["path"] == "frontmatter.db"  # frontmatter wins
         assert merged["memory"]["embedding"] == "ollama/nomic-embed-text"  # default inherited
 
+    def test_frontmatter_memory_non_dict_raises(self) -> None:
+        central = MainConfig(defaults=ConfigOverrides(model="gpt-4o"))
+        metadata: dict[str, object] = {"name": "agent", "memory": True}
+        with pytest.raises(ConfigError, match="must be a mapping"):
+            merge_agent_config(metadata, central)
+
     def test_no_default_memory_agent_memory_only(self) -> None:
         """No [defaults.memory]; agent memory still applied with MemoryConfig defaults."""
         central = MainConfig(
