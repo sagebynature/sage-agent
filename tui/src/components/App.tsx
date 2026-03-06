@@ -136,13 +136,15 @@ function AppShell(): ReactNode {
   const [rows] = useState(stdout?.rows ?? 24);
   const stateRef = useRef<AppState>(state);
   stateRef.current = state;
+  const commandExecutorRef = useRef<{ execute: (cmd: string, args: string) => Promise<string | void> } | null>(null);
 
   useEffect(() => {
-    const { cleanup } = wireIntegration({
+    const { cleanup, commandExecutor } = wireIntegration({
       client,
       dispatch,
       getState: () => stateRef.current,
     });
+    commandExecutorRef.current = commandExecutor;
 
     client.spawn().catch((err: unknown) => {
       dispatch({
@@ -202,6 +204,22 @@ function AppShell(): ReactNode {
     [client, dispatch],
   );
 
+  const handleCommand = useCallback(async (commandName: string, args: string) => {
+    const result = await commandExecutorRef.current?.execute(commandName, args);
+    if (typeof result === "string" && result.length > 0) {
+      dispatch({
+        type: "ADD_MESSAGE",
+        message: {
+          id: `cmd_${Date.now()}`,
+          role: "system",
+          content: result,
+          timestamp: Date.now(),
+          isStreaming: false,
+        },
+      });
+    }
+  }, [dispatch]);
+
   useInput((input, key) => {
     if (key.ctrl && input === "b") {
       const nextView: ViewMode = state.currentView === "focused" ? "split" : "focused";
@@ -254,7 +272,7 @@ function AppShell(): ReactNode {
           onRespond={handlePermissionRespond}
         />
       ))}
-      <InputArea isActive={state.currentView !== "dashboard"} onSubmit={handleSubmit} />
+      <InputArea isActive={state.currentView !== "dashboard"} onSubmit={handleSubmit} onCommand={handleCommand} />
     </Box>
   );
 }
