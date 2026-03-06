@@ -644,3 +644,84 @@ class TestConfigOverridesMaxDepth:
         overrides = ConfigOverrides(max_depth=7)
         dumped = overrides.model_dump(exclude_none=True)
         assert dumped["max_depth"] == 7
+
+
+# ---------------------------------------------------------------------------
+# merge_agent_config — memory deep-merge
+# ---------------------------------------------------------------------------
+
+
+class TestMergeAgentConfigMemory:
+    def test_no_memory_anywhere(self) -> None:
+        """memory key absent from merged dict when no tier configures it."""
+        central = MainConfig(defaults=ConfigOverrides(model="gpt-4o"))
+        metadata: dict[str, object] = {"name": "agent", "model": "gpt-4o"}
+        merged = merge_agent_config(metadata, central)
+        assert "memory" not in merged
+
+    def test_default_memory_applied(self) -> None:
+        """[defaults.memory] fields appear in merged result with MemoryConfig defaults filled in."""
+        central = MainConfig(
+            defaults=ConfigOverrides(
+                model="gpt-4o",
+                memory={"embedding": "ollama/nomic-embed-text"},  # type: ignore[arg-type]
+            )
+        )
+        metadata: dict[str, object] = {"name": "agent"}
+        merged = merge_agent_config(metadata, central)
+        assert merged["memory"]["embedding"] == "ollama/nomic-embed-text"
+        assert merged["memory"]["backend"] == "sqlite"  # MemoryConfig default filled in
+
+    def test_agent_memory_deep_merges_with_default(self) -> None:
+        """[agents.x.memory] fields override defaults; unset agent fields inherit defaults."""
+        central = MainConfig(
+            defaults=ConfigOverrides(
+                model="gpt-4o",
+                memory={"embedding": "ollama/nomic-embed-text"},  # type: ignore[arg-type]
+            ),
+            agents={
+                "researcher": AgentOverrides(
+                    memory={"path": "researcher.db"},  # type: ignore[arg-type]
+                )
+            },
+        )
+        metadata: dict[str, object] = {"name": "researcher"}
+        merged = merge_agent_config(metadata, central, "researcher")
+        assert merged["memory"]["path"] == "researcher.db"  # agent wins
+        assert merged["memory"]["embedding"] == "ollama/nomic-embed-text"  # default inherited
+
+    def test_frontmatter_memory_wins(self) -> None:
+        """Frontmatter memory fields take highest precedence."""
+        central = MainConfig(
+            defaults=ConfigOverrides(
+                model="gpt-4o",
+                memory={"embedding": "ollama/nomic-embed-text", "path": "default.db"},  # type: ignore[arg-type]
+            ),
+            agents={
+                "researcher": AgentOverrides(
+                    memory={"path": "researcher.db"},  # type: ignore[arg-type]
+                )
+            },
+        )
+        metadata: dict[str, object] = {
+            "name": "researcher",
+            "memory": {"path": "frontmatter.db"},
+        }
+        merged = merge_agent_config(metadata, central, "researcher")
+        assert merged["memory"]["path"] == "frontmatter.db"  # frontmatter wins
+        assert merged["memory"]["embedding"] == "ollama/nomic-embed-text"  # default inherited
+
+    def test_no_default_memory_agent_memory_only(self) -> None:
+        """No [defaults.memory]; agent memory still applied with MemoryConfig defaults."""
+        central = MainConfig(
+            defaults=ConfigOverrides(model="gpt-4o"),
+            agents={
+                "researcher": AgentOverrides(
+                    memory={"path": "researcher.db"},  # type: ignore[arg-type]
+                )
+            },
+        )
+        metadata: dict[str, object] = {"name": "researcher"}
+        merged = merge_agent_config(metadata, central, "researcher")
+        assert merged["memory"]["path"] == "researcher.db"
+        assert merged["memory"]["embedding"] == "text-embedding-3-large"  # MemoryConfig default
