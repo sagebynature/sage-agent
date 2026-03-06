@@ -47,7 +47,7 @@ clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +
 
 validate-examples:
-	uv run sage agent validate examples/simple_agent/AGENTS.md
+	uv run sage agent validate examples/simple_assistant.md
 	uv run sage agent validate examples/parallel_agents/AGENTS.md
 	uv run sage agent validate examples/parallel_agents/research_agent
 	uv run sage agent validate examples/parallel_agents/summarize_agent
@@ -55,14 +55,13 @@ validate-examples:
 	uv run sage agent validate examples/mcp_agent/AGENTS.md
 	uv run sage agent validate examples/claude_agent/AGENTS.md
 	uv run sage agent validate examples/skills_agent/AGENTS.md
-	uv run sage agent validate examples/memory_agent/AGENTS.md
 
 # Run each example with a minimal prompt to verify end-to-end execution.
 # Requires a configured LLM provider (see .env.example).
 # Note: mcp_agent requires npx and @modelcontextprotocol/server-filesystem.
 run-examples:
 	@echo "--- simple_agent ---"
-	uv run sage agent run examples/simple_assistant -i "Reply with exactly one word: hello."
+	uv run sage agent run examples/simple_assistant.md -i "Reply with exactly one word: hello."
 	@echo "--- orchestrator ---"
 	uv run sage agent run examples/parallel_agents -i "In one sentence, what is 1 + 1?"
 	@echo "--- custom_tools ---"
