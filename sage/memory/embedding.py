@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Protocol, runtime_checkable
 
+import httpx
 import litellm
 
+from sage.exceptions import ProviderError
 from sage.providers.base import ProviderProtocol
 
 logger = logging.getLogger(__name__)
@@ -54,3 +57,47 @@ class LiteLLMEmbedding:
         dims = len(vectors[0]) if vectors else 0
         logger.debug("Embedding complete: %d vector(s), dimensions=%d", len(vectors), dims)
         return vectors
+
+
+class OllamaEmbedding:
+    """Embed via Ollama's HTTP API directly (no LiteLLM).
+
+    Reads ``OLLAMA_API_BASE`` from the environment; defaults to
+    ``http://localhost:11434``.  The ``base_url`` constructor argument
+    takes precedence over the env var::
+
+        emb = OllamaEmbedding("nomic-embed-text")
+        emb = OllamaEmbedding("nomic-embed-text", base_url="http://gpu-box:11434")
+    """
+
+    DEFAULT_BASE_URL = "http://localhost:11434"
+
+    def __init__(self, model: str, base_url: str | None = None) -> None:
+        self._model = model
+        self._base_url = (
+            base_url or os.environ.get("OLLAMA_API_BASE") or self.DEFAULT_BASE_URL
+        ).rstrip("/")
+        logger.debug(
+            "OllamaEmbedding initialized: model=%s, base_url=%s",
+            self._model,
+            self._base_url,
+        )
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        """Embed texts via ``POST /api/embed``."""
+        logger.debug("Embedding %d text(s) via Ollama model=%s", len(texts), self._model)
+        url = f"{self._base_url}/api/embed"
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, json={"model": self._model, "input": texts})
+        except httpx.ConnectError as exc:
+            raise ProviderError(
+                f"Cannot connect to Ollama at {self._base_url}. "
+                f"Is Ollama running? Set OLLAMA_API_BASE to override."
+            ) from exc
+        if response.status_code != 200:
+            raise ProviderError(
+                f"Ollama /api/embed returned HTTP {response.status_code}: {response.text}"
+            )
+        data = response.json()
+        return data["embeddings"]

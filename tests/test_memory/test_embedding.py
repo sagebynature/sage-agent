@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
+from sage.exceptions import ProviderError
 from sage.memory.embedding import (
     EmbeddingProtocol,
     LiteLLMEmbedding,
+    OllamaEmbedding,
     ProviderEmbedding,
 )
 
@@ -82,3 +85,70 @@ class TestLiteLLMEmbedding:
     def test_satisfies_embedding_protocol(self) -> None:
         emb = LiteLLMEmbedding("any-model")
         assert isinstance(emb, EmbeddingProtocol)
+
+
+# ---------------------------------------------------------------------------
+# OllamaEmbedding
+# ---------------------------------------------------------------------------
+
+
+class TestOllamaEmbedding:
+    @pytest.mark.asyncio
+    async def test_success(self) -> None:
+        fake_response = MagicMock()
+        fake_response.status_code = 200
+        fake_response.json.return_value = {"embeddings": [[0.1, 0.2], [0.3, 0.4]]}
+
+        with patch("sage.memory.embedding.httpx.AsyncClient") as mock_cls:
+            mock_client = AsyncMock()
+            mock_cls.return_value.__aenter__.return_value = mock_client
+            mock_client.post.return_value = fake_response
+
+            emb = OllamaEmbedding("nomic-embed-text", base_url="http://localhost:11434")
+            result = await emb.embed(["hello", "world"])
+
+        mock_client.post.assert_awaited_once_with(
+            "http://localhost:11434/api/embed",
+            json={"model": "nomic-embed-text", "input": ["hello", "world"]},
+        )
+        assert result == [[0.1, 0.2], [0.3, 0.4]]
+
+    @pytest.mark.asyncio
+    async def test_connection_error(self) -> None:
+        with patch("sage.memory.embedding.httpx.AsyncClient") as mock_cls:
+            mock_client = AsyncMock()
+            mock_cls.return_value.__aenter__.return_value = mock_client
+            mock_client.post.side_effect = httpx.ConnectError("refused")
+
+            emb = OllamaEmbedding("nomic-embed-text", base_url="http://localhost:11434")
+            with pytest.raises(ProviderError, match="Cannot connect to Ollama"):
+                await emb.embed(["hello"])
+
+    @pytest.mark.asyncio
+    async def test_non_200_response(self) -> None:
+        fake_response = MagicMock()
+        fake_response.status_code = 404
+        fake_response.text = "model not found"
+
+        with patch("sage.memory.embedding.httpx.AsyncClient") as mock_cls:
+            mock_client = AsyncMock()
+            mock_cls.return_value.__aenter__.return_value = mock_client
+            mock_client.post.return_value = fake_response
+
+            emb = OllamaEmbedding("nomic-embed-text", base_url="http://localhost:11434")
+            with pytest.raises(ProviderError, match="HTTP 404"):
+                await emb.embed(["hello"])
+
+    def test_satisfies_embedding_protocol(self) -> None:
+        emb = OllamaEmbedding("nomic-embed-text")
+        assert isinstance(emb, EmbeddingProtocol)
+
+    def test_env_var_base_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("OLLAMA_API_BASE", "http://gpu-box:11434")
+        emb = OllamaEmbedding("nomic-embed-text")
+        assert emb._base_url == "http://gpu-box:11434"
+
+    def test_default_base_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("OLLAMA_API_BASE", raising=False)
+        emb = OllamaEmbedding("nomic-embed-text")
+        assert emb._base_url == "http://localhost:11434"
