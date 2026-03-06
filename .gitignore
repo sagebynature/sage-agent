@@ -66,6 +66,13 @@ CLAUDE.md
 # Generated example files
 *.db
 .sage/
+.mockups
+
+# Node / TUI
+node_modules/
+tui/dist/
+tui/.turbo/
+pnpm-lock.yaml
 
 # Git worktrees
 .worktrees/

@@ -1,0 +1,233 @@
+from __future__ import annotations
+
+import logging
+from contextvars import ContextVar
+from typing import TYPE_CHECKING
+
+from sage.events import (
+    BackgroundTaskCompleted,
+    DelegationCompleted,
+    DelegationStarted,
+    LLMStreamDelta,
+    LLMTurnCompleted,
+    LLMTurnStarted,
+    ToolCompleted,
+    ToolStarted,
+)
+
+if TYPE_CHECKING:
+    from sage.agent import Agent
+    from sage.protocol.server import JsonRpcServer
+
+logger = logging.getLogger(__name__)
+_agent_path_var: ContextVar[list[str]] = ContextVar("agent_path", default=[])
+
+
+class EventBridge:
+    """Translates sage-agent events to JSON-RPC notifications."""
+
+    def __init__(self, server: "JsonRpcServer", agent: "Agent") -> None:
+        self._server = server
+        self._agent = agent
+
+    def setup(self) -> None:
+        """Register event handlers on the agent."""
+        root_agent = getattr(self._agent, "name", "")
+        _agent_path_var.set([root_agent])
+        self._agent.on(LLMStreamDelta, self._on_stream_delta)
+        self._agent.on(ToolStarted, self._on_tool_started)
+        self._agent.on(ToolCompleted, self._on_tool_completed)
+        self._agent.on(LLMTurnStarted, self._on_turn_started)
+        self._agent.on(LLMTurnCompleted, self._on_turn_completed)
+        self._agent.on(DelegationStarted, self._on_delegation_started)
+        self._agent.on(DelegationCompleted, self._on_delegation_completed)
+        self._agent.on(BackgroundTaskCompleted, self._on_background_completed)
+
+    async def _on_stream_delta(self, event: LLMStreamDelta) -> None:
+        try:
+            await self._server.send_notification(
+                "stream/delta",
+                {
+                    "delta": event.delta,
+                    "turn": event.turn,
+                    "agent_path": self._get_agent_path(),
+                },
+            )
+        except Exception as e:
+            logger.error(f"Bridge error: {e}")
+
+    async def _on_tool_started(self, event: ToolStarted) -> None:
+        try:
+            await self._server.send_notification(
+                "tool/started",
+                {
+                    "toolName": event.name,
+                    "callId": f"call_{event.turn}_{event.name}",
+                    "arguments": event.arguments,
+                    "agent_path": self._get_agent_path(),
+                },
+            )
+        except Exception as e:
+            logger.error(f"Bridge error: {e}")
+
+    async def _on_tool_completed(self, event: ToolCompleted) -> None:
+        try:
+            turn = getattr(event, "turn", 0)
+            await self._server.send_notification(
+                "tool/completed",
+                {
+                    "toolName": event.name,
+                    "callId": f"call_{turn}_{event.name}",
+                    "result": event.result,
+                    "durationMs": event.duration_ms,
+                    "error": None,
+                    "agent_path": self._get_agent_path(),
+                },
+            )
+        except Exception as e:
+            logger.error(f"Bridge error: {e}")
+
+    async def _on_turn_started(self, event: LLMTurnStarted) -> None:
+        try:
+            await self._server.send_notification(
+                "turn/started",
+                {
+                    "turn": event.turn,
+                    "model": event.model,
+                    "agent_path": self._get_agent_path(),
+                },
+            )
+        except Exception as e:
+            logger.error(f"Bridge error: {e}")
+
+    async def _on_turn_completed(self, event: LLMTurnCompleted) -> None:
+        try:
+            usage_payload: dict[str, int | float] = {}
+            if event.usage:
+                usage_payload = {
+                    "input": event.usage.prompt_tokens,
+                    "output": event.usage.completion_tokens,
+                    "cost": event.usage.cost,
+                }
+
+            await self._server.send_notification(
+                "turn/completed",
+                {
+                    "turn": event.turn,
+                    "usage": usage_payload,
+                    "agent_path": self._get_agent_path(),
+                },
+            )
+
+            await self._send_usage_update()
+        except Exception as e:
+            logger.error(f"Bridge error: {e}")
+
+    async def _on_delegation_started(self, event: DelegationStarted) -> None:
+        try:
+            self._push_agent(event.target)
+            await self._server.send_notification(
+                "delegation/started",
+                {
+                    "agentName": event.target,
+                    "task": event.task,
+                    "depth": 1,
+                    "agent_path": self._get_agent_path(),
+                },
+            )
+        except Exception as e:
+            logger.error(f"Bridge error: {e}")
+
+    async def _on_delegation_completed(self, event: DelegationCompleted) -> None:
+        try:
+            self._pop_agent()
+            result = event.result[:1000]
+            await self._server.send_notification(
+                "delegation/completed",
+                {
+                    "agentName": event.target,
+                    "result": result,
+                    "duration": 0,
+                    "agent_path": self._get_agent_path(),
+                },
+            )
+        except Exception as e:
+            logger.error(f"Bridge error: {e}")
+
+    async def _on_background_completed(self, event: BackgroundTaskCompleted) -> None:
+        try:
+            await self._server.send_notification(
+                "background/completed",
+                {
+                    "taskId": event.task_id,
+                    "agentName": event.agent_name,
+                    "status": event.status,
+                    "result": event.result,
+                    "error": event.error,
+                    "agent_path": ["background", event.task_id],
+                },
+            )
+        except Exception as e:
+            logger.error(f"Bridge error: {e}")
+
+    async def _send_usage_update(self) -> None:
+        stats = self._extract_usage_stats()
+        await self._server.send_notification(
+            "usage/update",
+            {
+                "promptTokens": stats["prompt_tokens"],
+                "completionTokens": stats["completion_tokens"],
+                "totalCost": stats["cost"],
+                "model": getattr(self._agent, "model", ""),
+                "contextUsagePercent": 0,
+                "agent_path": self._get_agent_path(),
+            },
+        )
+
+    def _get_agent_path(self) -> list[str]:
+        """Get current agent path from contextvars."""
+        return list(_agent_path_var.get())
+
+    def _push_agent(self, agent_name: str) -> None:
+        """Push agent onto path stack."""
+        current = _agent_path_var.get()
+        _agent_path_var.set([*current, agent_name])
+
+    def _pop_agent(self) -> None:
+        """Pop last agent from path stack."""
+        current = _agent_path_var.get()
+        if len(current) > 1:
+            _agent_path_var.set(current[:-1])
+
+    def _extract_usage_stats(self) -> dict[str, int | float]:
+        if hasattr(self._agent, "cumulative_usage"):
+            usage = self._agent.cumulative_usage
+            return {
+                "prompt_tokens": getattr(usage, "prompt_tokens", 0),
+                "completion_tokens": getattr(usage, "completion_tokens", 0),
+                "cost": getattr(usage, "cost", 0.0),
+            }
+
+        if hasattr(self._agent, "get_usage_stats"):
+            raw_stats = self._agent.get_usage_stats()
+            if isinstance(raw_stats, dict):
+                prompt_tokens = raw_stats.get("cumulative_prompt_tokens", 0)
+                completion_tokens = raw_stats.get("cumulative_completion_tokens", 0)
+                cumulative_cost = raw_stats.get("cumulative_cost", 0.0)
+                return {
+                    "prompt_tokens": int(prompt_tokens)
+                    if isinstance(prompt_tokens, int | float)
+                    else 0,
+                    "completion_tokens": int(completion_tokens)
+                    if isinstance(completion_tokens, int | float)
+                    else 0,
+                    "cost": float(cumulative_cost)
+                    if isinstance(cumulative_cost, int | float)
+                    else 0.0,
+                }
+
+        return {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "cost": 0.0,
+        }
