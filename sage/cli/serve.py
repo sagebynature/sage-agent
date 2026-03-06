@@ -11,6 +11,7 @@ import click
 
 from sage.agent import Agent
 from sage.coordination.session import PersistentSessionManager
+from sage.protocol.bridge import EventBridge
 from sage.protocol.dispatcher import MethodDispatcher
 from sage.protocol.server import JsonRpcServer
 
@@ -24,6 +25,18 @@ async def _serve(agent_config: str | None = None, verbose: bool = False) -> None
     session_manager = PersistentSessionManager()
     dispatcher = MethodDispatcher(agent=agent, session_manager=session_manager, server=server)
     server.set_dispatcher(dispatcher)
+
+    if agent is not None:
+        bridge = EventBridge(server=server, agent=agent)
+        bridge.setup()
+
+        from sage.protocol.permissions import JsonRpcPermissionHandler
+
+        permission_handler = JsonRpcPermissionHandler(
+            server=server, dispatcher=dispatcher
+        )
+        if hasattr(agent, "tool_registry") and agent.tool_registry is not None:
+            agent.tool_registry.set_permission_handler(permission_handler)
 
     await server.start()
 
@@ -41,7 +54,8 @@ async def _serve(agent_config: str | None = None, verbose: bool = False) -> None
     default=False,
     help="Enable verbose logging",
 )
-def serve(agent_config: str | None, verbose: bool) -> None:
+@click.pass_context
+def serve(ctx: click.Context, agent_config: str | None, verbose: bool) -> None:
     """Start JSON-RPC server for TUI communication.
 
     Reads newline-delimited JSON-RPC 2.0 requests from stdin.
@@ -59,5 +73,18 @@ def serve(agent_config: str | None, verbose: bool) -> None:
 
     if verbose:
         logging.getLogger("sage").setLevel(logging.DEBUG)
+
+    if agent_config is None:
+        from sage.cli.main import _resolve_primary_agent
+        from sage.exceptions import ConfigError
+
+        obj = ctx.ensure_object(dict)
+        main_config = obj.get("main_config")
+        main_config_path = obj.get("main_config_path")
+        try:
+            agent_config = _resolve_primary_agent(main_config, main_config_path)
+        except ConfigError as e:
+            click.echo(f"Error: {e}", err=True)
+            sys.exit(1)
 
     asyncio.run(_serve(agent_config, verbose))
