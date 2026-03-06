@@ -74,7 +74,7 @@ class MethodDispatcher:
             raise ValueError("'message' must be a non-empty string")
 
         run_id = str(uuid4())
-        task = asyncio.create_task(self.agent.run(message))
+        task = asyncio.create_task(self._run_streaming(run_id, message))
         self._run_tasks[run_id] = task
         self._current_run_id = run_id
 
@@ -85,6 +85,23 @@ class MethodDispatcher:
 
         task.add_done_callback(_cleanup)
         return {"status": "started", "runId": run_id}
+
+    async def _run_streaming(self, run_id: str, message: str) -> None:
+        try:
+            async for _chunk in self.agent.stream(message):
+                pass  # EventBridge handles stream/delta notifications
+            await self.server.send_notification(
+                "run/completed", {"runId": run_id, "status": "success"}
+            )
+        except asyncio.CancelledError:
+            await self.server.send_notification(
+                "run/completed", {"runId": run_id, "status": "cancelled"}
+            )
+        except Exception as exc:
+            await self.server.send_notification(
+                "run/completed",
+                {"runId": run_id, "status": "error", "error": str(exc)},
+            )
 
     async def _handle_agent_cancel(self, request: dict[str, Any]) -> dict[str, Any]:
         params = self._ensure_params_dict(request)
