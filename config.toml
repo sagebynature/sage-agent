@@ -73,6 +73,14 @@ reserve_tokens = 4096         # tokens reserved for model output
 prune_tool_outputs = true     # truncate large tool outputs
 tool_output_max_chars = 5000  # max chars per tool output before truncation
 
+# ── Memory ────────────────────────────────────────────────────────────────────
+# Default persistent memory backend. Per-agent [agents.<name>.memory] sections
+# deep-merge on top — only fields you explicitly set in the agent section override
+# the values below. Omit [defaults.memory] entirely to keep memory opt-in per agent.
+[defaults.memory]
+backend = "sqlite"
+embedding = "ollama/nomic-embed-text"
+
 # ── Planning Pipeline ─────────────────────────────────────────────────────────
 # Optional plan creation, analysis, and iterative review.
 # When enabled, agents gain plan_create / plan_status / plan_update / plan_review
@@ -130,14 +138,12 @@ max_turns = 20
 temperature = 0.0
 max_tokens = 8192
 
-# ── Agent-only fields (not available in [defaults]) ──────────────────────────
-# memory: persistent memory backend configuration
+# ── Memory (per-agent) ───────────────────────────────────────────────────────
+# Only fields set here override [defaults.memory]; the rest are inherited.
 # skills: optional list of skill names to load for this agent (allowlist)
 
 [agents.researcher.memory]
-backend = "sqlite"
 path = "memory.db"
-embedding = "text-embedding-3-large"
 compaction_threshold = 50
 
 # skills = ["git-master", "terraform"]  # Optional: limit this agent to specific skills
