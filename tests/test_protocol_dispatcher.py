@@ -363,6 +363,18 @@ async def test_agent_run_sends_completed_notification() -> None:
 
 
 @pytest.mark.asyncio
+async def test_permission_handler_integration() -> None:
+    """JsonRpcPermissionHandler can be created with server and dispatcher."""
+    from sage.protocol.permissions import JsonRpcPermissionHandler
+
+    dispatcher, _agent, _session_manager, server = _make_dispatcher()
+    handler = JsonRpcPermissionHandler(server=server, dispatcher=dispatcher)
+    assert handler is not None
+    assert hasattr(dispatcher, "pending_permissions")
+    assert hasattr(dispatcher, "create_permission_future")
+
+
+@pytest.mark.asyncio
 async def test_agent_run_sends_error_on_failure() -> None:
     """When streaming raises, dispatcher sends run/completed with error."""
     dispatcher, agent, _session_manager, server = _make_dispatcher()
