@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.6.0-rc.2 (2026-03-06)
+
+### Bug Fixes
+
+- **planning**: Replace __import__ hack with proper top-level import
+  ([`d1da673`](https://github.com/sagebynature/sage-agent/commit/d1da673bc2e06b1cac175c3769ab19886dee4149))
+
+
 ## v1.6.0-rc.1 (2026-03-05)
 
 ### Bug Fixes
