@@ -90,6 +90,47 @@ export class CommandExecutor {
           },
         });
         return;
+      case "models": {
+        const result = await this.client.request("config/get", { key: "model" });
+        return `Current model: ${this.stringifyResult(result)}`;
+      }
+      case "permissions": {
+        const state = this.getState();
+        const pending = state.permissions.filter(p => p.status === "pending");
+        if (pending.length === 0) return "No pending permission requests.";
+        return pending
+          .map(p => `[${p.status}] ${p.tool}: ${JSON.stringify(p.arguments)}`)
+          .join("\n");
+      }
+      case "theme":
+        return "Theme switching is not yet available.";
+      case "split":
+        this.dispatch({
+          type: "SET_VIEW",
+          view: this.getState().currentView === "split" ? "focused" : "split",
+        });
+        return;
+      case "agent": {
+        const state = this.getState();
+        const active = state.agents.filter(a => a.status === "active");
+        if (active.length === 0) return "No active agents.";
+        return active.map(a => `${a.name} [${a.status}] — ${a.task ?? "no task"}`).join("\n");
+      }
+      case "agents": {
+        const state = this.getState();
+        if (state.agents.length === 0) return "No agents.";
+        return state.agents
+          .map(a => `${a.name} [${a.status}]`)
+          .join("\n");
+      }
+      case "plan":
+        return "Plan view is not yet wired.";
+      case "notepad":
+        return "Notepad is not yet available.";
+      case "bg":
+        return "No background tasks tracked.";
+      case "diff":
+        return "Diff view is not yet available.";
       default:
         console.warn(`Unimplemented registered command: ${normalized}`);
         void args;
