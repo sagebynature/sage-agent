@@ -13,6 +13,7 @@ from sage.memory.embedding import (
     LiteLLMEmbedding,
     OllamaEmbedding,
     ProviderEmbedding,
+    create_embedding,  # does not exist yet
 )
 
 
@@ -182,3 +183,27 @@ class TestOllamaEmbedding:
         monkeypatch.delenv("OLLAMA_API_BASE", raising=False)
         emb = OllamaEmbedding("nomic-embed-text")
         assert emb._base_url == "http://localhost:11434"
+
+
+# ---------------------------------------------------------------------------
+# create_embedding factory
+# ---------------------------------------------------------------------------
+
+
+class TestCreateEmbedding:
+    def test_routes_ollama_prefix(self) -> None:
+        emb = create_embedding("ollama/nomic-embed-text")
+        assert isinstance(emb, OllamaEmbedding)
+
+    def test_routes_plain_model_to_litellm(self) -> None:
+        emb = create_embedding("text-embedding-3-large")
+        assert isinstance(emb, LiteLLMEmbedding)
+
+    def test_other_prefix_goes_to_litellm(self) -> None:
+        # azure/, cohere/, etc. all go to LiteLLM
+        emb = create_embedding("azure/my-deployment")
+        assert isinstance(emb, LiteLLMEmbedding)
+
+    def test_empty_model_after_prefix_raises(self) -> None:
+        with pytest.raises(ValueError, match="requires a model name"):
+            create_embedding("ollama/")
