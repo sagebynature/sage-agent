@@ -3,15 +3,17 @@ import TextInput from "ink-text-input";
 import { type ReactNode, useState, useCallback } from "react";
 import { useApp } from "../state/AppContext.js";
 import { useInputHistory } from "../hooks/useInputHistory.js";
+import { SlashCommands } from "./SlashCommands.js";
 
 type InputMode = "normal" | "multiline" | "shell" | "command" | "search";
 
 interface InputAreaProps {
   onSubmit?: (text: string) => void;
+  onCommand?: (command: string, args: string) => void;
   isActive?: boolean;
 }
 
-export function InputArea({ onSubmit, isActive = true }: InputAreaProps): ReactNode {
+export function InputArea({ onSubmit, onCommand, isActive = true }: InputAreaProps): ReactNode {
   const { dispatch } = useApp();
   const [value, setValue] = useState("");
   const [mode, setMode] = useState<InputMode>("normal");
@@ -22,6 +24,16 @@ export function InputArea({ onSubmit, isActive = true }: InputAreaProps): ReactN
     if (!text.trim()) return;
 
     history.addEntry(text);
+
+    if (text.startsWith("/") && onCommand) {
+      const spaceIndex = text.indexOf(" ");
+      const commandName = spaceIndex === -1 ? text : text.slice(0, spaceIndex);
+      const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1);
+      onCommand(commandName, args);
+      setValue("");
+      setMode("normal");
+      return;
+    }
 
     if (onSubmit) {
       onSubmit(text);
@@ -41,7 +53,19 @@ export function InputArea({ onSubmit, isActive = true }: InputAreaProps): ReactN
     setValue("");
     setMode("normal");
     setMultilineBuffer([]);
-  }, [dispatch, history, onSubmit]);
+  }, [dispatch, history, onSubmit, onCommand]);
+
+  const handleSlashSelect = useCallback((command: string, args: string) => {
+    if (onCommand) {
+      onCommand(`/${command}`, args);
+    }
+    setValue("");
+    setMode("normal");
+  }, [onCommand]);
+
+  const handleSlashDismiss = useCallback(() => {
+    setMode("normal");
+  }, []);
 
   const handleChange = useCallback((newValue: string) => {
     setValue(newValue);
@@ -91,6 +115,12 @@ export function InputArea({ onSubmit, isActive = true }: InputAreaProps): ReactN
 
   return (
     <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1}>
+      <SlashCommands
+        input={value}
+        isActive={mode === "command"}
+        onSelect={handleSlashSelect}
+        onDismiss={handleSlashDismiss}
+      />
       {mode === "multiline" && multilineBuffer.length > 0 && (
         <Box flexDirection="column">
           {multilineBuffer.map((line, i) => (
