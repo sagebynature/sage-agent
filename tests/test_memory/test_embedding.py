@@ -13,7 +13,7 @@ from sage.memory.embedding import (
     LiteLLMEmbedding,
     OllamaEmbedding,
     ProviderEmbedding,
-    create_embedding,  # does not exist yet
+    create_embedding,
 )
 
 
@@ -207,3 +207,7 @@ class TestCreateEmbedding:
     def test_empty_model_after_prefix_raises(self) -> None:
         with pytest.raises(ValueError, match="requires a model name"):
             create_embedding("ollama/")
+
+    def test_whitespace_only_model_after_prefix_raises(self) -> None:
+        with pytest.raises(ValueError, match="requires a model name"):
+            create_embedding("ollama/   ")
