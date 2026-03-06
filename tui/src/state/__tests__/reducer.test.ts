@@ -261,8 +261,8 @@ describe("appReducer", () => {
     });
     const bgMessages = state.messages.filter(m => m.role === "system");
     expect(bgMessages.length).toBe(1);
-    expect(bgMessages[0].content).toContain("bg-1");
-    expect(bgMessages[0].content).toContain("completed");
+    expect(bgMessages[0]!.content).toContain("bg-1");
+    expect(bgMessages[0]!.content).toContain("completed");
   });
 
   it("BACKGROUND_TASK_UPDATE adds error message for failed task", () => {
@@ -274,7 +274,7 @@ describe("appReducer", () => {
     });
     const bgMessages = state.messages.filter(m => m.role === "system");
     expect(bgMessages.length).toBe(1);
-    expect(bgMessages[0].content).toContain("something broke");
+    expect(bgMessages[0]!.content).toContain("something broke");
   });
 
   it("COMPACTION_STARTED adds system message", () => {
@@ -284,6 +284,6 @@ describe("appReducer", () => {
     });
     const sysMessages = state.messages.filter(m => m.role === "system");
     expect(sysMessages.length).toBe(1);
-    expect(sysMessages[0].content).toContain("compaction");
+    expect(sysMessages[0]!.content).toContain("compaction");
   });
 });
