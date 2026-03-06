@@ -199,6 +199,32 @@ async def test_handler_error_is_logged_and_not_raised(caplog: pytest.LogCaptureF
 
 
 @pytest.mark.asyncio
+async def test_usage_update_includes_context_usage_percent() -> None:
+    """usage/update should include computed contextUsagePercent, not hardcoded 0."""
+    bridge, mock_server, mock_agent, _ = _setup_bridge()
+
+    # Remove cumulative_usage so _extract_usage_stats falls through to get_usage_stats
+    del mock_agent.cumulative_usage
+
+    # Mock get_usage_stats to return a usage_percentage
+    mock_agent.get_usage_stats = MagicMock(return_value={
+        "cumulative_prompt_tokens": 1000,
+        "cumulative_completion_tokens": 500,
+        "cumulative_cost": 0.05,
+        "usage_percentage": 0.42,
+    })
+    mock_agent.model = "test-model"
+
+    await bridge._send_usage_update()
+
+    mock_server.send_notification.assert_called_once()
+    call_args = mock_server.send_notification.call_args
+    assert call_args[0][0] == "usage/update"
+    payload = call_args[0][1]
+    assert payload["contextUsagePercent"] == 42  # 0.42 * 100
+
+
+@pytest.mark.asyncio
 async def test_usage_update_sent_after_turn_completed() -> None:
     _, mock_server, _, handlers = _setup_bridge()
 
