@@ -29,7 +29,6 @@ agents_dir = "agents/"
 AZURE_AI_API_KEY = "${AZURE_AI_API_KEY}"
 AZURE_AI_API_BASE = "${AZURE_AI_API_BASE}"
 
-
 # ─── Global Defaults ──────────────────────────────────────────────────────────
 [defaults]
 

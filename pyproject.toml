@@ -26,6 +26,7 @@ dependencies = [
     "colorlog>=6.0",
     "markdownify>=0.14",
     "tomli>=2.0; python_version < '3.11'",
+    "truststore>=0.10.4",
 ]
 
 [project.optional-dependencies]
