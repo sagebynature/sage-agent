@@ -15,9 +15,7 @@ permission:
   read: allow
   shell: allow
 memory:
-  backend: sqlite
   path: mcp_agent_memory.db
-  embedding: azure_ai/text-embedding-3-large
 ---
 
 You are an assistant that can interact with the filesystem via MCP.

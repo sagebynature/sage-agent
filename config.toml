@@ -78,7 +78,11 @@ tool_output_max_chars = 5000  # max chars per tool output before truncation
 # the values below. Omit [defaults.memory] entirely to keep memory opt-in per agent.
 [defaults.memory]
 backend = "sqlite"
+path = "memory.db"
 embedding = "ollama/nomic-embed-text"
+# embedding = "azure_ai/text-embedding-3-large"
+
+
 
 # ── Planning Pipeline ─────────────────────────────────────────────────────────
 # Optional plan creation, analysis, and iterative review.
@@ -103,16 +107,6 @@ max_iterations = 3      # Maximum review-revise cycles (default: 3)
 # ── MCP Servers ───────────────────────────────────────────────────────────────
 # Model Context Protocol server connections.
 # Each server uses either stdio (command) or sse (url) transport.
-#
-# [defaults.mcp_servers.filesystem]
-# transport = "stdio"
-# command = "npx"
-# args = ["-y", "@modelcontextprotocol/server-filesystem"]
-# env = { ROOT_DIR = "/workspace" }
-#
-# [defaults.mcp_servers.my-sse-server]
-# transport = "sse"
-# url = "http://localhost:8080/sse"
 
 [defaults.mcp_servers.context7]
 transport = "stdio"
@@ -129,44 +123,43 @@ args = ["-y", "@modelcontextprotocol/server-sequential-thinking@latest"]
 # Each [agents.<name>] section overrides [defaults] for a specific agent.
 # The <name> must match the agent's "name" field in its .md frontmatter.
 
-[agents.researcher]
-model = "azure_ai/kimi-k2.5"
-max_turns = 20
+# [agents.researcher]
+# model = "azure_ai/kimi-k2.5"
+# max_turns = 20
 
-[agents.researcher.model_params]
-temperature = 0.0
-max_tokens = 8192
+# [agents.researcher.model_params]
+# temperature = 0.0
+# max_tokens = 8192
 
 # ── Memory (per-agent) ───────────────────────────────────────────────────────
 # Only fields set here override [defaults.memory]; the rest are inherited.
 # skills: optional list of skill names to load for this agent (allowlist)
 
-[agents.researcher.memory]
-path = "memory.db"
-compaction_threshold = 50
-
+# [agents.researcher.memory]
+# path = "memory.db"
+# compaction_threshold = 50
 # skills = ["git-master", "terraform"]  # Optional: limit this agent to specific skills
 
 # ── Planning (per-agent) ─────────────────────────────────────────────────────
 # Enable planning for the researcher with a custom analysis prompt.
 # The review loop uses up to 4 iterations with a domain-specific rubric.
 
-[agents.researcher.planning.analysis]
-enabled = true
-prompt = "Evaluate whether the plan covers all research angles and cites sources."
+# [agents.researcher.planning.analysis]
+# enabled = true
+# prompt = "Evaluate whether the plan covers all research angles and cites sources."
 
-[agents.researcher.planning.review]
-enabled = true
-max_iterations = 4
-prompt = "Review the research plan. Check for: missing perspectives, unsupported claims, and logical gaps."
+# [agents.researcher.planning.review]
+# enabled = true
+# max_iterations = 4
+# prompt = "Review the research plan. Check for: missing perspectives, unsupported claims, and logical gaps."
 
-[agents.summarizer]
-model = "azure_ai/gpt-4o"
-max_turns = 5
+# [agents.summarizer]
+# model = "azure_ai/gpt-4o"
+# max_turns = 5
 
-[agents.summarizer.model_params]
-temperature = 0.2
-max_tokens = 2048
+# [agents.summarizer.model_params]
+# temperature = 0.2
+# max_tokens = 2048
 
 # Planning disabled for summarizer (default) — uncomment to enable:
 # [agents.summarizer.planning.analysis]
