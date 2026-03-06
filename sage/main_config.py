@@ -187,6 +187,50 @@ def resolve_and_apply_env(config: MainConfig | None) -> None:
         os.environ[key] = value
 
 
+def _merge_memory(
+    defaults: ConfigOverrides,
+    agent_overrides: AgentOverrides | None,
+    frontmatter: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Deep-merge memory config from three tiers.
+
+    Returns ``None`` when no tier provides any memory config (preserving
+    the existing opt-in behaviour for agents that don't use memory).
+
+    Uses ``model_fields_set`` to apply only fields explicitly written by
+    the user at each tier, avoiding accidental propagation of Pydantic
+    field defaults from one tier overriding values set at a lower tier.
+    """
+    has_any = (
+        defaults.memory is not None
+        or (agent_overrides is not None and agent_overrides.memory is not None)
+        or "memory" in frontmatter
+    )
+    if not has_any:
+        return None
+
+    # Start with all MemoryConfig baseline defaults
+    merged: dict[str, Any] = MemoryConfig().model_dump()
+
+    # Apply only explicitly-set fields from [defaults.memory]
+    if defaults.memory is not None:
+        explicitly_set = defaults.memory.model_dump(include=defaults.memory.model_fields_set)
+        merged.update(explicitly_set)
+
+    # Apply only explicitly-set fields from [agents.x.memory]
+    if agent_overrides is not None and agent_overrides.memory is not None:
+        explicitly_set = agent_overrides.memory.model_dump(
+            include=agent_overrides.memory.model_fields_set
+        )
+        merged.update(explicitly_set)
+
+    # Apply all frontmatter memory fields (highest priority, raw dict)
+    if "memory" in frontmatter:
+        merged.update(frontmatter["memory"])
+
+    return merged
+
+
 def merge_agent_config(
     metadata: dict[str, Any],
     central: MainConfig | None,
@@ -199,26 +243,38 @@ def merge_agent_config(
       2. ``central.agents[agent_name]``  (if present)
       3. *metadata* (frontmatter values)
 
-    Uses top-level replacement semantics — nested objects like ``model_params``
-    are replaced wholesale, not deep-merged.
+    Most nested objects use top-level replacement semantics (e.g.
+    ``model_params`` is replaced wholesale).  ``memory`` is the exception:
+    it is deep-merged field-by-field so individual fields can be overridden
+    at each tier without losing fields set at a lower tier.
     """
     if central is None:
         return metadata
 
     effective_skills: list[str] | None = getattr(central.defaults, "skills", None)
+    agent_ovr = central.agents.get(agent_name) if agent_name else None
 
-    # Start with defaults (only explicitly-set fields)
+    # Deep-merge memory separately before the general shallow merge
+    memory_merged = _merge_memory(central.defaults, agent_ovr, metadata)
+
+    # Start with defaults (only explicitly-set fields), excluding memory
     merged: dict[str, Any] = central.defaults.model_dump(exclude_none=True)
+    merged.pop("memory", None)
 
-    # Layer agent-specific overrides
+    # Layer agent-specific overrides (excluding memory)
     if agent_name and agent_name in central.agents:
         if central.agents[agent_name].skills is not None:
             effective_skills = central.agents[agent_name].skills
         agent_overrides = central.agents[agent_name].model_dump(exclude_none=True)
+        agent_overrides.pop("memory", None)
         merged.update(agent_overrides)
 
-    # Layer frontmatter values (highest priority)
-    merged.update(metadata)
+    # Layer frontmatter values (excluding memory — handled above)
+    merged.update({k: v for k, v in metadata.items() if k != "memory"})
+
+    # Re-attach deep-merged memory (or omit if no tier configured it)
+    if memory_merged is not None:
+        merged["memory"] = memory_merged
 
     if effective_skills is not None:
         merged["skills"] = effective_skills
