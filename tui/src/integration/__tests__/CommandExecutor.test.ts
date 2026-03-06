@@ -195,4 +195,67 @@ describe("CommandExecutor", () => {
     expect(dispatched).toContainEqual({ type: "SET_STREAMING", isStreaming: false });
     expect(dispatched).toContainEqual({ type: "CLEAR_ERROR" });
   });
+
+  it("handles /models command", async () => {
+    request.mockResolvedValueOnce({ value: "gpt-4" });
+    const executor = createExecutor();
+    const result = await executor.execute("models", "");
+    expect(request).toHaveBeenCalledWith("config/get", { key: "model" });
+    expect(typeof result).toBe("string");
+  });
+
+  it("handles /permissions command with no pending", async () => {
+    const executor = createExecutor();
+    const result = await executor.execute("permissions", "");
+    expect(result).toBe("No pending permission requests.");
+  });
+
+  it("handles /theme command", async () => {
+    const executor = createExecutor();
+    const result = await executor.execute("theme", "");
+    expect(typeof result).toBe("string");
+  });
+
+  it("handles /split command toggles view", async () => {
+    const executor = createExecutor();
+    await executor.execute("split", "");
+    const actions = dispatched.map((a) => a.type);
+    expect(actions).toContain("SET_VIEW");
+  });
+
+  it("handles /agent command with no active agents", async () => {
+    const executor = createExecutor();
+    const result = await executor.execute("agent", "");
+    expect(result).toBe("No active agents.");
+  });
+
+  it("handles /agents command with no agents", async () => {
+    const executor = createExecutor();
+    const result = await executor.execute("agents", "");
+    expect(result).toBe("No agents.");
+  });
+
+  it("handles /plan command", async () => {
+    const executor = createExecutor();
+    const result = await executor.execute("plan", "");
+    expect(typeof result).toBe("string");
+  });
+
+  it("handles /notepad command", async () => {
+    const executor = createExecutor();
+    const result = await executor.execute("notepad", "");
+    expect(typeof result).toBe("string");
+  });
+
+  it("handles /bg command", async () => {
+    const executor = createExecutor();
+    const result = await executor.execute("bg", "");
+    expect(typeof result).toBe("string");
+  });
+
+  it("handles /diff command", async () => {
+    const executor = createExecutor();
+    const result = await executor.execute("diff", "");
+    expect(typeof result).toBe("string");
+  });
 });
