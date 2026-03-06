@@ -226,7 +226,12 @@ def _merge_memory(
 
     # Apply all frontmatter memory fields (highest priority, raw dict)
     if "memory" in frontmatter:
-        merged.update(frontmatter["memory"])
+        fm_memory = frontmatter["memory"]
+        if not isinstance(fm_memory, dict):
+            raise ConfigError(
+                f"'memory' in agent frontmatter must be a mapping, got {type(fm_memory).__name__}"
+            )
+        merged.update(fm_memory)
 
     return merged
 
