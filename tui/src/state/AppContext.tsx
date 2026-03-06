@@ -145,11 +145,40 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       };
     }
 
-    case "BACKGROUND_TASK_UPDATE":
-      return state;
+    case "BACKGROUND_TASK_UPDATE": {
+      const content = action.error
+        ? `Background task ${action.taskId} failed: ${action.error}`
+        : `Background task ${action.taskId} ${action.status}${action.result ? `: ${action.result}` : ""}`;
+      return {
+        ...state,
+        messages: [
+          ...state.messages,
+          {
+            id: `bg_${action.taskId}_${Date.now()}`,
+            role: "system" as const,
+            content,
+            timestamp: Date.now(),
+            isStreaming: false,
+          },
+        ],
+      };
+    }
 
-    case "COMPACTION_STARTED":
-      return state;
+    case "COMPACTION_STARTED": {
+      return {
+        ...state,
+        messages: [
+          ...state.messages,
+          {
+            id: `compaction_${Date.now()}`,
+            role: "system" as const,
+            content: `Context compaction started: ${action.reason}`,
+            timestamp: Date.now(),
+            isStreaming: false,
+          },
+        ],
+      };
+    }
 
     default:
       return state;
