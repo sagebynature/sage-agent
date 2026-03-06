@@ -1,5 +1,6 @@
-import { Box, Text, useInput, useStdout } from "ink";
-import React, { Suspense, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box, Text, useInput } from "ink";
+import React, { Suspense, type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
+import { useResizeHandler } from "../hooks/useResizeHandler.js";
 import { PlanProvider } from "../contexts/PlanContext.js";
 import { SageClient } from "../ipc/client.js";
 import { SageClientContext, useSageClient } from "../ipc/hooks.js";
@@ -131,9 +132,7 @@ function ErrorView(): ReactNode {
 function AppShell(): ReactNode {
   const { state, dispatch } = useApp();
   const client = useSageClient();
-  const { stdout } = useStdout();
-  const [columns] = useState(stdout?.columns ?? 80);
-  const [rows] = useState(stdout?.rows ?? 24);
+  const { width: columns, height: rows } = useResizeHandler();
   const stateRef = useRef<AppState>(state);
   stateRef.current = state;
   const commandExecutorRef = useRef<{ execute: (cmd: string, args: string) => Promise<string | void> } | null>(null);
