@@ -290,7 +290,7 @@ class TestNativeSandbox:
             pytest.skip("SHELL not set in parent environment")
 
         sandbox = NativeSandbox()
-        stdout, _ = await sandbox.execute('echo "SHELL=${SHELL:-UNDEFINED}"')
+        stdout, _ = await sandbox.execute("printenv SHELL || echo UNDEFINED")
         assert "UNDEFINED" in stdout
 
     async def test_sandbox_strips_bash_func_vars(self) -> None:

@@ -43,6 +43,9 @@ class MethodDispatcher:
         method = request.get("method")
         request_id = request.get("id")
 
+        if not isinstance(method, str):
+            return self.server._error_response(request_id, -32601, "Method not found")
+
         handler = self._handlers.get(method)
         if handler is None:
             return self.server._error_response(request_id, -32601, "Method not found")

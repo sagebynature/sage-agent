@@ -1653,6 +1653,8 @@ class TestAgentMemoryWiring:
 
     def test_from_config_no_memory_when_not_configured(self, tmp_path: Path) -> None:
         """Agent has no memory when frontmatter has no 'memory:' key."""
+        from sage.main_config import MainConfig
+
         config_md = textwrap.dedent("""\
             ---
             name: no-mem
@@ -1660,7 +1662,7 @@ class TestAgentMemoryWiring:
             ---
         """)
         (tmp_path / "AGENTS.md").write_text(config_md)
-        agent = Agent.from_config(tmp_path / "AGENTS.md")
+        agent = Agent.from_config(tmp_path / "AGENTS.md", central=MainConfig())
 
         assert agent.memory is None
 
