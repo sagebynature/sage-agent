@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
+  "bin": {
+    "sage-tui": "dist/index.js"
+  },
   "scripts": {
     "dev": "tsx src/index.tsx",
     "build": "tsup src/index.tsx --format esm",
