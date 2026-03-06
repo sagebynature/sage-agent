@@ -4,10 +4,6 @@ model: azure_ai/claude-sonnet-4-6
 permission:
   read: allow
   shell: allow
-memory:
-  backend: sqlite
-  path: ./memory.db
-  embedding: azure_ai/text-embedding-3-large
 max_turns: 10
 model_params:
   temperature: 0.3
