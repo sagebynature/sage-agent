@@ -28,6 +28,7 @@ const NOTIFICATION_METHODS = [
   METHODS.USAGE_UPDATE,
   METHODS.COMPACTION_STARTED,
   METHODS.ERROR,
+  METHODS.RUN_COMPLETED,
 ] as const;
 
 export function wireIntegration(options: WiringOptions): WiringResult {
