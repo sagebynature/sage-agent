@@ -1,0 +1,39 @@
+{
+  "name": "@sage-agent/tui",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx src/index.tsx",
+    "build": "tsup src/index.tsx --format esm",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "chalk": "5.4.1",
+    "cli-highlight": "2.1.11",
+    "diff": "7.0.0",
+    "ink": "6.0.0",
+    "ink-select-input": "6.0.0",
+    "ink-spinner": "5.0.0",
+    "ink-text-input": "6.0.0",
+    "marked": "15.0.7",
+    "marked-terminal": "7.3.0",
+    "react": "19.1.0"
+  },
+  "devDependencies": {
+    "@types/diff": "7.0.2",
+    "@types/node": "25.3.4",
+    "@types/react": "19.1.8",
+    "@vitest/coverage-v8": "3.0.5",
+    "eslint": "9.18.0",
+    "ink-testing-library": "4.0.0",
+    "tsup": "8.3.6",
+    "tsx": "4.19.2",
+    "typescript": "5.7.3",
+    "vitest": "3.0.5"
+  }
+}

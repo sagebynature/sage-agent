@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from sage.config import load_config
 from sage.exceptions import SageError, ConfigError
 from sage.cli.exit_codes import SageExitCode
+from sage.cli.serve import serve
 
 if TYPE_CHECKING:
     from sage.main_config import MainConfig
@@ -357,6 +358,9 @@ Be concise and accurate in your responses.
 
     click.echo(f"Created {md_path}")
     click.echo("\nRun with: sage agent run AGENTS.md -i 'Hello!'")
+
+
+cli.add_command(serve)
 
 
 # ---------------------------------------------------------------------------
