@@ -1,9 +1,7 @@
 import { Box, Text } from "ink";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import type { ActiveStream } from "../types/blocks.js";
-import { renderMarkdown } from "../renderer/MarkdownRenderer.js";
 
-const FRAME_DEBOUNCE_MS = 16;
 const ELAPSED_INTERVAL_MS = 1000;
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const SPINNER_INTERVAL_MS = 80;
@@ -56,30 +54,6 @@ function formatToolArgs(args: Record<string, unknown>): string {
   return "";
 }
 
-function useDebouncedMarkdown(content: string, isStreaming: boolean): string {
-  const [rendered, setRendered] = useState("");
-  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-  useEffect(() => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-    }
-
-    timerRef.current = setTimeout(() => {
-      setRendered(renderMarkdown(content, isStreaming));
-      timerRef.current = undefined;
-    }, FRAME_DEBOUNCE_MS);
-
-    return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = undefined;
-      }
-    };
-  }, [content, isStreaming]);
-
-  return rendered;
-}
 
 function ThinkingIndicator({ startedAt }: { startedAt: number }): ReactNode {
   const elapsed = useElapsedTimer(startedAt);
@@ -125,7 +99,6 @@ function ToolStatusIndicator({ tool }: { tool: { status: string; name: string; a
 export function ActiveStreamView({ stream }: ActiveStreamViewProps): ReactNode {
   if (!stream) return null;
 
-  const rendered = useDebouncedMarkdown(stream.content, true);
   const hasTools = stream.tools.length > 0;
 
   return (
@@ -141,7 +114,7 @@ export function ActiveStreamView({ stream }: ActiveStreamViewProps): ReactNode {
         </Box>
       ) : stream.content.length > 0 ? (
         <Box flexDirection="column">
-          <Text>{"● "}{rendered}</Text>
+          <Text>{"● "}{stream.content}</Text>
         </Box>
       ) : null}
     </Box>
