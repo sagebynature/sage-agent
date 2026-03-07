@@ -154,19 +154,28 @@ export function ActiveStreamView({ stream }: ActiveStreamViewProps): ReactNode {
   if (!stream) return null;
 
   const hasTools = stream.tools.length > 0;
+  const hasRunningTools = stream.tools.some((t) => t.status === "running");
 
   return (
-    <SpinnerProvider>
-      <Box flexDirection="column">
-        {stream.tools.map((tool, idx) => (
+    <Box flexDirection="column">
+      {hasRunningTools ? (
+        <SpinnerProvider>
+          {stream.tools.map((tool, idx) => (
+            <ToolStatusIndicator key={`${idx}_${tool.callId}`} tool={tool} />
+          ))}
+        </SpinnerProvider>
+      ) : (
+        stream.tools.map((tool, idx) => (
           <ToolStatusIndicator key={`${idx}_${tool.callId}`} tool={tool} />
-        ))}
-        {stream.isThinking && !hasTools ? (
+        ))
+      )}
+      {stream.isThinking && !hasTools ? (
+        <SpinnerProvider>
           <ThinkingIndicator startedAt={stream.startedAt} />
-        ) : stream.content.length > 0 ? (
-          <StreamContent content={stream.content} />
-        ) : null}
-      </Box>
-    </SpinnerProvider>
+        </SpinnerProvider>
+      ) : stream.content.length > 0 ? (
+        <StreamContent content={stream.content} />
+      ) : null}
+    </Box>
   );
 }
