@@ -24,6 +24,14 @@ pnpm --filter tui build
 
 Output goes to `tui/dist/`.
 
+To make the CLI available on your `PATH` from the local checkout:
+
+```bash
+pnpm --filter tui install:global
+```
+
+If `sage-tui` is still not found, run `pnpm setup` once and restart your shell so `PNPM_HOME` is added to `PATH`.
+
 ## Run
 
 The TUI spawns `sage serve` as a subprocess. Start the backend first to verify it works:
@@ -39,8 +47,8 @@ Then launch the TUI:
 # Development (with hot reload via tsx)
 pnpm --filter tui dev
 
-# Production (after build)
-node tui/dist/index.js
+# Production (directly)
+sage-tui
 ```
 
 With a specific agent config:
