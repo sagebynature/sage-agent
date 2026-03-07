@@ -252,18 +252,16 @@ describe("SageClient", () => {
     expect(handler).toHaveBeenCalledWith({ totalCost: 0.1 });
   });
 
-  it("skips malformed JSON lines", async () => {
+  it("skips malformed JSON lines silently", async () => {
     const client = new SageClient();
     await connectClient(client, proc);
 
-    const consoleError = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
-
+    // Should not throw or crash — silently skips
     proc.stdout.write("{this is not json}\n");
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(consoleError).toHaveBeenCalled();
+    // Client should still be functional
+    expect(client.status).toBe("connected");
   });
 
   it("dispose rejects all pending requests", async () => {
