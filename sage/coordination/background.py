@@ -38,6 +38,7 @@ class BackgroundTaskInfo(BaseModel):
     result: str | None = None
     error: str | None = None
     session_id: str | None = None
+    originating_session_id: str | None = None
     notified: bool = False
 
 
@@ -79,11 +80,12 @@ class BackgroundTaskManager:
         forwarded to the parent so the TUI can display them.
         """
         task_id = uuid4().hex
+        effective_session_id = session_id
         info = BackgroundTaskInfo(
             task_id=task_id,
             agent_name=agent.name,
             status="running",
-            session_id=session_id,
+            session_id=effective_session_id,
         )
         self._results[task_id] = info
 
@@ -92,17 +94,50 @@ class BackgroundTaskManager:
         if parent_agent is not None:
             from sage.hooks.base import HookEvent
             from sage.hooks.registry import _HandlerEntry
+            from sage.telemetry import get_execution_context
 
-            for evt in (HookEvent.PRE_TOOL_EXECUTE, HookEvent.POST_TOOL_EXECUTE, HookEvent.ON_LLM_STREAM_DELTA):
+            parent_ctx = get_execution_context()
+            if parent_ctx is not None:
+                effective_session_id = effective_session_id or f"{agent.name}_{task_id}"
+                info.session_id = effective_session_id
+                info.originating_session_id = parent_ctx.originating_session_id
+            for evt in (
+                HookEvent.PRE_TOOL_EXECUTE,
+                HookEvent.POST_TOOL_EXECUTE,
+                HookEvent.ON_LLM_STREAM_DELTA,
+            ):
+
                 async def _forward(event: Any, data: dict[str, Any], _e: Any = evt) -> None:
                     await parent_agent._emit(_e, data)
+
                 entry = _HandlerEntry(handler=_forward, priority=0, modifying=False)
                 agent._hook_registry._handlers[evt].append(entry)
                 forwarding_entries.append((evt, entry))
+            await parent_agent._emit(
+                HookEvent.ON_BACKGROUND_TASK_STARTED,
+                {
+                    "task_id": task_id,
+                    "agent_name": agent.name,
+                    "status": "running",
+                    "session_id": effective_session_id,
+                    "originating_session_id": info.originating_session_id,
+                    "agent_path": ["background", task_id],
+                },
+                status="ok",
+            )
 
         async def _run() -> None:
             try:
-                result = await agent.run(task_input)
+                try:
+                    result = await agent.run(
+                        task_input,
+                        session_id=info.session_id,
+                        originating_session_id=info.originating_session_id,
+                    )
+                except TypeError as exc:
+                    if "unexpected keyword argument" not in str(exc):
+                        raise
+                    result = await agent.run(task_input)
                 info.status = "completed"
                 info.result = result
             except asyncio.CancelledError:

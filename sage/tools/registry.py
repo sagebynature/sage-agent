@@ -6,6 +6,7 @@ import asyncio
 import importlib
 import inspect
 import logging
+from collections.abc import Awaitable
 from typing import TYPE_CHECKING, Any, Callable, Literal
 
 from sage.exceptions import PermissionError as SagePermissionError, ToolError
@@ -75,6 +76,9 @@ class ToolRegistry:
         self._ask_policy: Literal["allow", "deny", "error"] = "error"
         self._allowed_tools: set[str] | None = None
         self._blocked_tools: set[str] = set()
+        self._event_emitter: (
+            Callable[[str, dict[str, Any]], Awaitable[dict[str, Any] | None]] | None
+        ) = None
 
     def register(self, fn_or_instance: Callable[..., Any] | ToolBase) -> None:
         """Register a ``@tool``-decorated function or a ``ToolBase`` instance."""
@@ -109,6 +113,13 @@ class ToolRegistry:
     def set_permission_handler(self, handler: Any) -> None:
         """Set a permission handler for pre-dispatch checks."""
         self._permission_handler = handler
+
+    def set_event_emitter(
+        self,
+        emitter: Callable[[str, dict[str, Any]], Awaitable[dict[str, Any] | None]],
+    ) -> None:
+        """Register a callback for tool-adjacent lifecycle events."""
+        self._event_emitter = emitter
 
     def set_ask_policy(self, policy: Literal["allow", "deny", "error"]) -> None:
         """Set how ASK-gated tool calls are handled in headless/CI mode.
@@ -167,7 +178,25 @@ class ToolRegistry:
         if self._permission_handler is not None:
             from sage.permissions.base import PermissionAction
 
+            if self._event_emitter is not None:
+                await self._event_emitter(
+                    "pre_permission_check",
+                    {
+                        "tool_name": name,
+                        "arguments": arguments,
+                    },
+                )
             decision = await self._permission_handler.check(name, arguments)
+            if self._event_emitter is not None:
+                await self._event_emitter(
+                    "post_permission_check",
+                    {
+                        "tool_name": name,
+                        "arguments": arguments,
+                        "action": decision.action.value,
+                        "reason": decision.reason,
+                    },
+                )
             if decision.action == PermissionAction.DENY:
                 reason = f"Permission denied: {name!r}"
                 if decision.reason:

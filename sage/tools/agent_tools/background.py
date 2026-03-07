@@ -18,7 +18,9 @@ def register_background_tools(agent: "Agent") -> None:
         if sub is None:
             available = ", ".join(sorted(agent_ref.subagents))
             raise ToolError(f"Unknown subagent: {agent_name}. Available: {available}")
-        task_id = await agent_ref._bg_manager.launch(sub, task, session_id=session_id, parent_agent=agent_ref)
+        task_id = await agent_ref._bg_manager.launch(
+            sub, task, session_id=session_id, parent_agent=agent_ref
+        )
         return f"Background task launched: {task_id} (agent={agent_name})"
 
     delegate_bg_schema = ToolSchema(
