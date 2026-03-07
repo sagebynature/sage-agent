@@ -239,8 +239,7 @@ function AppShell(): ReactNode {
           case "quit":
           case "exit":
           case "q":
-            client.dispose();
-            process.exit(0);
+            shutdown();
             break;
           // Honest stubs
           case "theme":
@@ -277,21 +276,67 @@ function AppShell(): ReactNode {
     [client, dispatch],
   );
 
+  const shutdown = useCallback(() => {
+    client.dispose();
+    process.exit(0);
+  }, [client]);
+
   useInput((input, key) => {
+    // Cancel / quit
     if (key.ctrl && input === "c") {
       if (state.activeStream) {
         void handleCancel();
       } else {
-        process.exit(0);
+        shutdown();
       }
       return;
     }
+
+    // Escape: cancel stream or dismiss error
     if (key.escape) {
       if (state.activeStream) {
         void handleCancel();
       } else if (state.error) {
         dispatch({ type: "CLEAR_ERROR" });
       }
+      return;
+    }
+
+    // Ctrl+L: clear
+    if (key.ctrl && input === "l") {
+      void handleCommand("/clear", "");
+      return;
+    }
+
+    // Ctrl+N: new session (reset)
+    if (key.ctrl && input === "n") {
+      void handleCommand("/reset", "");
+      return;
+    }
+
+    // Ctrl+P: approve first pending permission
+    if (key.ctrl && input === "p") {
+      const pending = stateRef.current.permissions.find((p) => p.status === "pending");
+      if (pending) {
+        void handlePermissionRespond(pending.id, "allow_once");
+      }
+      return;
+    }
+
+    // Ctrl+S: save feedback
+    if (key.ctrl && input === "s") {
+      dispatch({ type: "ADD_SYSTEM_BLOCK", content: "Session auto-saved." });
+      return;
+    }
+
+    // Scroll: Ctrl+Up / Ctrl+Down
+    if (key.ctrl && key.upArrow) {
+      dispatch({ type: "SCROLL_UP" });
+      return;
+    }
+    if (key.ctrl && key.downArrow) {
+      dispatch({ type: "SCROLL_DOWN" });
+      return;
     }
   });
 
