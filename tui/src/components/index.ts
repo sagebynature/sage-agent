@@ -1,8 +1,3 @@
-export * from './ToolDisplay.js';
-export * from './ToolCallCollapsible.js';
-export * from './ToolTimer.js';
-export * from './sidebar/AgentTab.js';
-export * from './sidebar/UsageTab.js';
-export * from './sidebar/FilesTab.js';
-export * from './sidebar/TasksTab.js';
-export * from './KeyboardHelp.js';
+export { ActiveStreamView } from './ActiveStreamView.js';
+export { PermissionPrompt } from './PermissionPrompt.js';
+export { SessionPicker } from './SessionPicker.js';

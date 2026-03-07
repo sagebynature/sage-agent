@@ -1,27 +1,25 @@
 import React, { useMemo } from 'react';
 import { Box, Text } from 'ink';
-import { useApp } from '../state/AppContext.js';
-import { AgentNode as AgentNodeType } from '../types/state.js';
-import { COLORS } from '../theme/colors.js';
+import { useBlocks } from '../state/BlockContext.js';
+import type { AgentNode as AgentNodeType } from '../types/state.js';
 
 interface AgentTreeProps {
   maxDepth?: number;
-  showToolDetail?: boolean;
 }
 
 const TRUNCATE_LENGTH = 40;
 
 const StatusIndicator = ({ status }: { status: AgentNodeType['status'] }) => {
   if (status === 'active') {
-    return <Text color={COLORS.idle}>●</Text>;
+    return <Text color="yellow">●</Text>;
   }
   if (status === 'completed') {
     return <Text color="green">✓</Text>;
   }
   if (status === 'failed') {
-    return <Text color={COLORS.error}>✗</Text>;
+    return <Text color="red">✗</Text>;
   }
-  return <Text color={COLORS.dimmed}>◌</Text>;
+  return <Text color="gray">◌</Text>;
 };
 
 const TreeNode = ({
@@ -50,8 +48,6 @@ const TreeNode = ({
     }
   }
 
-  const isBackground = false;
-
   const connector = isLast ? '└── ' : '├── ';
   const childPrefix = prefix + (isLast ? '    ' : '│   ');
 
@@ -60,16 +56,16 @@ const TreeNode = ({
   return (
     <Box flexDirection="column">
       <Box>
-        <Text color={COLORS.dimmed}>{prefix}{connector}</Text>
+        <Text color="gray">{prefix}{connector}</Text>
         <Box marginRight={1}>
           <StatusIndicator status={node.status} />
         </Box>
-        <Text bold>{isBackground ? '⚡ ' : ''}{node.name}</Text>
+        <Text bold>{node.name}</Text>
         {displayTask && (
-          <Text color={COLORS.dimmed}> {displayTask}</Text>
+          <Text color="gray"> {displayTask}</Text>
         )}
         {durationStr && node.status !== 'idle' && (
-          <Text color={COLORS.dimmed} dimColor> ({durationStr})</Text>
+          <Text color="gray" dimColor> ({durationStr})</Text>
         )}
       </Box>
       {showChildren && node.children.map((child, index) => (
@@ -86,9 +82,8 @@ const TreeNode = ({
   );
 };
 
-export const AgentTree: React.FC<AgentTreeProps> = ({ maxDepth = 5, showToolDetail = false }) => {
-  void showToolDetail;
-  const { state } = useApp();
+export const AgentTree: React.FC<AgentTreeProps> = ({ maxDepth = 5 }) => {
+  const { state } = useBlocks();
   const { agents } = state;
 
   const rootNodes = useMemo(() => {
