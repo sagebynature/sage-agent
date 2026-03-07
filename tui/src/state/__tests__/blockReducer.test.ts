@@ -403,4 +403,32 @@ describe("blockReducer", () => {
     expect(state.permissions).toHaveLength(1);
     expect(state.permissions[0]!.id).toBe("p2");
   });
+
+  it("SCROLL_UP increases scrollOffset", () => {
+    let state = blockReducer(INITIAL_BLOCK_STATE, { type: "SCROLL_UP" });
+    expect(state.scrollOffset).toBe(1);
+    state = blockReducer(state, { type: "SCROLL_UP", lines: 5 });
+    expect(state.scrollOffset).toBe(6);
+  });
+
+  it("SCROLL_DOWN decreases scrollOffset but not below 0", () => {
+    let state = blockReducer(INITIAL_BLOCK_STATE, { type: "SCROLL_UP", lines: 3 });
+    state = blockReducer(state, { type: "SCROLL_DOWN", lines: 2 });
+    expect(state.scrollOffset).toBe(1);
+    state = blockReducer(state, { type: "SCROLL_DOWN", lines: 5 });
+    expect(state.scrollOffset).toBe(0);
+  });
+
+  it("SCROLL_TO_BOTTOM resets scrollOffset to 0", () => {
+    let state = blockReducer(INITIAL_BLOCK_STATE, { type: "SCROLL_UP", lines: 10 });
+    state = blockReducer(state, { type: "SCROLL_TO_BOTTOM" });
+    expect(state.scrollOffset).toBe(0);
+  });
+
+  it("STREAM_DELTA resets scrollOffset to 0", () => {
+    let state = blockReducer(INITIAL_BLOCK_STATE, { type: "SCROLL_UP", lines: 5 });
+    expect(state.scrollOffset).toBe(5);
+    state = blockReducer(state, { type: "STREAM_DELTA", delta: "hello" });
+    expect(state.scrollOffset).toBe(0);
+  });
 });

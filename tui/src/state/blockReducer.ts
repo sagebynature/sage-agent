@@ -19,6 +19,7 @@ export interface BlockState {
   error: string | null;
   session: SessionState | null;
   agents: AgentNode[];
+  scrollOffset: number;
 }
 
 export type BlockAction =
@@ -52,7 +53,10 @@ export type BlockAction =
   | { type: "ADD_SYSTEM_BLOCK"; content: string }
   | { type: "AGENT_STARTED"; agent: AgentNode }
   | { type: "AGENT_COMPLETED"; name: string; status: "completed" | "failed" }
-  | { type: "CLEAR_BLOCKS" };
+  | { type: "CLEAR_BLOCKS" }
+  | { type: "SCROLL_UP"; lines?: number }
+  | { type: "SCROLL_DOWN"; lines?: number }
+  | { type: "SCROLL_TO_BOTTOM" };
 
 export const INITIAL_BLOCK_STATE: BlockState = {
   completedBlocks: [],
@@ -68,6 +72,7 @@ export const INITIAL_BLOCK_STATE: BlockState = {
   error: null,
   session: null,
   agents: [],
+  scrollOffset: 0,
 };
 
 export function makeId(prefix: string): string {
@@ -162,6 +167,7 @@ export function blockReducer(
           content: stream.content + action.delta,
           isThinking: false,
         },
+        scrollOffset: 0,
       };
     }
 
@@ -310,6 +316,20 @@ export function blockReducer(
         permissions: [],
         error: null,
       };
+    }
+
+    case "SCROLL_UP": {
+      const delta = action.lines ?? 1;
+      return { ...state, scrollOffset: state.scrollOffset + delta };
+    }
+
+    case "SCROLL_DOWN": {
+      const delta = action.lines ?? 1;
+      return { ...state, scrollOffset: Math.max(0, state.scrollOffset - delta) };
+    }
+
+    case "SCROLL_TO_BOTTOM": {
+      return { ...state, scrollOffset: 0 };
     }
 
     default:
