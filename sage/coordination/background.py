@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -68,11 +68,15 @@ class BackgroundTaskManager:
         task_input: str,
         *,
         session_id: str | None = None,
+        parent_agent: "Agent | None" = None,
     ) -> str:
         """Launch a subagent run in the background.
 
         Returns the ``task_id`` immediately.  The actual agent execution
         proceeds asynchronously; poll via :meth:`get` to check status.
+
+        If *parent_agent* is provided, subagent tool and stream events are
+        forwarded to the parent so the TUI can display them.
         """
         task_id = uuid4().hex
         info = BackgroundTaskInfo(
@@ -82,6 +86,19 @@ class BackgroundTaskManager:
             session_id=session_id,
         )
         self._results[task_id] = info
+
+        # Wire event forwarding from subagent to parent.
+        forwarding_entries: list[tuple[Any, Any]] = []
+        if parent_agent is not None:
+            from sage.hooks.base import HookEvent
+            from sage.hooks.registry import _HandlerEntry
+
+            for evt in (HookEvent.PRE_TOOL_EXECUTE, HookEvent.POST_TOOL_EXECUTE, HookEvent.ON_LLM_STREAM_DELTA):
+                async def _forward(event: Any, data: dict[str, Any], _e: Any = evt) -> None:
+                    await parent_agent._emit(_e, data)
+                entry = _HandlerEntry(handler=_forward, priority=0, modifying=False)
+                agent._hook_registry._handlers[evt].append(entry)
+                forwarding_entries.append((evt, entry))
 
         async def _run() -> None:
             try:
@@ -104,6 +121,11 @@ class BackgroundTaskManager:
             finally:
                 info.completed_at = time.time()
                 self._tasks.pop(task_id, None)
+                for evt, entry in forwarding_entries:
+                    try:
+                        agent._hook_registry._handlers[evt].remove(entry)
+                    except ValueError:
+                        pass
 
         self._tasks[task_id] = asyncio.create_task(_run())
         logger.info(
