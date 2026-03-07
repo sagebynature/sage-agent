@@ -363,7 +363,7 @@ function AppShell(): ReactNode {
       <InputPrompt
         onSubmit={handleSubmit}
         onCommand={handleCommand}
-        isActive={!state.activeStream && connectionStatus === "connected"}
+        isActive={!state.activeStream && connectionStatus === "connected" && pendingPermissions.length === 0}
         width={columns}
       />
       <BottomBar
