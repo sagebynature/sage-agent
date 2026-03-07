@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import type { OutputBlock } from "../../types/blocks.js";
 import { UserBlock } from "./UserBlock.js";
 import { TextBlock } from "./TextBlock.js";
-import { ToolBlock } from "./ToolBlock.js";
+import { ToolDisplay } from "../ToolDisplay.js";
 
 interface StaticBlockProps {
   block: OutputBlock;
@@ -16,7 +16,7 @@ export function StaticBlock({ block }: StaticBlockProps): ReactNode {
     case "text":
       return <TextBlock content={block.content} />;
     case "tool":
-      return <ToolBlock name={block.content} tools={block.tools ?? []} />;
+      return <ToolDisplay tools={block.tools ?? []} />;
     case "error":
       return (
         <Box>
