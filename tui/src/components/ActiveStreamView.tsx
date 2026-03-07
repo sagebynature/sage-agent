@@ -122,12 +122,29 @@ function ToolStatusIndicator({ tool }: { tool: ToolInfo }): ReactNode {
   }
 }
 
+const MAX_VISIBLE_STREAM_LINES = 30;
+
+export function truncateStreamLines(
+  content: string,
+  maxLines: number,
+): { lines: string[]; truncatedCount: number } {
+  const allLines = content.split("\n");
+  if (allLines.length <= maxLines) {
+    return { lines: allLines, truncatedCount: 0 };
+  }
+  const truncatedCount = allLines.length - maxLines;
+  return { lines: allLines.slice(-maxLines), truncatedCount };
+}
+
 function StreamContent({ content }: { content: string }): ReactNode {
-  const lines = content.split("\n");
+  const { lines, truncatedCount } = truncateStreamLines(content, MAX_VISIBLE_STREAM_LINES);
   return (
     <Box flexDirection="column">
+      {truncatedCount > 0 && (
+        <Text dimColor>{"  ... ("}{truncatedCount + lines.length}{" lines, showing last "}{lines.length}{")"}</Text>
+      )}
       {lines.map((line, i) => (
-        <Text key={i}>{i === 0 ? `● ${line}` : `  ${line}`}</Text>
+        <Text key={i}>{i === 0 && truncatedCount === 0 ? `● ${line}` : `  ${line}`}</Text>
       ))}
     </Box>
   );
