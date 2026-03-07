@@ -217,6 +217,8 @@ function AppShell(): ReactNode {
         permissions={state.permissions}
         error={state.error}
         connectionStatus={connectionStatus}
+        agents={state.agents}
+        sessionName={state.session?.agentName}
       />
     </Box>
   );
