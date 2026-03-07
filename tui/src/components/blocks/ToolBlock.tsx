@@ -50,8 +50,8 @@ export function ToolBlock({ tools }: ToolBlockProps): ReactNode {
   return (
     <Box flexDirection="column">
       <Text>{"● "}{summary}</Text>
-      {subItems.map((tool) => (
-        <Text key={tool.callId} dimColor>
+      {subItems.map((tool, idx) => (
+        <Text key={`${idx}_${tool.callId}`} dimColor>
           {"  ⎿  "}{tool.name}{formatToolArgs(tool)}
           {"  "}{toolStatusSuffix(tool)}
         </Text>
