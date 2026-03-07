@@ -325,9 +325,11 @@ async def test_agent_methods_error_when_agent_missing() -> None:
 async def test_agent_run_uses_stream_not_run() -> None:
     """agent/run should call agent.stream(), not agent.run()."""
     dispatcher, agent, _session_manager, server = _make_dispatcher()
+
     async def fake_stream(message: str):
         yield "hello "
         yield "world"
+
     agent.stream = MagicMock(side_effect=fake_stream)
     server.send_notification = AsyncMock()
 
@@ -344,8 +346,10 @@ async def test_agent_run_uses_stream_not_run() -> None:
 async def test_agent_run_sends_completed_notification() -> None:
     """When streaming finishes, dispatcher sends run/completed notification."""
     dispatcher, agent, _session_manager, server = _make_dispatcher()
+
     async def fake_stream(message: str):
         yield "done"
+
     agent.stream = MagicMock(side_effect=fake_stream)
     server.send_notification = AsyncMock()
 
@@ -378,9 +382,11 @@ async def test_permission_handler_integration() -> None:
 async def test_agent_run_sends_error_on_failure() -> None:
     """When streaming raises, dispatcher sends run/completed with error."""
     dispatcher, agent, _session_manager, server = _make_dispatcher()
+
     async def failing_stream(message: str):
         raise RuntimeError("model error")
         yield  # make it a generator
+
     agent.stream = MagicMock(side_effect=failing_stream)
     server.send_notification = AsyncMock()
 

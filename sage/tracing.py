@@ -120,3 +120,17 @@ def setup_tracing(config: Any) -> None:
 
     trace.set_tracer_provider(provider)
     logger.info("Tracing enabled: service=%s, exporter=%s", config.service_name, config.exporter)
+
+
+def current_trace_context() -> tuple[str | None, str | None]:
+    """Return the current OTel trace_id and span_id as hex strings when available."""
+    try:
+        from opentelemetry import trace  # type: ignore[import-not-found]
+
+        current = trace.get_current_span()
+        span_context = current.get_span_context()
+        if not getattr(span_context, "is_valid", False):
+            return None, None
+        return f"{span_context.trace_id:032x}", f"{span_context.span_id:016x}"
+    except Exception:
+        return None, None

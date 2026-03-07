@@ -10,13 +10,27 @@ import time
 from dataclasses import dataclass
 from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NoReturn, TypeVar, cast, overload
+from typing import TYPE_CHECKING, Any, Literal, NoReturn, TypeVar, cast, overload
 
 from sage.config import AgentConfig, load_config
 from sage.hooks.base import HookEvent
 from sage.hooks.registry import HookRegistry
 from sage.main_config import load_main_config, resolve_and_apply_env, resolve_main_config_path
-from sage.tracing import setup_tracing, span
+from sage.telemetry import (
+    DefaultTelemetryRecorder,
+    EventEnvelope,
+    ExecutionContext,
+    LoggingEventSink,
+    bind_execution_context,
+    child_execution_context,
+    error_to_snapshot,
+    get_execution_context,
+    root_execution_context,
+    usage_to_snapshot,
+    with_event_context,
+    with_turn_context,
+)
+from sage.tracing import current_trace_context, setup_tracing, span
 
 if TYPE_CHECKING:
     from sage.coordination.cancellation import CancellationToken
@@ -181,12 +195,12 @@ def _build_hook_registry(agent_config: "AgentConfig") -> "HookRegistry":
             )
             for r in agent_config.query_classification.rules
         ]
-        registry.register(HookEvent.PRE_LLM_CALL, make_query_classifier(rules))
+        registry.register(HookEvent.PRE_LLM_CALL, make_query_classifier(rules), modifying=True)
 
     if agent_config.follow_through is not None and agent_config.follow_through.enabled:
         from sage.hooks.builtin.follow_through import make_follow_through_hook
 
-        registry.register(HookEvent.POST_LLM_CALL, make_follow_through_hook())
+        registry.register(HookEvent.POST_LLM_CALL, make_follow_through_hook(), modifying=True)
 
     if (
         agent_config.planning
@@ -250,6 +264,7 @@ def _wire_post_construction(
         agent._hook_registry.register(
             HookEvent.PRE_LLM_CALL,
             make_auto_memory_hook(agent.memory, max_memories=agent_config.memory.auto_load_top_k),
+            modifying=True,
         )
 
     if permission_handler is not None:
@@ -430,6 +445,7 @@ class Agent:
         self._hook_registry: HookRegistry = (
             hook_registry if hook_registry is not None else HookRegistry()
         )
+        self._telemetry_recorder = DefaultTelemetryRecorder(sinks=[LoggingEventSink()])
         self._current_turn: int = 0
         self._identity_prompt: str = ""
         self._last_compaction_strategy: str | None = None
@@ -458,6 +474,7 @@ class Agent:
 
         # Build tool registry from the supplied tool list.
         self.tool_registry = ToolRegistry(default_timeout=tool_timeout)
+        self.tool_registry.set_event_emitter(self._emit_tool_registry_event)
         if tools:
             for t in tools:
                 if isinstance(t, str):
@@ -528,12 +545,32 @@ class Agent:
     # ── Execution methods ─────────────────────────────────────────────
 
     @overload
-    async def run(self, input: str) -> str: ...
+    async def run(
+        self,
+        input: str,
+        *,
+        session_id: str | None = None,
+        originating_session_id: str | None = None,
+    ) -> str: ...
 
     @overload
-    async def run(self, input: str, *, response_model: type[T]) -> T: ...
+    async def run(
+        self,
+        input: str,
+        *,
+        response_model: type[T],
+        session_id: str | None = None,
+        originating_session_id: str | None = None,
+    ) -> T: ...
 
-    async def run(self, input: str, *, response_model: type[T] | None = None) -> str | T:
+    async def run(
+        self,
+        input: str,
+        *,
+        response_model: type[T] | None = None,
+        session_id: str | None = None,
+        originating_session_id: str | None = None,
+    ) -> str | T:
         """Main execution loop: LLM call -> tool execution -> repeat until done.
 
         Loops for at most ``max_turns`` iterations. Terminates when the model
@@ -547,32 +584,82 @@ class Agent:
         the final output is parsed into that Pydantic model.
         """
         logger.info("Agent '%s' run started: %s", self.name, input[:80])
-        messages = await self._pre_loop_setup(input)
-        self._handle_response_model(messages, response_model)
-
-        async with span("agent.run", {"agent.name": self.name, "model": self.model}) as agent_span:
-            for turn in range(self.max_turns):
-                self._current_turn = turn
-                logger.debug("Turn %d/%d", turn + 1, self.max_turns)
-                turn_result = await self._execute_turn(messages, turn=turn, streaming=False)
-                if turn_result.tool_calls_executed:
-                    continue
-                logger.info("Agent '%s' run complete after %d turn(s)", self.name, turn + 1)
-                final_output = turn_result.final_text or ""
-                agent_span.set_attribute("turn_count", turn + 1)
-                await self._post_loop_cleanup(input, final_output)
-                if response_model is None:
-                    return final_output
-                return self._parse_response_model_output(response_model, final_output)
-
-            await self._raise_max_turns_exceeded(
-                input=input,
-                messages=messages,
-                agent_span=agent_span,
-                during_stream=False,
+        root_ctx = root_execution_context(
+            agent_name=self.name,
+            session_id=session_id,
+            originating_session_id=originating_session_id,
+        )
+        with bind_execution_context(root_ctx):
+            await self._emit(
+                HookEvent.ON_RUN_STARTED,
+                {"input": input, "response_model": getattr(response_model, "__name__", None)},
+                status="ok",
             )
+            messages = await self._pre_loop_setup(input)
+            self._handle_response_model(messages, response_model)
 
-    async def stream(self, input: str) -> AsyncIterator[str]:
+            try:
+                async with span(
+                    "agent.run", {"agent.name": self.name, "model": self.model}
+                ) as agent_span:
+                    for turn in range(self.max_turns):
+                        self._current_turn = turn
+                        logger.debug("Turn %d/%d", turn + 1, self.max_turns)
+                        turn_ctx = with_turn_context(self._current_execution_context(), turn=turn)
+                        with bind_execution_context(turn_ctx):
+                            turn_result = await self._execute_turn(
+                                messages, turn=turn, streaming=False
+                            )
+                        if turn_result.tool_calls_executed:
+                            continue
+                        logger.info("Agent '%s' run complete after %d turn(s)", self.name, turn + 1)
+                        final_output = turn_result.final_text or ""
+                        agent_span.set_attribute("turn_count", turn + 1)
+                        await self._post_loop_cleanup(input, final_output)
+                        await self._emit(
+                            HookEvent.ON_RUN_COMPLETED,
+                            {
+                                "input": input,
+                                "output": final_output,
+                                "turn_count": turn + 1,
+                            },
+                            status="ok",
+                            usage=self._cumulative_usage,
+                        )
+                        if response_model is None:
+                            return final_output
+                        return self._parse_response_model_output(response_model, final_output)
+
+                    await self._raise_max_turns_exceeded(
+                        input=input,
+                        messages=messages,
+                        agent_span=agent_span,
+                        during_stream=False,
+                    )
+            except asyncio.CancelledError:
+                await self._emit(
+                    HookEvent.ON_RUN_CANCELLED,
+                    {"input": input, "turn_count": self._current_turn + 1},
+                    status="cancelled",
+                )
+                raise
+            except Exception as exc:
+                await self._emit(
+                    HookEvent.ON_RUN_FAILED,
+                    {"input": input, "turn_count": self._current_turn + 1},
+                    status="error",
+                    error=exc,
+                    usage=self._cumulative_usage,
+                )
+                raise
+
+    async def stream(
+        self,
+        input: str,
+        *,
+        session_id: str | None = None,
+        originating_session_id: str | None = None,
+    ) -> AsyncIterator[str]:
         """Streaming variant of :meth:`run` — yields text chunks as they arrive.
 
         Like ``run()``, this method loops for up to ``max_turns`` iterations.
@@ -586,30 +673,73 @@ class Agent:
         invocations see the full multi-turn context.
         """
         logger.info("Agent '%s' stream started: %s", self.name, input[:80])
-        messages = await self._pre_loop_setup(input)
-
-        async with span(
-            "agent.stream", {"agent.name": self.name, "model": self.model}
-        ) as agent_span:
-            for turn in range(self.max_turns):
-                self._current_turn = turn
-                logger.debug("Stream turn %d/%d", turn + 1, self.max_turns)
-                turn_result = await self._execute_turn(messages, turn=turn, streaming=True)
-                for chunk in turn_result.streamed_chunks or []:
-                    yield chunk
-                if turn_result.tool_calls_executed:
-                    continue
-                logger.info("Agent '%s' stream complete after %d turn(s)", self.name, turn + 1)
-                agent_span.set_attribute("turn_count", turn + 1)
-                await self._post_loop_cleanup(input, turn_result.final_text or "")
-                return
-
-            await self._raise_max_turns_exceeded(
-                input=input,
-                messages=messages,
-                agent_span=agent_span,
-                during_stream=True,
+        root_ctx = root_execution_context(
+            agent_name=self.name,
+            session_id=session_id,
+            originating_session_id=originating_session_id,
+        )
+        with bind_execution_context(root_ctx):
+            await self._emit(
+                HookEvent.ON_RUN_STARTED, {"input": input, "streaming": True}, status="ok"
             )
+            messages = await self._pre_loop_setup(input)
+
+            try:
+                async with span(
+                    "agent.stream", {"agent.name": self.name, "model": self.model}
+                ) as agent_span:
+                    for turn in range(self.max_turns):
+                        self._current_turn = turn
+                        logger.debug("Stream turn %d/%d", turn + 1, self.max_turns)
+                        turn_ctx = with_turn_context(self._current_execution_context(), turn=turn)
+                        with bind_execution_context(turn_ctx):
+                            turn_result = await self._execute_turn(
+                                messages, turn=turn, streaming=True
+                            )
+                        for chunk in turn_result.streamed_chunks or []:
+                            yield chunk
+                        if turn_result.tool_calls_executed:
+                            continue
+                        logger.info(
+                            "Agent '%s' stream complete after %d turn(s)", self.name, turn + 1
+                        )
+                        agent_span.set_attribute("turn_count", turn + 1)
+                        await self._post_loop_cleanup(input, turn_result.final_text or "")
+                        await self._emit(
+                            HookEvent.ON_RUN_COMPLETED,
+                            {
+                                "input": input,
+                                "output": turn_result.final_text or "",
+                                "turn_count": turn + 1,
+                                "streaming": True,
+                            },
+                            status="ok",
+                            usage=self._cumulative_usage,
+                        )
+                        return
+
+                    await self._raise_max_turns_exceeded(
+                        input=input,
+                        messages=messages,
+                        agent_span=agent_span,
+                        during_stream=True,
+                    )
+            except asyncio.CancelledError:
+                await self._emit(
+                    HookEvent.ON_RUN_CANCELLED,
+                    {"input": input, "turn_count": self._current_turn + 1, "streaming": True},
+                    status="cancelled",
+                )
+                raise
+            except Exception as exc:
+                await self._emit(
+                    HookEvent.ON_RUN_FAILED,
+                    {"input": input, "turn_count": self._current_turn + 1, "streaming": True},
+                    status="error",
+                    error=exc,
+                    usage=self._cumulative_usage,
+                )
+                raise
 
     def _handle_response_model(
         self, messages: list[Message], response_model: type[T] | None
@@ -637,87 +767,222 @@ class Agent:
     ) -> _TurnExecutionResult:
         await self._inject_background_notifications(messages)
         tool_schemas = self.tool_registry.get_schemas() or None
-        await self._emit(
-            HookEvent.PRE_LLM_CALL,
-            {
-                "model": self.model,
-                "messages": messages,
-                "tool_schemas": tool_schemas,
-                "turn": turn,
-            },
-        )
+        working_messages = list(messages)
+        working_model = self.model
+        retry_count = 0
 
-        if not streaming:
-            result: CompletionResult = await self.provider.complete(messages, tools=tool_schemas)
-            self._cumulative_usage += result.usage
-            n_tool_calls = len(result.message.tool_calls) if result.message.tool_calls else 0
-            await self._emit(
+        while True:
+            pre_data = await self._emit(
+                HookEvent.PRE_LLM_CALL,
+                {
+                    "model": working_model,
+                    "messages": working_messages,
+                    "tool_schemas": tool_schemas,
+                    "turn": turn,
+                    "turn_id": self._current_execution_context().current_turn_id,
+                    "retry_count": retry_count,
+                },
+                status="ok",
+            )
+            effective_model = cast(str, pre_data.get("model", working_model))
+            effective_messages = cast(list[Message], pre_data.get("messages", working_messages))
+            effective_tool_schemas = cast(
+                "list[Any] | None",
+                pre_data.get("tool_schemas", tool_schemas),
+            )
+            provider_kwargs: dict[str, Any] = {}
+            if effective_model != self.model:
+                provider_kwargs["model"] = effective_model
+
+            if not streaming:
+                llm_started = time.monotonic()
+                try:
+                    result: CompletionResult = await self.provider.complete(
+                        effective_messages,
+                        tools=effective_tool_schemas,
+                        **provider_kwargs,
+                    )
+                except Exception as exc:
+                    await self._emit(
+                        HookEvent.ON_LLM_ERROR,
+                        {
+                            "model": effective_model,
+                            "messages": effective_messages,
+                            "turn": turn,
+                            "retry_count": retry_count,
+                        },
+                        status="error",
+                        duration_ms=(time.monotonic() - llm_started) * 1000,
+                        error=exc,
+                    )
+                    raise
+                duration_ms = (time.monotonic() - llm_started) * 1000
+                self._cumulative_usage += result.usage
+                n_tool_calls = len(result.message.tool_calls) if result.message.tool_calls else 0
+                post_data = await self._emit(
+                    HookEvent.POST_LLM_CALL,
+                    {
+                        "result": result,
+                        "model": effective_model,
+                        "messages": effective_messages,
+                        "turn": turn,
+                        "turn_id": self._current_execution_context().current_turn_id,
+                        "usage": result.usage,
+                        "n_tool_calls": n_tool_calls,
+                        "response_text": result.message.content or "",
+                        "retry_count": retry_count,
+                    },
+                    status="ok",
+                    duration_ms=duration_ms,
+                    usage=result.usage,
+                )
+                if post_data.get("retry_needed"):
+                    retry_count += 1
+                    retry_prompt = cast(
+                        str,
+                        post_data.get(
+                            "retry_prompt",
+                            "Please proceed with the action instead of describing what you would do.",
+                        ),
+                    )
+                    working_messages = list(effective_messages) + [
+                        result.message,
+                        Message(role="system", content=retry_prompt),
+                    ]
+                    working_model = cast(str, post_data.get("model", effective_model))
+                    await self._emit(
+                        HookEvent.ON_LLM_RETRY,
+                        {
+                            "model": working_model,
+                            "turn": turn,
+                            "retry_count": retry_count,
+                            "retry_prompt": retry_prompt,
+                        },
+                        status="ok",
+                        trigger_event_id=post_data.get("event_id"),
+                    )
+                    continue
+
+                final_result = cast(CompletionResult, post_data.get("result", result))
+                messages.append(final_result.message)
+                if not final_result.message.tool_calls:
+                    return _TurnExecutionResult(
+                        final_text=final_result.message.content or "",
+                        streamed_chunks=None,
+                        tool_calls_executed=False,
+                    )
+                await self._execute_tool_calls(final_result.message.tool_calls, messages)
+                return _TurnExecutionResult(
+                    final_text=None,
+                    streamed_chunks=None,
+                    tool_calls_executed=True,
+                )
+
+            llm_started = time.monotonic()
+            turn_content = ""
+            turn_tool_calls: list[ToolCall] | None = None
+            turn_usage: Usage | None = None
+            streamed_chunks: list[str] = []
+            try:
+                async for chunk in self.provider.stream(
+                    effective_messages,
+                    tools=effective_tool_schemas,
+                    **provider_kwargs,
+                ):  # type: ignore[attr-defined]
+                    if chunk.delta:
+                        turn_content += chunk.delta
+                        streamed_chunks.append(chunk.delta)
+                        await self._emit(
+                            HookEvent.ON_LLM_STREAM_DELTA,
+                            {"delta": chunk.delta, "turn": turn, "model": effective_model},
+                            status="ok",
+                        )
+                    if chunk.tool_calls:
+                        turn_tool_calls = chunk.tool_calls
+                    if chunk.usage is not None:
+                        turn_usage = chunk.usage
+            except Exception as exc:
+                await self._emit(
+                    HookEvent.ON_LLM_ERROR,
+                    {
+                        "model": effective_model,
+                        "messages": effective_messages,
+                        "turn": turn,
+                        "retry_count": retry_count,
+                        "streaming": True,
+                    },
+                    status="error",
+                    duration_ms=(time.monotonic() - llm_started) * 1000,
+                    error=exc,
+                )
+                raise
+
+            if turn_usage is not None:
+                self._cumulative_usage += turn_usage
+            assistant_msg = Message(
+                role="assistant", content=turn_content or None, tool_calls=turn_tool_calls
+            )
+            n_tool_calls_stream = len(turn_tool_calls) if turn_tool_calls else 0
+            post_data = await self._emit(
                 HookEvent.POST_LLM_CALL,
                 {
-                    "result": result,
+                    "result": assistant_msg,
+                    "model": effective_model,
+                    "messages": effective_messages,
                     "turn": turn,
-                    "usage": result.usage,
-                    "n_tool_calls": n_tool_calls,
+                    "turn_id": self._current_execution_context().current_turn_id,
+                    "usage": turn_usage,
+                    "n_tool_calls": n_tool_calls_stream,
+                    "response_text": turn_content,
+                    "retry_count": retry_count,
+                    "streaming": True,
                 },
+                status="ok",
+                duration_ms=(time.monotonic() - llm_started) * 1000,
+                usage=turn_usage,
             )
-            messages.append(result.message)
-            if not result.message.tool_calls:
+            if post_data.get("retry_needed"):
+                retry_count += 1
+                retry_prompt = cast(
+                    str,
+                    post_data.get(
+                        "retry_prompt",
+                        "Please proceed with the action instead of describing what you would do.",
+                    ),
+                )
+                working_messages = list(effective_messages) + [
+                    assistant_msg,
+                    Message(role="system", content=retry_prompt),
+                ]
+                working_model = cast(str, post_data.get("model", effective_model))
+                await self._emit(
+                    HookEvent.ON_LLM_RETRY,
+                    {
+                        "model": working_model,
+                        "turn": turn,
+                        "retry_count": retry_count,
+                        "retry_prompt": retry_prompt,
+                        "streaming": True,
+                    },
+                    status="ok",
+                    trigger_event_id=post_data.get("event_id"),
+                )
+                continue
+
+            final_assistant = cast(Message, post_data.get("result", assistant_msg))
+            messages.append(final_assistant)
+            if not final_assistant.tool_calls:
                 return _TurnExecutionResult(
-                    final_text=result.message.content or "",
-                    streamed_chunks=None,
+                    final_text=final_assistant.content or "",
+                    streamed_chunks=streamed_chunks,
                     tool_calls_executed=False,
                 )
-            await self._execute_tool_calls(result.message.tool_calls, messages)
+            await self._execute_tool_calls(final_assistant.tool_calls, messages)
             return _TurnExecutionResult(
                 final_text=None,
-                streamed_chunks=None,
+                streamed_chunks=streamed_chunks,
                 tool_calls_executed=True,
             )
-
-        turn_content = ""
-        turn_tool_calls: list[ToolCall] | None = None
-        turn_usage: Usage | None = None
-        streamed_chunks: list[str] = []
-        async for chunk in self.provider.stream(messages, tools=tool_schemas):  # type: ignore[attr-defined]
-            if chunk.delta:
-                turn_content += chunk.delta
-                streamed_chunks.append(chunk.delta)
-                await self._emit(
-                    HookEvent.ON_LLM_STREAM_DELTA, {"delta": chunk.delta, "turn": turn}
-                )
-            if chunk.tool_calls:
-                turn_tool_calls = chunk.tool_calls
-            if chunk.usage is not None:
-                turn_usage = chunk.usage
-
-        if turn_usage is not None:
-            self._cumulative_usage += turn_usage
-        assistant_msg = Message(
-            role="assistant", content=turn_content or None, tool_calls=turn_tool_calls
-        )
-        messages.append(assistant_msg)
-        n_tool_calls_stream = len(turn_tool_calls) if turn_tool_calls else 0
-        await self._emit(
-            HookEvent.POST_LLM_CALL,
-            {
-                "result": assistant_msg,
-                "turn": turn,
-                "usage": turn_usage,
-                "n_tool_calls": n_tool_calls_stream,
-            },
-        )
-        if not turn_tool_calls:
-            return _TurnExecutionResult(
-                final_text=turn_content,
-                streamed_chunks=streamed_chunks,
-                tool_calls_executed=False,
-            )
-        await self._execute_tool_calls(turn_tool_calls, messages)
-        return _TurnExecutionResult(
-            final_text=None,
-            streamed_chunks=streamed_chunks,
-            tool_calls_executed=True,
-        )
 
     async def _raise_max_turns_exceeded(
         self,
@@ -811,11 +1076,31 @@ class Agent:
             subagent_name,
             task[:120],
         )
-        await self._emit(HookEvent.ON_DELEGATION, {"target": subagent_name, "input": task})
+        explicit_parent_ctx = get_execution_context()
+        parent_ctx = explicit_parent_ctx or self._current_execution_context()
+        delegation_id = f"delegation_{int(time.time() * 1000)}_{subagent_name}"
+        delegation_start = time.monotonic()
+        child_ctx = child_execution_context(
+            parent_ctx,
+            agent_name=subagent_name,
+            session_id=session_id,
+        )
+        await self._emit(
+            HookEvent.ON_DELEGATION,
+            {
+                "target": subagent_name,
+                "input": task,
+                "delegation_id": delegation_id,
+                "session_id": child_ctx.session_id,
+                "originating_session_id": child_ctx.originating_session_id,
+                "agent_path": child_ctx.agent_path,
+            },
+            status="ok",
+        )
         subagent = self.subagents[subagent_name]
         # Restore conversation history from session if resuming.
-        if session_id:
-            session = self._session_mgr.get(session_id)
+        if child_ctx.session_id:
+            session = self._session_mgr.get(child_ctx.session_id)
             if session:
                 subagent._conversation_history = [m for m in session.messages if m.role != "system"]
 
@@ -847,22 +1132,54 @@ class Agent:
             HookEvent.ON_LLM_STREAM_DELTA,
         ]
         forwarding_entries = []
-        for evt in propagated_events:
-            async def _forward(event: HookEvent, data: dict[str, Any], _e: HookEvent = evt) -> None:
-                await self._emit(_e, data)
-            from sage.hooks.registry import _HandlerEntry
-            entry = _HandlerEntry(handler=_forward, priority=0, modifying=False)
-            subagent._hook_registry._handlers[evt].append(entry)
-            forwarding_entries.append((evt, entry))
+        if hasattr(subagent, "_hook_registry"):
+            for evt in propagated_events:
+
+                async def _forward(
+                    event: HookEvent, data: dict[str, Any], _e: HookEvent = evt
+                ) -> None:
+                    await self._emit(_e, data)
+
+                from sage.hooks.registry import _HandlerEntry
+
+                entry = _HandlerEntry(handler=_forward, priority=0, modifying=False)
+                subagent._hook_registry._handlers[evt].append(entry)
+                forwarding_entries.append((evt, entry))
 
         try:
-            result = await subagent.run(task)
+            with bind_execution_context(child_ctx):
+                try:
+                    run_kwargs: dict[str, str] = {}
+                    if session_id is not None or explicit_parent_ctx is not None:
+                        if child_ctx.session_id is not None:
+                            run_kwargs["session_id"] = child_ctx.session_id
+                        if child_ctx.originating_session_id is not None:
+                            run_kwargs["originating_session_id"] = child_ctx.originating_session_id
+                    result = await subagent.run(task, **run_kwargs)
+                except TypeError as exc:
+                    if "unexpected keyword argument" not in str(exc):
+                        raise
+                    result = await subagent.run(task)
         except KeyboardInterrupt:
             raise  # Always propagate user interrupts
         except BaseException as e:
             if isinstance(e, (KeyboardInterrupt, SystemExit)):
                 raise
             logger.error("Subagent '%s' crashed: %s", subagent.name, e, exc_info=True)
+            duration_ms = (time.monotonic() - delegation_start) * 1000
+            await self._emit(
+                HookEvent.ON_DELEGATION_FAILED,
+                {
+                    "target": subagent_name,
+                    "input": task,
+                    "delegation_id": delegation_id,
+                    "session_id": child_ctx.session_id,
+                    "originating_session_id": child_ctx.originating_session_id,
+                },
+                status="error",
+                duration_ms=duration_ms,
+                error=e,
+            )
             result = f"[Subagent Error] {subagent.name} failed: {type(e).__name__}: {e}"
         finally:
             for evt, entry in forwarding_entries:
@@ -872,15 +1189,30 @@ class Agent:
                     pass
 
         # Persist subagent conversation history to session.
-        effective_sid = session_id or f"{subagent_name}_{int(time.time())}"
+        effective_sid = child_ctx.session_id or f"{subagent_name}_{int(time.time())}"
         session_state = self._session_mgr.get(effective_sid)
         if session_state is None:
-            session_state = self._session_mgr.create(subagent_name, session_id=effective_sid)
+            session_state = self._session_mgr.create(
+                subagent_name,
+                session_id=effective_sid,
+                metadata={"originating_session_id": child_ctx.originating_session_id},
+            )
         history = getattr(subagent, "_conversation_history", [])
         session_state.messages = list(history)
 
+        duration_ms = (time.monotonic() - delegation_start) * 1000
         await self._emit(
-            HookEvent.ON_DELEGATION_COMPLETE, {"target": subagent_name, "result": result}
+            HookEvent.ON_DELEGATION_COMPLETE,
+            {
+                "target": subagent_name,
+                "result": result,
+                "duration_ms": duration_ms,
+                "delegation_id": delegation_id,
+                "session_id": child_ctx.session_id,
+                "originating_session_id": child_ctx.originating_session_id,
+            },
+            status="ok",
+            duration_ms=duration_ms,
         )
         # Only surface session ID when caller explicitly provided one.
         if session_id:
@@ -937,15 +1269,231 @@ class Agent:
 
     # ── Private helpers ───────────────────────────────────────────────
 
-    async def _emit(self, event: HookEvent, data: dict[str, Any] | None = None) -> None:
-        """Emit a hook event, catching and logging any handler errors."""
+    def _current_execution_context(self) -> ExecutionContext:
+        ctx = get_execution_context()
+        if ctx is not None:
+            return ctx
+        return root_execution_context(agent_name=self.name)
+
+    def _event_category(self, event: HookEvent) -> str:
+        if event in {
+            HookEvent.ON_RUN_STARTED,
+            HookEvent.ON_RUN_COMPLETED,
+            HookEvent.ON_RUN_FAILED,
+            HookEvent.ON_RUN_CANCELLED,
+        }:
+            return "run"
+        if event in {
+            HookEvent.PRE_LLM_CALL,
+            HookEvent.POST_LLM_CALL,
+            HookEvent.ON_LLM_STREAM_DELTA,
+            HookEvent.ON_LLM_ERROR,
+            HookEvent.ON_LLM_RETRY,
+        }:
+            return "llm"
+        if event in {
+            HookEvent.PRE_TOOL_EXECUTE,
+            HookEvent.POST_TOOL_EXECUTE,
+            HookEvent.ON_TOOL_FAILED,
+            HookEvent.ON_TOOL_SKIPPED,
+        }:
+            return "tool"
+        if event in {HookEvent.PRE_PERMISSION_CHECK, HookEvent.POST_PERMISSION_CHECK}:
+            return "permission"
+        if event in {
+            HookEvent.PRE_MEMORY_RECALL,
+            HookEvent.POST_MEMORY_RECALL,
+            HookEvent.PRE_MEMORY_STORE,
+            HookEvent.POST_MEMORY_STORE,
+            HookEvent.ON_MEMORY_ERROR,
+        }:
+            return "memory"
+        if event in {
+            HookEvent.PRE_COMPACTION,
+            HookEvent.POST_COMPACTION,
+            HookEvent.ON_COMPACTION,
+            HookEvent.ON_COMPACTION_FAILED,
+        }:
+            return "compaction"
+        if event in {
+            HookEvent.ON_DELEGATION,
+            HookEvent.ON_DELEGATION_COMPLETE,
+            HookEvent.ON_DELEGATION_FAILED,
+        }:
+            return "delegation"
+        if event in {
+            HookEvent.ON_BACKGROUND_TASK_STARTED,
+            HookEvent.BACKGROUND_TASK_COMPLETED,
+            HookEvent.ON_BACKGROUND_TASK_FAILED,
+            HookEvent.ON_BACKGROUND_TASK_CANCELLED,
+        }:
+            return "background"
+        if event in {
+            HookEvent.ON_SESSION_STARTED,
+            HookEvent.ON_SESSION_RESUMED,
+            HookEvent.ON_SESSION_CLOSED,
+        }:
+            return "session"
+        if event in {
+            HookEvent.ON_MESSAGE_SENT,
+            HookEvent.ON_MESSAGE_RECEIVED,
+            HookEvent.ON_MESSAGE_EXPIRED,
+            HookEvent.ON_DEAD_LETTER,
+        }:
+            return "coordination"
+        if event == HookEvent.ON_PLAN_CREATED:
+            return "planning"
+        return "lifecycle"
+
+    def _event_phase(self, event: HookEvent) -> str:
+        name = event.value
+        if name.startswith("pre_"):
+            return "start"
+        if name.startswith("post_"):
+            return "complete"
+        if name.endswith("_failed") or name.endswith("_error"):
+            return "fail"
+        if name.endswith("_cancelled"):
+            return "cancel"
+        if name.endswith("_delta"):
+            return "delta"
+        return "point"
+
+    def _decorate_event_data(
+        self,
+        data: dict[str, Any],
+        *,
+        envelope: EventEnvelope,
+    ) -> dict[str, Any]:
+        enriched = dict(data)
+        enriched["event_id"] = envelope.event_id
+        enriched["agent_name"] = envelope.agent_name
+        enriched["run_id"] = envelope.run_id
+        enriched["session_id"] = envelope.session_id
+        enriched["originating_session_id"] = envelope.originating_session_id
+        enriched["agent_path"] = list(envelope.agent_path)
+        enriched["trace_id"] = envelope.trace_id
+        enriched["span_id"] = envelope.span_id
+        enriched["_event_envelope"] = envelope
+        return enriched
+
+    def _build_event_envelope(
+        self,
+        event: HookEvent,
+        data: dict[str, Any],
+        *,
+        status: str | None = None,
+        duration_ms: float | None = None,
+        usage: Usage | None = None,
+        error: BaseException | None = None,
+        trigger_event_id: str | None = None,
+    ) -> EventEnvelope:
+        ctx = self._current_execution_context()
+        trace_id, span_id = current_trace_context()
+        payload_usage = usage_to_snapshot(usage)
+        envelope = EventEnvelope(
+            event_name=event.value,
+            category=self._event_category(event),
+            phase=cast(
+                Literal["start", "delta", "complete", "fail", "cancel", "point"],
+                self._event_phase(event),
+            ),
+            agent_name=cast(str, data.get("agent_name", self.name)),
+            agent_path=list(cast(list[str], data.get("agent_path", ctx.agent_path))),
+            run_id=ctx.run_id,
+            turn_id=ctx.current_turn_id,
+            turn_index=data.get("turn", ctx.current_turn),
+            session_id=ctx.session_id,
+            originating_session_id=ctx.originating_session_id,
+            parent_event_id=ctx.current_event_id,
+            trigger_event_id=trigger_event_id or data.get("trigger_event_id"),
+            trace_id=trace_id,
+            span_id=span_id,
+            status=cast(Any, status),
+            duration_ms=duration_ms,
+            usage=payload_usage,
+            error=error_to_snapshot(error) if error is not None else None,
+        )
+        return envelope
+
+    async def _emit(
+        self,
+        event: HookEvent,
+        data: dict[str, Any] | None = None,
+        *,
+        status: str | None = None,
+        duration_ms: float | None = None,
+        usage: Usage | None = None,
+        error: BaseException | None = None,
+        trigger_event_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Emit lifecycle event through modifying hooks, void hooks, and telemetry."""
+        base = data or {}
+        envelope = self._build_event_envelope(
+            event,
+            base,
+            status=status,
+            duration_ms=duration_ms,
+            usage=usage,
+            error=error,
+            trigger_event_id=trigger_event_id,
+        )
         try:
-            await self._hook_registry.emit_void(event, data or {})
+            ctx = self._current_execution_context()
+            token_ctx = with_event_context(ctx, event_id=envelope.event_id)
+            with bind_execution_context(token_ctx):
+                current = self._decorate_event_data(base, envelope=envelope)
+                current = await self._hook_registry.emit_modifying(event, current)
+                await self._hook_registry.emit_void(event, current)
+                await self._telemetry_recorder.record(envelope, current)
+                return current
         except Exception as exc:
             logger.debug("Hook emission error for %s: %s", event, exc)
+            fallback = self._decorate_event_data(base, envelope=envelope)
+            await self._telemetry_recorder.record(envelope, fallback)
+            return fallback
+
+    async def _emit_tool_registry_event(
+        self,
+        event_name: str,
+        data: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        mapping = {
+            "pre_permission_check": HookEvent.PRE_PERMISSION_CHECK,
+            "post_permission_check": HookEvent.POST_PERMISSION_CHECK,
+        }
+        event = mapping.get(event_name)
+        if event is None:
+            return data
+        return await self._emit(event, data)
 
     async def _pre_loop_setup(self, input: str) -> list[Message]:
         """MCP init, memory init, context window detection, memory recall, build initial messages list."""
+        ctx = self._current_execution_context()
+        session = self._session_mgr.get(ctx.session_id) if ctx.session_id else None
+        if session is None and ctx.session_id is not None:
+            self._session_mgr.create(
+                self.name,
+                session_id=ctx.session_id,
+                metadata={"originating_session_id": ctx.originating_session_id or ctx.session_id},
+            )
+            await self._emit(
+                HookEvent.ON_SESSION_STARTED,
+                {
+                    "session_id": ctx.session_id,
+                    "originating_session_id": ctx.originating_session_id,
+                },
+                status="ok",
+            )
+        elif ctx.session_id is not None:
+            await self._emit(
+                HookEvent.ON_SESSION_RESUMED,
+                {
+                    "session_id": ctx.session_id,
+                    "originating_session_id": ctx.originating_session_id,
+                },
+                status="ok",
+            )
         # Connect MCP servers and register their tools on first run.
         await self._ensure_mcp_initialized()
         await self._ensure_memory_initialized()
@@ -1003,36 +1551,71 @@ class Agent:
                     "[%s] Executing tool '%s': %s", self.name, tc.name, str(tc.arguments)[:120]
                 )
 
+            started = time.monotonic()
             try:
-                await self._emit(
+                pre_tool = await self._emit(
                     HookEvent.PRE_TOOL_EXECUTE,
                     {
                         "tool_name": tc.name,
+                        "tool_call_id": tc.id,
                         "arguments": tc.arguments or {},
                         "turn": self._current_turn,
                     },
+                    status="ok",
                 )
-                _t0 = time.monotonic()
-                result = await self.tool_registry.execute(tc.name, tc.arguments or {})
-                duration_ms = (time.monotonic() - _t0) * 1000
+                effective_arguments = cast(
+                    dict[str, Any], pre_tool.get("arguments", tc.arguments or {})
+                )
+                result = await self.tool_registry.execute(tc.name, effective_arguments)
+                duration_ms = (time.monotonic() - started) * 1000
                 result_str = str(result)
-                await self._emit(
+                post_tool = await self._emit(
                     HookEvent.POST_TOOL_EXECUTE,
                     {
                         "tool_name": tc.name,
-                        "arguments": tc.arguments or {},
+                        "tool_call_id": tc.id,
+                        "arguments": effective_arguments,
                         "result": result_str,
                         "duration_ms": duration_ms,
                     },
+                    status="ok",
+                    duration_ms=duration_ms,
                 )
+                result_str = str(post_tool.get("result", result_str))
                 return tc.id, result_str
             except SagePermissionError:
                 raise  # Never swallow permission errors — re-raise so the agent loop can handle them
             except ToolError as exc:
                 logger.error("[%s] Tool '%s' failed: %s", self.name, tc.name, exc)
+                duration_ms = (time.monotonic() - started) * 1000
+                await self._emit(
+                    HookEvent.ON_TOOL_FAILED,
+                    {
+                        "tool_name": tc.name,
+                        "tool_call_id": tc.id,
+                        "arguments": tc.arguments or {},
+                        "duration_ms": duration_ms,
+                    },
+                    status="error",
+                    duration_ms=duration_ms,
+                    error=exc,
+                )
                 return tc.id, f"Error executing tool '{tc.name}': {exc}"
             except Exception as exc:
                 logger.error("[%s] Tool '%s' raised unexpected error: %s", self.name, tc.name, exc)
+                duration_ms = (time.monotonic() - started) * 1000
+                await self._emit(
+                    HookEvent.ON_TOOL_FAILED,
+                    {
+                        "tool_name": tc.name,
+                        "tool_call_id": tc.id,
+                        "arguments": tc.arguments or {},
+                        "duration_ms": duration_ms,
+                    },
+                    status="error",
+                    duration_ms=duration_ms,
+                    error=exc,
+                )
                 return tc.id, f"Error executing tool '{tc.name}': {exc}"
 
         # Split into parallel (allow/deny) and sequential (ask-gated) groups.
@@ -1060,6 +1643,16 @@ class Agent:
         for tc in ask_tcs:
             if token is not None and token.is_cancelled:
                 logger.info("Cancellation token set — skipping remaining ask-gated tools")
+                await self._emit(
+                    HookEvent.ON_TOOL_SKIPPED,
+                    {
+                        "tool_name": tc.name,
+                        "tool_call_id": tc.id,
+                        "arguments": tc.arguments or {},
+                        "reason": "cancelled",
+                    },
+                    status="cancelled",
+                )
                 break
             pairs.append(await _safe_execute(tc))
 
@@ -1077,6 +1670,27 @@ class Agent:
         await self._maybe_compact_history()
         self._update_token_usage([message.model_dump() for message in self._build_messages("")])
         await self._store_memory(input, final_output)
+        ctx = self._current_execution_context()
+        if ctx.session_id:
+            session = self._session_mgr.get(ctx.session_id)
+            if session is None:
+                session = self._session_mgr.create(
+                    self.name,
+                    session_id=ctx.session_id,
+                    metadata={
+                        "originating_session_id": ctx.originating_session_id or ctx.session_id
+                    },
+                )
+            session.messages = list(self._conversation_history)
+            await self._emit(
+                HookEvent.ON_SESSION_CLOSED,
+                {
+                    "session_id": ctx.session_id,
+                    "originating_session_id": ctx.originating_session_id,
+                    "message_count": len(session.messages),
+                },
+                status="ok",
+            )
 
     def _extract_final_output(self, messages: list[Message]) -> str:
         """Find and return the last assistant text content (used for max-turns fallback)."""
@@ -1148,6 +1762,26 @@ class Agent:
                 note = f"[Background task {info.task_id} {info.status}] Agent '{info.agent_name}'"
             messages.append(Message(role="system", content=note))
             self._bg_manager.mark_notified(info.task_id)
+            specific_event = None
+            if info.status == "failed":
+                specific_event = HookEvent.ON_BACKGROUND_TASK_FAILED
+            elif info.status == "cancelled":
+                specific_event = HookEvent.ON_BACKGROUND_TASK_CANCELLED
+            if specific_event is not None:
+                await self._emit(
+                    specific_event,
+                    {
+                        "task_id": info.task_id,
+                        "agent_name": info.agent_name,
+                        "status": info.status,
+                        "result": info.result,
+                        "error": info.error,
+                        "session_id": info.session_id,
+                        "originating_session_id": info.originating_session_id,
+                        "agent_path": ["background", info.task_id],
+                    },
+                    status="error" if info.status == "failed" else "cancelled",
+                )
             await self._emit(
                 HookEvent.BACKGROUND_TASK_COMPLETED,
                 {
@@ -1156,7 +1790,13 @@ class Agent:
                     "status": info.status,
                     "result": info.result,
                     "error": info.error,
+                    "session_id": info.session_id,
+                    "originating_session_id": info.originating_session_id,
+                    "agent_path": ["background", info.task_id],
                 },
+                status="ok"
+                if info.status == "completed"
+                else ("error" if info.status == "failed" else "cancelled"),
             )
 
     def _build_system_message(self) -> str:
@@ -1199,7 +1839,29 @@ class Agent:
             self.name,
             before_count,
         )
-        compacted, strategy = await self._run_compaction_chain(self._conversation_history)
+        await self._emit(
+            HookEvent.PRE_COMPACTION,
+            {
+                "before_count": before_count,
+                "threshold": self._compaction_threshold,
+            },
+            status="ok",
+        )
+        compaction_started = time.monotonic()
+        try:
+            compacted, strategy = await self._run_compaction_chain(self._conversation_history)
+        except Exception as exc:
+            await self._emit(
+                HookEvent.ON_COMPACTION_FAILED,
+                {
+                    "before_count": before_count,
+                    "threshold": self._compaction_threshold,
+                },
+                status="error",
+                duration_ms=(time.monotonic() - compaction_started) * 1000,
+                error=exc,
+            )
+            raise
         self._conversation_history = compacted
         self._last_compaction_strategy = strategy
         logger.info(
@@ -1210,12 +1872,23 @@ class Agent:
             strategy,
         )
         await self._emit(
+            HookEvent.POST_COMPACTION,
+            {
+                "before_count": before_count,
+                "after_count": len(self._conversation_history),
+                "strategy": strategy,
+            },
+            status="ok",
+            duration_ms=(time.monotonic() - compaction_started) * 1000,
+        )
+        await self._emit(
             HookEvent.ON_COMPACTION,
             {
                 "before_count": before_count,
                 "after_count": len(self._conversation_history),
                 "strategy": strategy,
             },
+            status="ok",
         )
         self._update_token_usage([message.model_dump() for message in self._build_messages("")])
         self._turns_since_compaction = 0
@@ -1337,13 +2010,32 @@ class Agent:
         if self.memory is None:
             return None
         logger.debug("Recalling memory for agent '%s': query=%.80s", self.name, query)
+        started = time.monotonic()
+        await self._emit(
+            HookEvent.PRE_MEMORY_RECALL,
+            {"query": query},
+            status="ok",
+        )
         try:
             entries = await self.memory.recall(query)
         except Exception as exc:
             logger.warning("Memory recall failed: %s", exc)
+            await self._emit(
+                HookEvent.ON_MEMORY_ERROR,
+                {"query": query, "operation": "recall"},
+                status="error",
+                duration_ms=(time.monotonic() - started) * 1000,
+                error=exc,
+            )
             return None
         if not entries:
             logger.debug("Memory recall for agent '%s': no results", self.name)
+            await self._emit(
+                HookEvent.POST_MEMORY_RECALL,
+                {"query": query, "result_count": 0},
+                status="ok",
+                duration_ms=(time.monotonic() - started) * 1000,
+            )
             return None
         top_score = entries[0].score if entries[0].score is not None else "N/A"
         logger.debug(
@@ -1353,6 +2045,16 @@ class Agent:
             top_score,
         )
         lines = [f"- {e.content}" for e in entries]
+        await self._emit(
+            HookEvent.POST_MEMORY_RECALL,
+            {
+                "query": query,
+                "result_count": len(entries),
+                "top_score": top_score,
+            },
+            status="ok",
+            duration_ms=(time.monotonic() - started) * 1000,
+        )
         return "\n".join(lines)
 
     async def _store_memory(self, input: str, output: str) -> None:
@@ -1360,6 +2062,12 @@ class Agent:
         if self.memory is None:
             return
         content = f"User: {input}\nAssistant: {output}"
+        started = time.monotonic()
+        await self._emit(
+            HookEvent.PRE_MEMORY_STORE,
+            {"input": input, "output": output, "content_length": len(content)},
+            status="ok",
+        )
 
         # Apply relevance filter.  When no memory config is present (agent
         # was constructed directly without a config file), fall back to
@@ -1377,6 +2085,16 @@ class Agent:
                     len(content),
                     min_exchange_length,
                 )
+                await self._emit(
+                    HookEvent.POST_MEMORY_STORE,
+                    {
+                        "stored": False,
+                        "reason": "content_too_short",
+                        "content_length": len(content),
+                    },
+                    status="skipped",
+                    duration_ms=(time.monotonic() - started) * 1000,
+                )
                 return
         elif relevance_filter == "llm":
             score = await self._score_memory_relevance(content)
@@ -1388,6 +2106,17 @@ class Agent:
                 storing,
             )
             if not storing:
+                await self._emit(
+                    HookEvent.POST_MEMORY_STORE,
+                    {
+                        "stored": False,
+                        "reason": "below_relevance_threshold",
+                        "score": score,
+                        "threshold": relevance_threshold,
+                    },
+                    status="skipped",
+                    duration_ms=(time.monotonic() - started) * 1000,
+                )
                 return
         # "none": store everything
 
@@ -1399,8 +2128,25 @@ class Agent:
                 memory_id,
                 len(content),
             )
+            await self._emit(
+                HookEvent.POST_MEMORY_STORE,
+                {
+                    "stored": True,
+                    "memory_id": memory_id,
+                    "content_length": len(content),
+                },
+                status="ok",
+                duration_ms=(time.monotonic() - started) * 1000,
+            )
         except Exception as exc:
             logger.warning("Memory store failed: %s", exc)
+            await self._emit(
+                HookEvent.ON_MEMORY_ERROR,
+                {"operation": "store", "content_length": len(content)},
+                status="error",
+                duration_ms=(time.monotonic() - started) * 1000,
+                error=exc,
+            )
 
     async def _score_memory_relevance(self, content: str) -> float:
         """Ask the provider to score exchange relevance from 0.0 to 1.0."""

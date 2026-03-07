@@ -97,11 +97,12 @@ def make_credential_scrubber() -> Any:
         """Scrub credentials from tool output (void hook — side-effect only)."""
         if event != HookEvent.POST_TOOL_EXECUTE:
             return
-        if "output" in data and isinstance(data["output"], str):
-            original = data["output"]
+        target_key = "result" if isinstance(data.get("result"), str) else "output"
+        if target_key in data and isinstance(data[target_key], str):
+            original = data[target_key]
             scrubbed = scrub_text(original)
             if scrubbed != original:
                 logger.warning("Credentials detected and scrubbed from tool output")
-                data["output"] = scrubbed
+                data[target_key] = scrubbed
 
     return _hook

@@ -37,6 +37,12 @@ class ToolStarted:
     name: str
     arguments: dict[str, Any]
     turn: int
+    call_id: str | None = None
+    run_id: str | None = None
+    session_id: str | None = None
+    originating_session_id: str | None = None
+    agent_path: list[str] | None = None
+    event_id: str | None = None
 
 
 @dataclass
@@ -46,6 +52,13 @@ class ToolCompleted:
     name: str
     result: str
     duration_ms: float
+    call_id: str | None = None
+    error: str | None = None
+    run_id: str | None = None
+    session_id: str | None = None
+    originating_session_id: str | None = None
+    agent_path: list[str] | None = None
+    event_id: str | None = None
 
 
 @dataclass
@@ -55,6 +68,11 @@ class LLMTurnStarted:
     turn: int
     model: str
     n_messages: int
+    run_id: str | None = None
+    session_id: str | None = None
+    originating_session_id: str | None = None
+    agent_path: list[str] | None = None
+    event_id: str | None = None
 
 
 @dataclass
@@ -64,6 +82,12 @@ class LLMTurnCompleted:
     turn: int
     usage: Any  # sage.models.Usage
     n_tool_calls: int
+    model: str = ""
+    run_id: str | None = None
+    session_id: str | None = None
+    originating_session_id: str | None = None
+    agent_path: list[str] | None = None
+    event_id: str | None = None
 
 
 @dataclass
@@ -72,6 +96,12 @@ class DelegationStarted:
 
     target: str
     task: str
+    delegation_id: str | None = None
+    run_id: str | None = None
+    session_id: str | None = None
+    originating_session_id: str | None = None
+    agent_path: list[str] | None = None
+    event_id: str | None = None
 
 
 @dataclass
@@ -80,6 +110,13 @@ class DelegationCompleted:
 
     target: str
     result: str
+    duration_ms: float = 0.0
+    delegation_id: str | None = None
+    run_id: str | None = None
+    session_id: str | None = None
+    originating_session_id: str | None = None
+    agent_path: list[str] | None = None
+    event_id: str | None = None
 
 
 @dataclass
@@ -88,6 +125,11 @@ class LLMStreamDelta:
 
     delta: str
     turn: int
+    run_id: str | None = None
+    session_id: str | None = None
+    originating_session_id: str | None = None
+    agent_path: list[str] | None = None
+    event_id: str | None = None
 
 
 @dataclass
@@ -99,6 +141,11 @@ class BackgroundTaskCompleted:
     status: str
     result: str | None
     error: str | None
+    session_id: str | None = None
+    originating_session_id: str | None = None
+    run_id: str | None = None
+    agent_path: list[str] | None = None
+    event_id: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -127,33 +174,75 @@ _FACTORIES: dict[type, Any] = {
         name=d.get("tool_name", ""),
         arguments=d.get("arguments", {}),
         turn=d.get("turn", 0),
+        call_id=d.get("tool_call_id"),
+        run_id=d.get("run_id"),
+        session_id=d.get("session_id"),
+        originating_session_id=d.get("originating_session_id"),
+        agent_path=d.get("agent_path"),
+        event_id=d.get("event_id"),
     ),
     ToolCompleted: lambda d: ToolCompleted(
         name=d.get("tool_name", ""),
         result=d.get("result", ""),
         duration_ms=d.get("duration_ms", 0.0),
+        call_id=d.get("tool_call_id"),
+        error=d.get("error"),
+        run_id=d.get("run_id"),
+        session_id=d.get("session_id"),
+        originating_session_id=d.get("originating_session_id"),
+        agent_path=d.get("agent_path"),
+        event_id=d.get("event_id"),
     ),
     LLMTurnStarted: lambda d: LLMTurnStarted(
         turn=d.get("turn", 0),
         model=d.get("model", ""),
         n_messages=len(d.get("messages", [])),
+        run_id=d.get("run_id"),
+        session_id=d.get("session_id"),
+        originating_session_id=d.get("originating_session_id"),
+        agent_path=d.get("agent_path"),
+        event_id=d.get("event_id"),
     ),
     LLMTurnCompleted: lambda d: LLMTurnCompleted(
         turn=d.get("turn", 0),
         usage=d.get("usage"),
         n_tool_calls=d.get("n_tool_calls", 0),
+        model=d.get("model", ""),
+        run_id=d.get("run_id"),
+        session_id=d.get("session_id"),
+        originating_session_id=d.get("originating_session_id"),
+        agent_path=d.get("agent_path"),
+        event_id=d.get("event_id"),
     ),
     DelegationStarted: lambda d: DelegationStarted(
         target=d.get("target", ""),
         task=d.get("input", ""),
+        delegation_id=d.get("delegation_id"),
+        run_id=d.get("run_id"),
+        session_id=d.get("session_id"),
+        originating_session_id=d.get("originating_session_id"),
+        agent_path=d.get("agent_path"),
+        event_id=d.get("event_id"),
     ),
     DelegationCompleted: lambda d: DelegationCompleted(
         target=d.get("target", ""),
         result=d.get("result", ""),
+        duration_ms=d.get("duration_ms", 0.0),
+        delegation_id=d.get("delegation_id"),
+        run_id=d.get("run_id"),
+        session_id=d.get("session_id"),
+        originating_session_id=d.get("originating_session_id"),
+        agent_path=d.get("agent_path"),
+        event_id=d.get("event_id"),
     ),
     LLMStreamDelta: lambda d: LLMStreamDelta(
         delta=d.get("delta", ""),
         turn=d.get("turn", 0),
+        run_id=d.get("run_id"),
+        session_id=d.get("session_id"),
+        originating_session_id=d.get("originating_session_id"),
+        agent_path=d.get("agent_path"),
+        event_id=d.get("event_id"),
     ),
     BackgroundTaskCompleted: lambda d: BackgroundTaskCompleted(
         task_id=d.get("task_id", ""),
@@ -161,6 +250,11 @@ _FACTORIES: dict[type, Any] = {
         status=d.get("status", ""),
         result=d.get("result"),
         error=d.get("error"),
+        session_id=d.get("session_id"),
+        originating_session_id=d.get("originating_session_id"),
+        run_id=d.get("run_id"),
+        agent_path=d.get("agent_path"),
+        event_id=d.get("event_id"),
     ),
 }
 

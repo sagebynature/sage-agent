@@ -72,9 +72,28 @@ class MethodDispatcher:
         message = params.get("message")
         if not isinstance(message, str) or not message:
             raise ValueError("'message' must be a non-empty string")
+        session_id = params.get("session_id")
+        if session_id is not None and not isinstance(session_id, str):
+            raise ValueError("'session_id' must be a string when provided")
+        originating_session_id = params.get("originating_session_id")
+        if originating_session_id is not None and not isinstance(originating_session_id, str):
+            raise ValueError("'originating_session_id' must be a string when provided")
+        permission_handler = getattr(
+            getattr(self.agent, "tool_registry", None), "_permission_handler", None
+        )
+        reset_session = getattr(permission_handler, "reset_session", None)
+        if callable(reset_session):
+            reset_session(session_id)
 
         run_id = str(uuid4())
-        task = asyncio.create_task(self._run_streaming(run_id, message))
+        task = asyncio.create_task(
+            self._run_streaming(
+                run_id,
+                message,
+                session_id=session_id,
+                originating_session_id=originating_session_id,
+            )
+        )
         self._run_tasks[run_id] = task
         self._current_run_id = run_id
 
@@ -86,9 +105,21 @@ class MethodDispatcher:
         task.add_done_callback(_cleanup)
         return {"status": "started", "runId": run_id}
 
-    async def _run_streaming(self, run_id: str, message: str) -> None:
+    async def _run_streaming(
+        self,
+        run_id: str,
+        message: str,
+        *,
+        session_id: str | None = None,
+        originating_session_id: str | None = None,
+    ) -> None:
         try:
-            async for _chunk in self.agent.stream(message):
+            stream_kwargs: dict[str, Any] = {}
+            if session_id is not None:
+                stream_kwargs["session_id"] = session_id
+            if originating_session_id is not None:
+                stream_kwargs["originating_session_id"] = originating_session_id
+            async for _chunk in self.agent.stream(message, **stream_kwargs):
                 pass  # EventBridge handles stream/delta notifications
             await self.server.send_notification(
                 "run/completed", {"runId": run_id, "status": "success"}
