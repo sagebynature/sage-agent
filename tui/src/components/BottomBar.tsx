@@ -44,10 +44,20 @@ function ModeIndicator({ props }: { props: BottomBarProps }): ReactNode {
     case "connecting":
       return <Text color="yellow">{"● connecting..."}</Text>;
     case "streaming":
-      return <Text color="yellow">{"● streaming"}</Text>;
+      return (
+        <Text>
+          <Text color="yellow">{"● streaming"}</Text>
+          <Text dimColor>{" — ESC to cancel"}</Text>
+        </Text>
+      );
     case "tool": {
       const running = props.activeStream?.tools.find((t) => t.status === "running");
-      return <Text color="blue">{"● "}{running?.name ?? "tool"}</Text>;
+      return (
+        <Text>
+          <Text color="blue">{"● "}{running?.name ?? "tool"}</Text>
+          <Text dimColor>{" — ESC to cancel"}</Text>
+        </Text>
+      );
     }
     case "permission":
       return (
