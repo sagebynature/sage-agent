@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
 import type { ReactNode } from "react";
-import type { UsageState, PermissionState } from "../types/state.js";
+import type { UsageState, PermissionState, AgentNode } from "../types/state.js";
 import type { ActiveStream } from "../types/blocks.js";
 
 type AppMode = "idle" | "connecting" | "streaming" | "tool" | "permission" | "error";
@@ -11,6 +11,8 @@ interface BottomBarProps {
   permissions: PermissionState[];
   error: string | null;
   connectionStatus: "connecting" | "connected" | "disconnected" | "error";
+  agents: AgentNode[];
+  sessionName?: string;
 }
 
 function contextBar(percent: number): string {
@@ -79,10 +81,11 @@ function ModeIndicator({ props }: { props: BottomBarProps }): ReactNode {
 }
 
 export function BottomBar(props: BottomBarProps): ReactNode {
-  const { usage } = props;
+  const { usage, agents, sessionName } = props;
   const cost = `$${usage.totalCost.toFixed(2)}`;
   const model = usage.model || "no model";
   const pct = usage.contextUsagePercent;
+  const activeAgents = agents.filter((a) => a.status === "active").length;
 
   return (
     <Box>
@@ -92,8 +95,10 @@ export function BottomBar(props: BottomBarProps): ReactNode {
         <Text color={contextColor(pct)}>{contextBar(pct)}</Text>
         {" "}{pct}%
         {" | "}{cost}
-        {"  "}
       </Text>
+      {activeAgents > 0 && <Text color="magenta">{" | "}{activeAgents} agent{activeAgents > 1 ? "s" : ""}</Text>}
+      {sessionName && <Text dimColor>{" | "}{sessionName}</Text>}
+      <Text dimColor>{"  "}</Text>
       <ModeIndicator props={props} />
     </Box>
   );
