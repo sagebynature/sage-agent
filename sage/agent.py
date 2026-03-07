@@ -839,6 +839,22 @@ class Agent:
                     )
         # Propagate depth to subagent.
         subagent._current_depth = self._current_depth + 1
+
+        # Propagate subagent tool/stream events to parent so TUI can display them.
+        propagated_events = [
+            HookEvent.PRE_TOOL_EXECUTE,
+            HookEvent.POST_TOOL_EXECUTE,
+            HookEvent.ON_LLM_STREAM_DELTA,
+        ]
+        forwarding_entries = []
+        for evt in propagated_events:
+            async def _forward(event: HookEvent, data: dict[str, Any], _e: HookEvent = evt) -> None:
+                await self._emit(_e, data)
+            from sage.hooks.registry import _HandlerEntry
+            entry = _HandlerEntry(handler=_forward, priority=0, modifying=False)
+            subagent._hook_registry._handlers[evt].append(entry)
+            forwarding_entries.append((evt, entry))
+
         try:
             result = await subagent.run(task)
         except KeyboardInterrupt:
@@ -848,6 +864,12 @@ class Agent:
                 raise
             logger.error("Subagent '%s' crashed: %s", subagent.name, e, exc_info=True)
             result = f"[Subagent Error] {subagent.name} failed: {type(e).__name__}: {e}"
+        finally:
+            for evt, entry in forwarding_entries:
+                try:
+                    subagent._hook_registry._handlers[evt].remove(entry)
+                except ValueError:
+                    pass
 
         # Persist subagent conversation history to session.
         effective_sid = session_id or f"{subagent_name}_{int(time.time())}"
