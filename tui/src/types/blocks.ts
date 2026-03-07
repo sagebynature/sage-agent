@@ -6,6 +6,7 @@ export interface ToolSummary {
   error?: string;
   durationMs?: number;
   status: "running" | "completed" | "failed";
+  startedAt?: number;
 }
 
 export interface OutputBlock {

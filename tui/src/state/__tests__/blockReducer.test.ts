@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { blockReducer, INITIAL_BLOCK_STATE } from "../blockReducer.js";
 import type { BlockAction } from "../blockReducer.js";
-import type { PermissionState } from "../../types/state.js";
+import type { PermissionState, AgentNode } from "../../types/state.js";
 
 describe("blockReducer", () => {
   it("SUBMIT_MESSAGE appends user block", () => {
@@ -64,12 +64,13 @@ describe("blockReducer", () => {
       arguments: { path: "/foo" },
     });
     expect(state.activeStream!.tools).toHaveLength(1);
-    expect(state.activeStream!.tools[0]).toEqual({
+    expect(state.activeStream!.tools[0]).toMatchObject({
       name: "read_file",
       callId: "call-1",
       arguments: { path: "/foo" },
       status: "running",
     });
+    expect(state.activeStream!.tools[0]!.startedAt).toBeDefined();
   });
 
   it("TOOL_COMPLETED updates tool status to completed", () => {
@@ -311,5 +312,95 @@ describe("blockReducer", () => {
     expect(state.completedBlocks[0]!.type).toBe("system");
     expect(state.completedBlocks[0]!.content).toBe("Agent initialized");
     expect(state.completedBlocks[0]!.id).toMatch(/^system_/);
+  });
+
+  it("AGENT_STARTED adds agent to agents array", () => {
+    const agent: AgentNode = {
+      name: "researcher",
+      status: "active",
+      task: "find docs",
+      depth: 1,
+      children: [],
+      startedAt: 1000,
+    };
+    const state = blockReducer(INITIAL_BLOCK_STATE, {
+      type: "AGENT_STARTED",
+      agent,
+    });
+    expect(state.agents).toHaveLength(1);
+    expect(state.agents[0]!.name).toBe("researcher");
+  });
+
+  it("AGENT_COMPLETED updates agent status", () => {
+    const agent: AgentNode = {
+      name: "researcher",
+      status: "active",
+      task: "find docs",
+      depth: 1,
+      children: [],
+      startedAt: 1000,
+    };
+    let state = blockReducer(INITIAL_BLOCK_STATE, {
+      type: "AGENT_STARTED",
+      agent,
+    });
+    state = blockReducer(state, {
+      type: "AGENT_COMPLETED",
+      name: "researcher",
+      status: "completed",
+    });
+    expect(state.agents[0]!.status).toBe("completed");
+    expect(state.agents[0]!.completedAt).toBeDefined();
+  });
+
+  it("CLEAR_BLOCKS resets completedBlocks, activeStream, agents, and prunes permissions", () => {
+    let state = blockReducer(INITIAL_BLOCK_STATE, {
+      type: "SUBMIT_MESSAGE",
+      content: "hello",
+    });
+    state = blockReducer(state, {
+      type: "PERMISSION_REQUEST",
+      permission: { id: "p1", tool: "bash", arguments: {}, riskLevel: "high", status: "pending" },
+    });
+    state = blockReducer(state, {
+      type: "PERMISSION_RESPOND",
+      id: "p1",
+      decision: "allow_once",
+    });
+    state = blockReducer(state, { type: "CLEAR_BLOCKS" });
+
+    expect(state.completedBlocks).toEqual([]);
+    expect(state.activeStream).toBeNull();
+    expect(state.permissions).toEqual([]);
+    expect(state.agents).toEqual([]);
+    expect(state.error).toBeNull();
+  });
+
+  it("STREAM_END prunes resolved permissions", () => {
+    let state = blockReducer(INITIAL_BLOCK_STATE, {
+      type: "PERMISSION_REQUEST",
+      permission: { id: "p1", tool: "bash", arguments: {}, riskLevel: "high", status: "pending" },
+    });
+    state = blockReducer(state, {
+      type: "PERMISSION_RESPOND",
+      id: "p1",
+      decision: "allow_once",
+    });
+    state = blockReducer(state, {
+      type: "PERMISSION_REQUEST",
+      permission: { id: "p2", tool: "read", arguments: {}, riskLevel: "low", status: "pending" },
+    });
+    state = blockReducer(state, {
+      type: "STREAM_START",
+      runId: "run-1",
+    });
+    state = blockReducer(state, {
+      type: "STREAM_END",
+      status: "success",
+    });
+
+    // p1 (approved) pruned, p2 (still pending) kept
+    expect(state.permissions).toHaveLength(1);
+    expect(state.permissions[0]!.id).toBe("p2");
   });
 });
