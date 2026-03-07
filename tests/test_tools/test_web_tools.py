@@ -8,32 +8,15 @@ import httpx
 import pytest
 
 from sage.exceptions import ToolError
-from sage.tools._security import ResolvedURL
 from sage.tools.web_tools import web_fetch, web_search
-
-# Reusable resolved URL for a safe public host.
-_EXAMPLE_RESOLVED = ResolvedURL(
-    original_url="https://example.com/",
-    resolved_ip="93.184.216.34",
-    hostname="example.com",
-    port=None,
-    scheme="https",
-    path="/",
-    query="",
-    fragment="",
-)
 
 
 def _make_mock_client(mock_response: object) -> AsyncMock:
-    """Build an AsyncMock httpx client whose send() returns *mock_response*."""
-    mock_request = MagicMock()
-    mock_request.extensions = {}
-
+    """Build an AsyncMock httpx client whose get() returns *mock_response*."""
     mock_client = AsyncMock()
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
-    mock_client.build_request = MagicMock(return_value=mock_request)
-    mock_client.send = AsyncMock(return_value=mock_response)
+    mock_client.get = AsyncMock(return_value=mock_response)
     return mock_client
 
 
@@ -45,7 +28,7 @@ class TestWebFetch:
         mock_response.raise_for_status = MagicMock()
         mock_response.headers = {"content-type": "text/html"}
 
-        with patch("sage.tools.web_tools.validate_and_resolve_url", return_value=_EXAMPLE_RESOLVED):
+        with patch("sage.tools.web_tools.validate_and_resolve_url"):
             with patch("sage.tools.web_tools.httpx.AsyncClient") as mock_client_cls:
                 mock_client_cls.return_value = _make_mock_client(mock_response)
                 result = await web_fetch(url="https://example.com")
@@ -61,7 +44,7 @@ class TestWebFetch:
         mock_response.raise_for_status = MagicMock()
         mock_response.headers = {"content-type": "text/html"}
 
-        with patch("sage.tools.web_tools.validate_and_resolve_url", return_value=_EXAMPLE_RESOLVED):
+        with patch("sage.tools.web_tools.validate_and_resolve_url"):
             with patch("sage.tools.web_tools.httpx.AsyncClient") as mock_client_cls:
                 mock_client_cls.return_value = _make_mock_client(mock_response)
                 result = await web_fetch(url="https://example.com")
@@ -123,7 +106,7 @@ class TestWebFetchSSRF:
         mock_response.raise_for_status = MagicMock()
         mock_response.headers = {"content-type": "text/plain"}
 
-        with patch("sage.tools.web_tools.validate_and_resolve_url", return_value=_EXAMPLE_RESOLVED):
+        with patch("sage.tools.web_tools.validate_and_resolve_url"):
             with patch("sage.tools.web_tools.httpx.AsyncClient") as mock_client_cls:
                 mock_client_cls.return_value = _make_mock_client(mock_response)
                 result = await web_fetch(url="https://example.com")
@@ -132,16 +115,12 @@ class TestWebFetchSSRF:
 
 class TestWebFetchErrors:
     async def test_network_error_raises_tool_error(self) -> None:
-        with patch("sage.tools.web_tools.validate_and_resolve_url", return_value=_EXAMPLE_RESOLVED):
+        with patch("sage.tools.web_tools.validate_and_resolve_url"):
             with patch("sage.tools.web_tools.httpx.AsyncClient") as mock_client_cls:
-                mock_request = MagicMock()
-                mock_request.extensions = {}
-
                 mock_client = AsyncMock()
                 mock_client.__aenter__ = AsyncMock(return_value=mock_client)
                 mock_client.__aexit__ = AsyncMock(return_value=False)
-                mock_client.build_request = MagicMock(return_value=mock_request)
-                mock_client.send = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
+                mock_client.get = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
                 mock_client_cls.return_value = mock_client
 
                 with pytest.raises(ToolError, match="web_fetch failed"):
