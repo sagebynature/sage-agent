@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, cast
 
 import litellm
 
@@ -162,14 +162,15 @@ class LiteLLMProvider:
         **kwargs: Any,
     ) -> CompletionResult:
         """Send a completion request via litellm."""
+        request_model = cast(str, kwargs.get("model", self.model))
         logger.debug(
             "Completion request: model=%s, messages=%d, tools=%d",
-            self.model,
+            request_model,
             len(messages),
             len(tools) if tools else 0,
         )
         async with span(
-            "llm.complete", {"model": self.model, "message_count": len(messages)}
+            "llm.complete", {"model": request_model, "message_count": len(messages)}
         ) as llm_span:
             request_kwargs = self._build_request_kwargs(messages, tools, **kwargs)
 
@@ -191,7 +192,7 @@ class LiteLLMProvider:
             )
 
             raw_usage = getattr(response, "usage", None)
-            usage = self._extract_usage(raw_usage, response, self.model)
+            usage = self._extract_usage(raw_usage, response, request_model)
 
             logger.debug(
                 "Completion response: finish_reason=%s, tokens=%d/%d",
@@ -226,7 +227,8 @@ class LiteLLMProvider:
         calls (``finish_reason == "tool_calls"``), the final chunk carries
         the fully-assembled ``tool_calls`` list.
         """
-        async with span("llm.stream", {"model": self.model, "message_count": len(messages)}):
+        request_model = cast(str, kwargs.get("model", self.model))
+        async with span("llm.stream", {"model": request_model, "message_count": len(messages)}):
             request_kwargs = self._build_request_kwargs(messages, tools, stream=True, **kwargs)
 
             try:
@@ -286,7 +288,7 @@ class LiteLLMProvider:
                     raw_usage = getattr(chunk, "usage", None)
                     chunk_usage: Usage | None = None
                     if raw_usage is not None:
-                        chunk_usage = self._extract_usage(raw_usage, None, self.model)
+                        chunk_usage = self._extract_usage(raw_usage, None, request_model)
                     yield StreamChunk(
                         delta=content,
                         finish_reason=finish_reason,

@@ -50,27 +50,37 @@ class EventBridge:
         try:
             await self._server.send_notification(
                 "stream/delta",
-                {
-                    "delta": event.delta,
-                    "turn": event.turn,
-                    "agent_path": self._get_agent_path(),
-                },
+                self._with_optional(
+                    {
+                        "delta": event.delta,
+                        "turn": event.turn,
+                        "agent_path": event.agent_path or self._get_agent_path(),
+                        "runId": event.run_id,
+                        "sessionId": event.session_id,
+                        "originatingSessionId": event.originating_session_id,
+                    }
+                ),
             )
         except Exception as e:
             logger.error(f"Bridge error: {e}")
 
     async def _on_tool_started(self, event: ToolStarted) -> None:
         try:
-            call_id = f"call_{next(self._call_counter)}_{event.name}"
+            call_id = event.call_id or f"call_{next(self._call_counter)}_{event.name}"
             self._pending_calls.setdefault(event.name, []).append(call_id)
             await self._server.send_notification(
                 "tool/started",
-                {
-                    "toolName": event.name,
-                    "callId": call_id,
-                    "arguments": event.arguments,
-                    "agent_path": self._get_agent_path(),
-                },
+                self._with_optional(
+                    {
+                        "toolName": event.name,
+                        "callId": call_id,
+                        "arguments": event.arguments,
+                        "agent_path": event.agent_path or self._get_agent_path(),
+                        "runId": event.run_id,
+                        "sessionId": event.session_id,
+                        "originatingSessionId": event.originating_session_id,
+                    }
+                ),
             )
         except Exception as e:
             logger.error(f"Bridge error: {e}")
@@ -78,17 +88,22 @@ class EventBridge:
     async def _on_tool_completed(self, event: ToolCompleted) -> None:
         try:
             pending = self._pending_calls.get(event.name, [])
-            call_id = pending.pop(0) if pending else f"call_0_{event.name}"
             await self._server.send_notification(
                 "tool/completed",
-                {
-                    "toolName": event.name,
-                    "callId": call_id,
-                    "result": event.result,
-                    "durationMs": event.duration_ms,
-                    "error": None,
-                    "agent_path": self._get_agent_path(),
-                },
+                self._with_optional(
+                    {
+                        "toolName": event.name,
+                        "callId": event.call_id
+                        or (pending.pop(0) if pending else f"call_0_{event.name}"),
+                        "result": event.result,
+                        "durationMs": event.duration_ms,
+                        "error": event.error,
+                        "agent_path": event.agent_path or self._get_agent_path(),
+                        "runId": event.run_id,
+                        "sessionId": event.session_id,
+                        "originatingSessionId": event.originating_session_id,
+                    }
+                ),
             )
         except Exception as e:
             logger.error(f"Bridge error: {e}")
@@ -97,11 +112,16 @@ class EventBridge:
         try:
             await self._server.send_notification(
                 "turn/started",
-                {
-                    "turn": event.turn,
-                    "model": event.model,
-                    "agent_path": self._get_agent_path(),
-                },
+                self._with_optional(
+                    {
+                        "turn": event.turn,
+                        "model": event.model,
+                        "agent_path": event.agent_path or self._get_agent_path(),
+                        "runId": event.run_id,
+                        "sessionId": event.session_id,
+                        "originatingSessionId": event.originating_session_id,
+                    }
+                ),
             )
         except Exception as e:
             logger.error(f"Bridge error: {e}")
@@ -118,11 +138,16 @@ class EventBridge:
 
             await self._server.send_notification(
                 "turn/completed",
-                {
-                    "turn": event.turn,
-                    "usage": usage_payload,
-                    "agent_path": self._get_agent_path(),
-                },
+                self._with_optional(
+                    {
+                        "turn": event.turn,
+                        "usage": usage_payload,
+                        "agent_path": event.agent_path or self._get_agent_path(),
+                        "runId": event.run_id,
+                        "sessionId": event.session_id,
+                        "originatingSessionId": event.originating_session_id,
+                    }
+                ),
             )
 
             await self._send_usage_update()
@@ -134,12 +159,18 @@ class EventBridge:
             self._push_agent(event.target)
             await self._server.send_notification(
                 "delegation/started",
-                {
-                    "agentName": event.target,
-                    "task": event.task,
-                    "depth": 1,
-                    "agent_path": self._get_agent_path(),
-                },
+                self._with_optional(
+                    {
+                        "agentName": event.target,
+                        "task": event.task,
+                        "depth": len((event.agent_path or self._get_agent_path())) - 1,
+                        "agent_path": event.agent_path or self._get_agent_path(),
+                        "runId": event.run_id,
+                        "sessionId": event.session_id,
+                        "originatingSessionId": event.originating_session_id,
+                        "delegationId": event.delegation_id,
+                    }
+                ),
             )
         except Exception as e:
             logger.error(f"Bridge error: {e}")
@@ -150,12 +181,18 @@ class EventBridge:
             result = event.result[:1000]
             await self._server.send_notification(
                 "delegation/completed",
-                {
-                    "agentName": event.target,
-                    "result": result,
-                    "duration": 0,
-                    "agent_path": self._get_agent_path(),
-                },
+                self._with_optional(
+                    {
+                        "agentName": event.target,
+                        "result": result,
+                        "duration": event.duration_ms,
+                        "agent_path": event.agent_path or self._get_agent_path(),
+                        "runId": event.run_id,
+                        "sessionId": event.session_id,
+                        "originatingSessionId": event.originating_session_id,
+                        "delegationId": event.delegation_id,
+                    }
+                ),
             )
         except Exception as e:
             logger.error(f"Bridge error: {e}")
@@ -164,14 +201,19 @@ class EventBridge:
         try:
             await self._server.send_notification(
                 "background/completed",
-                {
-                    "taskId": event.task_id,
-                    "agentName": event.agent_name,
-                    "status": event.status,
-                    "result": event.result,
-                    "error": event.error,
-                    "agent_path": ["background", event.task_id],
-                },
+                self._with_optional(
+                    {
+                        "taskId": event.task_id,
+                        "agentName": event.agent_name,
+                        "status": event.status,
+                        "result": event.result,
+                        "error": event.error,
+                        "agent_path": event.agent_path or ["background", event.task_id],
+                        "runId": event.run_id,
+                        "sessionId": event.session_id,
+                        "originatingSessionId": event.originating_session_id,
+                    }
+                ),
             )
         except Exception as e:
             logger.error(f"Bridge error: {e}")
@@ -247,3 +289,7 @@ class EventBridge:
             "completion_tokens": 0,
             "cost": 0.0,
         }
+
+    @staticmethod
+    def _with_optional(payload: dict[str, object | None]) -> dict[str, object]:
+        return {k: v for k, v in payload.items() if v is not None or k == "error"}

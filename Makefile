@@ -1,6 +1,6 @@
 #!/usr/bin/make -f
 
-.PHONY: check-env check-deps sync install update lint format type-check test test-only run clean validate-examples run-examples demo-phase1 demo-orchestration run-examples-new
+.PHONY: check-env check-deps sync install update lint format type-check test tests test-only run clean validate-examples run-examples demo-phase1 demo-orchestration run-examples-new
 
 PACKAGE_NAME = sage
 SRC_DIR = $(PACKAGE_NAME)
@@ -38,6 +38,8 @@ type-check:
 
 test: sync lint format type-check
 	uv run pytest -v tests
+
+tests: test
 
 test-only:
 	uv run pytest -v tests

@@ -14,11 +14,12 @@ from pathlib import Path
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
+from sage._compat import tomllib
 from sage.config import AgentConfig, MCPServerConfig, MemoryConfig, ModelParams, load_config
 from sage.exceptions import ConfigError
 from sage.main_config import AgentOverrides, ConfigOverrides, MainConfig, merge_agent_config
-from pydantic import ValidationError
 
 
 # ---------------------------------------------------------------------------
@@ -845,8 +846,6 @@ class TestMainConfigSkillsDir:
         toml_content = 'skills_dir = "/some/path"\n'
         config_file = tmp_path / "config.toml"
         config_file.write_text(toml_content, encoding="utf-8")
-
-        import tomllib
 
         with config_file.open("rb") as f:
             data = tomllib.load(f)

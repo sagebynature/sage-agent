@@ -32,9 +32,7 @@ async def _serve(agent_config: str | None = None, verbose: bool = False) -> None
 
         from sage.protocol.permissions import JsonRpcPermissionHandler
 
-        permission_handler = JsonRpcPermissionHandler(
-            server=server, dispatcher=dispatcher
-        )
+        permission_handler = JsonRpcPermissionHandler(server=server, dispatcher=dispatcher)
         if hasattr(agent, "tool_registry") and agent.tool_registry is not None:
             agent.tool_registry.set_permission_handler(permission_handler)
 

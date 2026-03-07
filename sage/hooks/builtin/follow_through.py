@@ -52,6 +52,12 @@ def make_follow_through_hook(
 
         response_text = data.get("response_text", "") or data.get("content", "") or ""
         if not response_text:
+            result = data.get("result")
+            message = getattr(result, "message", None)
+            response_text = (
+                getattr(message, "content", None) or getattr(result, "content", "") or ""
+            )
+        if not response_text:
             return None
 
         bail_out = detect_bail_out(response_text)
@@ -59,7 +65,7 @@ def make_follow_through_hook(
             return None
 
         # Use a turn_id from data, or generate one
-        turn_id = str(data.get("turn_id", "default"))
+        turn_id = str(data.get("turn_id", data.get("turn", "default")))
         current_count = retry_counts.get(turn_id, 0)
 
         if current_count >= max_retries:
