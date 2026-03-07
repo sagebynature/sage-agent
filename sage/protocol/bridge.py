@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import logging
 from contextvars import ContextVar
 from typing import TYPE_CHECKING
@@ -29,11 +30,13 @@ class EventBridge:
     def __init__(self, server: "JsonRpcServer", agent: "Agent") -> None:
         self._server = server
         self._agent = agent
+        self._call_counter = itertools.count(1)
 
     def setup(self) -> None:
         """Register event handlers on the agent."""
         root_agent = getattr(self._agent, "name", "")
         _agent_path_var.set([root_agent])
+        self._pending_calls: dict[str, list[str]] = {}
         self._agent.on(LLMStreamDelta, self._on_stream_delta)
         self._agent.on(ToolStarted, self._on_tool_started)
         self._agent.on(ToolCompleted, self._on_tool_completed)
@@ -58,11 +61,13 @@ class EventBridge:
 
     async def _on_tool_started(self, event: ToolStarted) -> None:
         try:
+            call_id = f"call_{next(self._call_counter)}_{event.name}"
+            self._pending_calls.setdefault(event.name, []).append(call_id)
             await self._server.send_notification(
                 "tool/started",
                 {
                     "toolName": event.name,
-                    "callId": f"call_{event.turn}_{event.name}",
+                    "callId": call_id,
                     "arguments": event.arguments,
                     "agent_path": self._get_agent_path(),
                 },
@@ -72,12 +77,13 @@ class EventBridge:
 
     async def _on_tool_completed(self, event: ToolCompleted) -> None:
         try:
-            turn = getattr(event, "turn", 0)
+            pending = self._pending_calls.get(event.name, [])
+            call_id = pending.pop(0) if pending else f"call_0_{event.name}"
             await self._server.send_notification(
                 "tool/completed",
                 {
                     "toolName": event.name,
-                    "callId": f"call_{turn}_{event.name}",
+                    "callId": call_id,
                     "result": event.result,
                     "durationMs": event.duration_ms,
                     "error": None,
