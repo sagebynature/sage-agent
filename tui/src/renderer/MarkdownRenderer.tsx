@@ -34,7 +34,11 @@ function withClosedCodeFence(input: string, isStreaming: boolean): {
   };
 }
 
-function createMarkedRenderer(): Marked {
+let cachedParser: Marked | null = null;
+
+function getMarkedRenderer(): Marked {
+  if (cachedParser) return cachedParser;
+
   const parser = new Marked();
   const terminalExtension = markedTerminal({
     reflowText: false,
@@ -53,13 +57,14 @@ function createMarkedRenderer(): Marked {
   };
 
   parser.use(terminalExtension, { renderer: rendererOverride });
+  cachedParser = parser;
   return parser;
 }
 
 function renderMarkdown(content: string, isStreaming: boolean): string {
   const strippedContent = stripHtml(content);
   const { markdown, hasPendingCodeFence } = withClosedCodeFence(strippedContent, isStreaming);
-  const parser = createMarkedRenderer();
+  const parser = getMarkedRenderer();
 
   try {
     const rendered = parser.parse(markdown, {
