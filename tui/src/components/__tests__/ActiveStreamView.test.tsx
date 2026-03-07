@@ -1,8 +1,26 @@
 import { describe, it, expect } from "vitest";
 import { render } from "ink-testing-library";
 
-import { ActiveStreamView } from "../ActiveStreamView.js";
+import { ActiveStreamView, truncateStreamLines } from "../ActiveStreamView.js";
 import type { ActiveStream } from "../../types/blocks.js";
+
+describe("truncateStreamLines", () => {
+  it("returns all lines when under limit", () => {
+    const content = "line1\nline2\nline3";
+    const { lines, truncatedCount } = truncateStreamLines(content, 30);
+    expect(lines).toHaveLength(3);
+    expect(truncatedCount).toBe(0);
+  });
+
+  it("truncates to last N lines when over limit", () => {
+    const content = Array.from({ length: 50 }, (_, i) => `line${i}`).join("\n");
+    const { lines, truncatedCount } = truncateStreamLines(content, 30);
+    expect(lines).toHaveLength(30);
+    expect(truncatedCount).toBe(20);
+    expect(lines[0]).toBe("line20");
+    expect(lines[29]).toBe("line49");
+  });
+});
 
 describe("ActiveStreamView", () => {
   it("shows thinking indicator when isThinking", () => {
