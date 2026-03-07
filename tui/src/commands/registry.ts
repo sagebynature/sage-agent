@@ -1,11 +1,8 @@
-import { type Dispatch } from 'react';
-import type { AppAction } from '../state/AppContext.js';
-
 export interface CommandDefinition {
   name: string;
   description: string;
   aliases: string[];
-  handler: (args: string, dispatch?: Dispatch<AppAction>) => void | Promise<void>;
+  handler: (args: string) => void | Promise<void>;
 }
 
 export class CommandRegistry {

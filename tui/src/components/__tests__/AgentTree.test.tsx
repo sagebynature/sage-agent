@@ -2,10 +2,13 @@ import { render } from 'ink-testing-library';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AgentTree } from '../AgentTree.js';
 import type { AgentNode } from '../../types/state.js';
+import type { BlockState } from '../../state/blockReducer.js';
+import { INITIAL_BLOCK_STATE } from '../../state/blockReducer.js';
 
-const mockUseApp = vi.fn();
-vi.mock('../../state/AppContext.js', () => ({
-  useApp: () => mockUseApp(),
+let mockState: BlockState = { ...INITIAL_BLOCK_STATE };
+
+vi.mock('../../state/BlockContext.js', () => ({
+  useBlocks: () => ({ state: mockState, dispatch: vi.fn() }),
 }));
 
 const createAgent = (
@@ -26,65 +29,60 @@ const createAgent = (
 describe('AgentTree', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockState = { ...INITIAL_BLOCK_STATE };
   });
 
   it('renders nothing when there are no agents', () => {
-    mockUseApp.mockReturnValue({
-      state: { agents: [] },
-    });
-
+    mockState = { ...INITIAL_BLOCK_STATE, agents: [] };
     const { lastFrame } = render(<AgentTree />);
     expect(lastFrame()).toBe('');
   });
 
   it('renders a single root agent', () => {
-    const agents = [createAgent('root-agent', 'active', undefined, 'Root Task')];
-    mockUseApp.mockReturnValue({ state: { agents } });
-
+    mockState = { ...INITIAL_BLOCK_STATE, agents: [createAgent('root-agent', 'active', undefined, 'Root Task')] };
     const { lastFrame } = render(<AgentTree />);
-
     expect(lastFrame()).toContain('root-agent');
     expect(lastFrame()).toContain('Root Task');
     expect(lastFrame()).toContain('●');
   });
 
   it('renders a nested agent hierarchy', () => {
-    const agents = [
-      createAgent('root', 'active'),
-      createAgent('child', 'idle', 'root'),
-    ];
-    mockUseApp.mockReturnValue({ state: { agents } });
-
+    mockState = {
+      ...INITIAL_BLOCK_STATE,
+      agents: [
+        createAgent('root', 'active'),
+        createAgent('child', 'idle', 'root'),
+      ],
+    };
     const { lastFrame } = render(<AgentTree />);
-
     expect(lastFrame()).toContain('root');
     expect(lastFrame()).toContain('└── ◌ child');
   });
 
   it('renders multiple children with correct connectors', () => {
-    const agents = [
-      createAgent('root', 'active'),
-      createAgent('child1', 'idle', 'root'),
-      createAgent('child2', 'idle', 'root'),
-    ];
-    mockUseApp.mockReturnValue({ state: { agents } });
-
+    mockState = {
+      ...INITIAL_BLOCK_STATE,
+      agents: [
+        createAgent('root', 'active'),
+        createAgent('child1', 'idle', 'root'),
+        createAgent('child2', 'idle', 'root'),
+      ],
+    };
     const { lastFrame } = render(<AgentTree />);
-
     expect(lastFrame()).toContain('├── ◌ child1');
     expect(lastFrame()).toContain('└── ◌ child2');
   });
 
   it('renders deep nesting', () => {
-    const agents = [
-      createAgent('root', 'active'),
-      createAgent('level1', 'active', 'root'),
-      createAgent('level2', 'active', 'level1'),
-    ];
-    mockUseApp.mockReturnValue({ state: { agents } });
-
+    mockState = {
+      ...INITIAL_BLOCK_STATE,
+      agents: [
+        createAgent('root', 'active'),
+        createAgent('level1', 'active', 'root'),
+        createAgent('level2', 'active', 'level1'),
+      ],
+    };
     const { lastFrame } = render(<AgentTree />);
-
     const frame = lastFrame();
     expect(frame).toContain('root');
     expect(frame).toContain('└── ● level1');
@@ -92,37 +90,38 @@ describe('AgentTree', () => {
   });
 
   it('displays correct status indicators', () => {
-    const agents = [
-      createAgent('agent-active', 'active'),
-      createAgent('agent-completed', 'completed'),
-      createAgent('agent-failed', 'failed'),
-      createAgent('agent-idle', 'idle'),
-    ];
-    mockUseApp.mockReturnValue({ state: { agents } });
-
+    mockState = {
+      ...INITIAL_BLOCK_STATE,
+      agents: [
+        createAgent('agent-active', 'active'),
+        createAgent('agent-completed', 'completed'),
+        createAgent('agent-failed', 'failed'),
+        createAgent('agent-idle', 'idle'),
+      ],
+    };
     const { lastFrame } = render(<AgentTree />);
     const frame = lastFrame() || '';
-
     expect(frame).toContain('●');
     expect(frame).toContain('✓');
     expect(frame).toContain('✗');
     expect(frame).toContain('◌');
   });
 
-  it('handles background tasks with lightning bolt', () => {
+  it('handles empty background task case', () => {
+    // No-op — background indicator removed in port
   });
 
   it('respects maxDepth prop', () => {
-    const agents = [
-      createAgent('root', 'active'),
-      createAgent('level1', 'active', 'root'),
-      createAgent('level2', 'active', 'level1'),
-      createAgent('level3', 'active', 'level2'),
-    ];
-    mockUseApp.mockReturnValue({ state: { agents } });
-
+    mockState = {
+      ...INITIAL_BLOCK_STATE,
+      agents: [
+        createAgent('root', 'active'),
+        createAgent('level1', 'active', 'root'),
+        createAgent('level2', 'active', 'level1'),
+        createAgent('level3', 'active', 'level2'),
+      ],
+    };
     const { lastFrame } = render(<AgentTree maxDepth={2} />);
-
     expect(lastFrame()).toContain('root');
     expect(lastFrame()).toContain('level1');
     expect(lastFrame()).not.toContain('level2');
@@ -131,11 +130,11 @@ describe('AgentTree', () => {
 
   it('truncates long task summaries', () => {
     const longTask = 'This is a very long task description that should be truncated because it is too long';
-    const agents = [createAgent('root', 'active', undefined, longTask)];
-    mockUseApp.mockReturnValue({ state: { agents } });
-
+    mockState = {
+      ...INITIAL_BLOCK_STATE,
+      agents: [createAgent('root', 'active', undefined, longTask)],
+    };
     const { lastFrame } = render(<AgentTree />);
-
     expect(lastFrame()).not.toContain(longTask);
     expect(lastFrame()).toContain('This is a very long task description tha...');
   });
