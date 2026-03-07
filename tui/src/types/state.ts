@@ -13,15 +13,6 @@ export type PermissionStatus = "pending" | "approved" | "denied";
 
 export type AgentStatus = "idle" | "active" | "completed" | "failed";
 
-export interface ChatMessage {
-  id: string;
-  role: "system" | "user" | "assistant" | "tool";
-  content: string | null;
-  timestamp: number;
-  toolCalls?: ToolCallState[];
-  isStreaming: boolean;
-}
-
 export interface ToolCallState {
   id: string;
   name: string;
@@ -69,27 +60,4 @@ export interface UsageState {
   totalCost: number;
   model: string;
   contextUsagePercent: number;
-}
-
-export interface AppState {
-  currentView: ViewMode;
-  messages: ChatMessage[];
-  tools: ToolCallState[];
-  permissions: PermissionState[];
-  session: SessionState | null;
-  agents: AgentNode[];
-  usage: UsageState;
-  isStreaming: boolean;
-  error: string | null;
-}
-
-import type { OutputBlock, ActiveStream } from "./blocks.js";
-
-export interface AppStateV2 {
-  completedBlocks: OutputBlock[];
-  activeStream: ActiveStream | null;
-  usage: UsageState;
-  permissions: PermissionState[];
-  error: string | null;
-  session: SessionState | null;
 }
