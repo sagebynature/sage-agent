@@ -5,6 +5,7 @@ type Dispatch = (action: BlockAction) => void;
 
 export class BlockEventRouter {
   private readonly dispatch: Dispatch;
+  private readonly delegationCallIds = new Map<string, string>();
 
   constructor(dispatch: Dispatch) {
     this.dispatch = dispatch;
@@ -105,21 +106,36 @@ export class BlockEventRouter {
         });
         return;
 
-      case METHODS.DELEGATION_STARTED:
+      case METHODS.DELEGATION_STARTED: {
+        const target = typeof params.target === "string" ? params.target : "subagent";
+        const callId = `delegation_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        this.delegationCallIds.set(target, callId);
         this.dispatch({
           type: "TOOL_STARTED",
-          name: `delegate → ${typeof params.target === "string" ? params.target : "subagent"}`,
-          callId: `delegation_${Date.now()}`,
+          name: `delegate → ${target}`,
+          callId,
           arguments: { task: typeof params.task === "string" ? params.task : "" },
         });
         return;
+      }
 
-      case METHODS.DELEGATION_COMPLETED:
+      case METHODS.DELEGATION_COMPLETED: {
+        const target = typeof params.target === "string" ? params.target : "";
+        const callId = this.delegationCallIds.get(target);
+        if (callId) {
+          this.dispatch({
+            type: "TOOL_COMPLETED",
+            callId,
+            result: typeof params.result === "string" ? params.result : undefined,
+          });
+          this.delegationCallIds.delete(target);
+        }
         this.dispatch({
           type: "ADD_SYSTEM_BLOCK",
-          content: `Subagent ${typeof params.target === "string" ? params.target : ""} completed`,
+          content: `Subagent ${target} completed`,
         });
         return;
+      }
 
       default:
         return;
