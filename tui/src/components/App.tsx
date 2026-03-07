@@ -22,6 +22,8 @@ const NOTIFICATION_METHODS = [
   METHODS.PERMISSION_REQUEST,
   METHODS.COMPACTION_STARTED,
   METHODS.BACKGROUND_COMPLETED,
+  METHODS.DELEGATION_STARTED,
+  METHODS.DELEGATION_COMPLETED,
   METHODS.ERROR,
 ] as const;
 
@@ -62,19 +64,14 @@ function AppShell(): ReactNode {
       if (connectionStatus !== "connected") return;
 
       dispatch({ type: "SUBMIT_MESSAGE", content: text });
+      // Start stream immediately BEFORE the RPC so notifications aren't dropped
+      const optimisticRunId = `run_${Date.now()}`;
+      dispatch({ type: "STREAM_START", runId: optimisticRunId });
 
       try {
-        const result = await client.request(METHODS.AGENT_RUN, { message: text });
-        const runId =
-          typeof result === "object" && result !== null && "runId" in result
-            ? String((result as Record<string, unknown>).runId)
-            : `run_${Date.now()}`;
-        dispatch({ type: "STREAM_START", runId });
+        await client.request(METHODS.AGENT_RUN, { message: text });
       } catch (err: unknown) {
-        dispatch({
-          type: "SET_ERROR",
-          error: err instanceof Error ? err.message : "Failed to send message",
-        });
+        dispatch({ type: "STREAM_END", status: "error", error: err instanceof Error ? err.message : "Failed to send message" });
       }
     },
     [client, connectionStatus, dispatch],
