@@ -130,19 +130,31 @@ export function blockReducer(
     }
 
     case "STREAM_DELTA": {
-      if (!state.activeStream) return state;
+      const stream = state.activeStream ?? {
+        runId: `auto_${Date.now()}`,
+        content: "",
+        tools: [],
+        isThinking: true,
+        startedAt: Date.now(),
+      };
       return {
         ...state,
         activeStream: {
-          ...state.activeStream,
-          content: state.activeStream.content + action.delta,
+          ...stream,
+          content: stream.content + action.delta,
           isThinking: false,
         },
       };
     }
 
     case "TOOL_STARTED": {
-      if (!state.activeStream) return state;
+      const stream = state.activeStream ?? {
+        runId: `auto_${Date.now()}`,
+        content: "",
+        tools: [],
+        isThinking: true,
+        startedAt: Date.now(),
+      };
       const tool: ToolSummary = {
         name: action.name,
         callId: action.callId,
@@ -152,8 +164,8 @@ export function blockReducer(
       return {
         ...state,
         activeStream: {
-          ...state.activeStream,
-          tools: [...state.activeStream.tools, tool],
+          ...stream,
+          tools: [...stream.tools, tool],
         },
       };
     }

@@ -93,22 +93,52 @@ function ThinkingIndicator({ startedAt }: { startedAt: number }): ReactNode {
   );
 }
 
+function ToolStatusIndicator({ tool }: { tool: { status: string; name: string; arguments: Record<string, unknown>; durationMs?: number; error?: string } }): ReactNode {
+  const args = formatToolArgs(tool.arguments);
+  switch (tool.status) {
+    case "running":
+      return (
+        <Text>
+          <Text color="blue">{"⏵ "}{tool.name}</Text>
+          <Text dimColor>{args}{"  ... running"}</Text>
+        </Text>
+      );
+    case "completed":
+      return (
+        <Text dimColor>
+          {"✓ "}{tool.name}{args}
+          {tool.durationMs !== undefined ? `  ${tool.durationMs < 1000 ? `${tool.durationMs}ms` : `${(tool.durationMs / 1000).toFixed(1)}s`}` : ""}
+        </Text>
+      );
+    case "failed":
+      return (
+        <Text>
+          <Text color="red">{"✗ "}{tool.name}</Text>
+          <Text dimColor>{args}{"  "}{tool.error ?? "failed"}</Text>
+        </Text>
+      );
+    default:
+      return null;
+  }
+}
+
 export function ActiveStreamView({ stream }: ActiveStreamViewProps): ReactNode {
   if (!stream) return null;
 
-  const runningTools = stream.tools.filter((t) => t.status === "running");
   const rendered = useDebouncedMarkdown(stream.content, true);
+  const hasTools = stream.tools.length > 0;
 
   return (
     <Box flexDirection="column">
-      {runningTools.map((tool) => (
-        <Text key={tool.callId}>
-          {"● "}{tool.name}{formatToolArgs(tool.arguments)}
-          <Text dimColor>{"  ... running"}</Text>
-        </Text>
+      {stream.tools.map((tool) => (
+        <ToolStatusIndicator key={tool.callId} tool={tool} />
       ))}
-      {stream.isThinking ? (
+      {stream.isThinking && !hasTools ? (
         <ThinkingIndicator startedAt={stream.startedAt} />
+      ) : stream.isThinking && hasTools ? (
+        <Box>
+          <Text color="cyan">{"  ..."}</Text>
+        </Box>
       ) : stream.content.length > 0 ? (
         <Box flexDirection="column">
           <Text>{"● "}{rendered}</Text>

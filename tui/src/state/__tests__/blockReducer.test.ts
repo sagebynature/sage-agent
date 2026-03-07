@@ -42,13 +42,14 @@ describe("blockReducer", () => {
     expect(state2.activeStream!.content).toBe("Hello world");
   });
 
-  it("STREAM_DELTA is no-op when no activeStream", () => {
+  it("STREAM_DELTA auto-creates activeStream when none exists", () => {
     const state = blockReducer(INITIAL_BLOCK_STATE, {
       type: "STREAM_DELTA",
       delta: "orphan",
     });
-    expect(state).toBe(INITIAL_BLOCK_STATE);
-    expect(state.activeStream).toBeNull();
+    expect(state.activeStream).not.toBeNull();
+    expect(state.activeStream!.content).toBe("orphan");
+    expect(state.activeStream!.isThinking).toBe(false);
   });
 
   it("TOOL_STARTED adds running tool to activeStream", () => {
