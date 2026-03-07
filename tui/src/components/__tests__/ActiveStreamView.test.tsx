@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { render } from "ink-testing-library";
 
 import { ActiveStreamView } from "../ActiveStreamView.js";
@@ -18,8 +18,7 @@ describe("ActiveStreamView", () => {
     expect(frame).toContain("Thinking");
   });
 
-  it("renders streaming content after debounce", async () => {
-    vi.useFakeTimers();
+  it("renders streaming content as plain text immediately", () => {
     const stream: ActiveStream = {
       runId: "r1",
       content: "Hello world",
@@ -28,13 +27,8 @@ describe("ActiveStreamView", () => {
       startedAt: Date.now(),
     };
     const { lastFrame } = render(<ActiveStreamView stream={stream} />);
-
-    // Advance past the 16ms debounce
-    await vi.advanceTimersByTimeAsync(50);
-
     const frame = lastFrame() ?? "";
     expect(frame).toContain("Hello world");
-    vi.useRealTimers();
   });
 
   it("shows running tool", () => {
