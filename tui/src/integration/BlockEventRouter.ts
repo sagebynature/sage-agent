@@ -105,6 +105,22 @@ export class BlockEventRouter {
         });
         return;
 
+      case METHODS.DELEGATION_STARTED:
+        this.dispatch({
+          type: "TOOL_STARTED",
+          name: `delegate → ${typeof params.target === "string" ? params.target : "subagent"}`,
+          callId: `delegation_${Date.now()}`,
+          arguments: { task: typeof params.task === "string" ? params.task : "" },
+        });
+        return;
+
+      case METHODS.DELEGATION_COMPLETED:
+        this.dispatch({
+          type: "ADD_SYSTEM_BLOCK",
+          content: `Subagent ${typeof params.target === "string" ? params.target : ""} completed`,
+        });
+        return;
+
       default:
         return;
     }
