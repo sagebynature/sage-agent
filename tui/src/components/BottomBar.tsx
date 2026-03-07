@@ -1,9 +1,16 @@
 import { Box, Text } from "ink";
 import type { ReactNode } from "react";
-import type { UsageState } from "../types/state.js";
+import type { UsageState, PermissionState } from "../types/state.js";
+import type { ActiveStream } from "../types/blocks.js";
+
+type AppMode = "idle" | "connecting" | "streaming" | "tool" | "permission" | "error";
 
 interface BottomBarProps {
   usage: UsageState;
+  activeStream: ActiveStream | null;
+  permissions: PermissionState[];
+  error: string | null;
+  connectionStatus: "connecting" | "connected" | "disconnected" | "error";
 }
 
 function contextBar(percent: number): string {
@@ -18,8 +25,52 @@ function contextColor(percent: number): string {
   return "green";
 }
 
-export function BottomBar({ usage }: BottomBarProps): ReactNode {
-  const cost = usage.totalCost > 0 ? `$${usage.totalCost.toFixed(2)}` : "";
+function getMode(props: BottomBarProps): AppMode {
+  if (props.connectionStatus === "connecting" || props.connectionStatus === "disconnected") return "connecting";
+  if (props.error) return "error";
+  if (props.permissions.some((p) => p.status === "pending")) return "permission";
+  if (props.activeStream) {
+    const hasRunningTool = props.activeStream.tools.some((t) => t.status === "running");
+    if (hasRunningTool) return "tool";
+    return "streaming";
+  }
+  return "idle";
+}
+
+function ModeIndicator({ props }: { props: BottomBarProps }): ReactNode {
+  const mode = getMode(props);
+
+  switch (mode) {
+    case "connecting":
+      return <Text color="yellow">{"● connecting..."}</Text>;
+    case "streaming":
+      return <Text color="yellow">{"● streaming"}</Text>;
+    case "tool": {
+      const running = props.activeStream?.tools.find((t) => t.status === "running");
+      return <Text color="blue">{"● "}{running?.name ?? "tool"}</Text>;
+    }
+    case "permission":
+      return (
+        <Text>
+          <Text color="green">[y]</Text>{" Once "}
+          <Text color="green">[a]</Text>{" Session "}
+          <Text color="green">[s]</Text>{" Similar "}
+          <Text color="red">[n]</Text>{" Deny "}
+          <Text color="yellow">[e]</Text>{" Edit"}
+        </Text>
+      );
+    case "error":
+      return <Text color="red">{"● error — ESC to dismiss"}</Text>;
+    case "idle":
+      return <Text dimColor>{"/ commands | ctrl+c quit"}</Text>;
+    default:
+      return null;
+  }
+}
+
+export function BottomBar(props: BottomBarProps): ReactNode {
+  const { usage } = props;
+  const cost = `$${usage.totalCost.toFixed(2)}`;
   const model = usage.model || "no model";
   const pct = usage.contextUsagePercent;
 
@@ -30,8 +81,10 @@ export function BottomBar({ usage }: BottomBarProps): ReactNode {
         {" | "}
         <Text color={contextColor(pct)}>{contextBar(pct)}</Text>
         {" "}{pct}%
-        {cost ? ` | ${cost}` : ""}
+        {" | "}{cost}
+        {"  "}
       </Text>
+      <ModeIndicator props={props} />
     </Box>
   );
 }
