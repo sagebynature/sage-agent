@@ -4,17 +4,47 @@ import type { ActiveStream } from "../types/blocks.js";
 import { renderMarkdown } from "../renderer/MarkdownRenderer.js";
 
 const FRAME_DEBOUNCE_MS = 16;
+const ELAPSED_INTERVAL_MS = 1000;
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const SPINNER_INTERVAL_MS = 80;
 
 interface ActiveStreamViewProps {
   stream: ActiveStream | null;
 }
 
-function formatElapsed(startedAt: number): string {
-  const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+function useElapsedTimer(startedAt: number | null): string {
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    if (startedAt === null) return;
+
+    setElapsed(Math.floor((Date.now() - startedAt) / 1000));
+
+    const interval = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startedAt) / 1000));
+    }, ELAPSED_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [startedAt]);
+
   if (elapsed < 60) return `${elapsed}s`;
   const min = Math.floor(elapsed / 60);
   const sec = elapsed % 60;
   return `${min}m ${sec}s`;
+}
+
+function useSpinner(): string {
+  const [frame, setFrame] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setFrame((prev) => (prev + 1) % SPINNER_FRAMES.length);
+    }, SPINNER_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return SPINNER_FRAMES[frame]!;
 }
 
 function formatToolArgs(args: Record<string, unknown>): string {
@@ -51,6 +81,18 @@ function useDebouncedMarkdown(content: string, isStreaming: boolean): string {
   return rendered;
 }
 
+function ThinkingIndicator({ startedAt }: { startedAt: number }): ReactNode {
+  const elapsed = useElapsedTimer(startedAt);
+  const spinner = useSpinner();
+
+  return (
+    <Box>
+      <Text color="cyan">{spinner} Thinking...</Text>
+      <Text dimColor>{" ("}{elapsed}{")"}</Text>
+    </Box>
+  );
+}
+
 export function ActiveStreamView({ stream }: ActiveStreamViewProps): ReactNode {
   if (!stream) return null;
 
@@ -66,10 +108,7 @@ export function ActiveStreamView({ stream }: ActiveStreamViewProps): ReactNode {
         </Text>
       ))}
       {stream.isThinking ? (
-        <Box>
-          <Text color="cyan">{"✻ Thinking..."}</Text>
-          <Text dimColor>{" ("}{formatElapsed(stream.startedAt)}{")"}</Text>
-        </Box>
+        <ThinkingIndicator startedAt={stream.startedAt} />
       ) : stream.content.length > 0 ? (
         <Box flexDirection="column">
           <Text>{"● "}{rendered}</Text>
