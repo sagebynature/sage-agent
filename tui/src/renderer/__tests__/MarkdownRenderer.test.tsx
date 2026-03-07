@@ -102,6 +102,16 @@ describe("MarkdownRenderer", () => {
   });
 });
 
+describe("cached parser", () => {
+  it("reuses cached Marked parser across calls", () => {
+    const result1 = renderMarkdown("**bold**", false);
+    const result2 = renderMarkdown("*italic*", false);
+    // Both should succeed (parser not corrupted by reuse)
+    expect(result1).toContain("bold");
+    expect(result2).toContain("italic");
+  });
+});
+
 describe("markdown helpers", () => {
   it("stripHtml removes tags", () => {
     expect(stripHtml("a <b>bold</b> c")).toBe("a bold c");
