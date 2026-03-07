@@ -258,6 +258,50 @@ describe("blockReducer", () => {
     expect(state.session).toBeNull();
   });
 
+  it("STREAM_END force-resolves running tools to completed", () => {
+    let state = blockReducer(INITIAL_BLOCK_STATE, {
+      type: "STREAM_START",
+      runId: "run-1",
+    });
+    state = blockReducer(state, {
+      type: "TOOL_STARTED",
+      name: "delegate → researcher",
+      callId: "del-1",
+      arguments: { task: "search" },
+    });
+    // Tool never gets TOOL_COMPLETED — simulate stream ending while tool still running
+    state = blockReducer(state, {
+      type: "STREAM_END",
+      status: "success",
+    });
+
+    expect(state.activeStream).toBeNull();
+    const toolBlock = state.completedBlocks.find((b) => b.type === "tool");
+    expect(toolBlock).toBeDefined();
+    expect(toolBlock!.tools![0]!.status).toBe("completed");
+  });
+
+  it("STREAM_END with cancelled status marks running tools as cancelled", () => {
+    let state = blockReducer(INITIAL_BLOCK_STATE, {
+      type: "STREAM_START",
+      runId: "run-1",
+    });
+    state = blockReducer(state, {
+      type: "TOOL_STARTED",
+      name: "shell",
+      callId: "call-1",
+      arguments: {},
+    });
+    state = blockReducer(state, {
+      type: "STREAM_END",
+      status: "cancelled",
+    });
+
+    const toolBlock = state.completedBlocks.find((b) => b.type === "tool");
+    expect(toolBlock!.tools![0]!.status).toBe("failed");
+    expect(toolBlock!.tools![0]!.error).toBe("cancelled");
+  });
+
   it("ADD_SYSTEM_BLOCK appends system block", () => {
     const state = blockReducer(INITIAL_BLOCK_STATE, {
       type: "ADD_SYSTEM_BLOCK",
