@@ -108,34 +108,64 @@ export class BlockEventRouter {
 
       case METHODS.DELEGATION_STARTED: {
         const target = typeof params.target === "string" ? params.target : "subagent";
+        const task = typeof params.task === "string" ? params.task : "";
         const callId = `delegation_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
         this.delegationCallIds.set(target, callId);
+
+        this.dispatch({
+          type: "AGENT_STARTED",
+          agent: {
+            name: target,
+            status: "active",
+            task,
+            depth: 1,
+            children: [],
+            startedAt: Date.now(),
+          },
+        });
         this.dispatch({
           type: "TOOL_STARTED",
           name: `delegate → ${target}`,
           callId,
-          arguments: { task: typeof params.task === "string" ? params.task : "" },
+          arguments: { task },
         });
         return;
       }
 
       case METHODS.DELEGATION_COMPLETED: {
         const target = typeof params.target === "string" ? params.target : "";
+        const result = typeof params.result === "string" ? params.result : undefined;
         const callId = this.delegationCallIds.get(target);
+
+        this.dispatch({
+          type: "AGENT_COMPLETED",
+          name: target,
+          status: "completed",
+        });
+
         if (callId) {
           this.dispatch({
             type: "TOOL_COMPLETED",
             callId,
-            result: typeof params.result === "string" ? params.result : undefined,
+            result,
           });
           this.delegationCallIds.delete(target);
         }
+
         this.dispatch({
           type: "ADD_SYSTEM_BLOCK",
           content: `Subagent ${target} completed`,
         });
         return;
       }
+
+      case METHODS.LLM_TURN_STARTED:
+        // Informational — no state change needed
+        return;
+
+      case METHODS.LLM_TURN_COMPLETED:
+        // Usage update comes via separate USAGE_UPDATE notification
+        return;
 
       default:
         return;
