@@ -82,3 +82,14 @@ export interface AppState {
   isStreaming: boolean;
   error: string | null;
 }
+
+import type { OutputBlock, ActiveStream } from "./blocks.js";
+
+export interface AppStateV2 {
+  completedBlocks: OutputBlock[];
+  activeStream: ActiveStream | null;
+  usage: UsageState;
+  permissions: PermissionState[];
+  error: string | null;
+  session: SessionState | null;
+}
