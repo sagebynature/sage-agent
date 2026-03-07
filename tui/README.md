@@ -52,7 +52,7 @@ sage serve --agent-config AGENTS.md
 ## Test
 
 ```bash
-# Unit + integration tests (342 tests)
+# Unit + integration tests (~190 tests)
 pnpm --filter tui test
 
 # Watch mode
@@ -72,25 +72,25 @@ Type `/` in the input area to open the command palette. 21 commands available:
 | Command | Aliases | Description |
 |---------|---------|-------------|
 | `/help` | `/h`, `/?` | Show help and available commands |
-| `/clear` | `/cls` | Clear screen and scrollback |
-| `/reset` | `/restart` | Reset session context and state |
-| `/session` | | Manage current session |
+| `/clear` | `/cls` | Clear conversation |
+| `/reset` | `/restart` | Reset session and state |
+| `/session` | | Show current session info |
 | `/sessions` | | List and switch sessions |
-| `/compact` | | Toggle compact mode |
-| `/model` | | Show or change current model |
+| `/compact` | | Compact context history |
+| `/model` | | Show current model |
 | `/models` | | List available models |
 | `/usage` | | Show token usage statistics |
 | `/tools` | | List available tools |
-| `/permissions` | `/perms` | Manage tool permissions |
-| `/theme` | | Change UI theme |
-| `/split` | | Split view controls |
-| `/agent` | | Show current agent status |
-| `/agents` | | List available agents |
-| `/plan` | | Show or edit current plan |
-| `/notepad` | `/note` | Open scratchpad |
-| `/bg` | `/background` | Manage background tasks |
-| `/diff` | | Show diff of last changes |
+| `/permissions` | `/perms` | Show permission grants |
+| `/agent` | | Show active agents |
+| `/agents` | | List all agents |
 | `/export` | | Export session transcript |
+| `/theme` | | Change UI theme (planned) |
+| `/split` | | Split view (planned) |
+| `/plan` | | Show plan (planned) |
+| `/notepad` | `/note` | Open scratchpad (planned) |
+| `/bg` | `/background` | Background tasks (planned) |
+| `/diff` | | Show diff (planned) |
 | `/quit` | `/exit`, `/q` | Exit the application |
 
 ## Keyboard Shortcuts
@@ -101,36 +101,22 @@ Type `/` in the input area to open the command palette. 21 commands available:
 |-----|-------------|
 | `Ctrl+↑` | Scroll up |
 | `Ctrl+↓` | Scroll down |
-| `PageUp` | Page up |
-| `PageDown` | Page down |
-| `Home` | Scroll to top |
-| `End` | Scroll to bottom |
 
 ### Session
 
 | Key | Description |
 |-----|-------------|
-| `Ctrl+N` | New session |
-| `Ctrl+Shift+N` | Open session picker |
-| `Ctrl+S` | Save current session |
-
-### View
-
-| Key | Description |
-|-----|-------------|
-| `Ctrl+B` | Toggle sidebar |
-| `Ctrl+L` | Clear output |
-| `Ctrl+\` | Toggle split view |
-| `Ctrl+1..4` | Switch sidebar tabs |
+| `Ctrl+N` | New session (reset) |
+| `Ctrl+L` | Clear conversation |
+| `Ctrl+S` | Save session feedback |
 
 ### Input
 
 | Key | Description |
 |-----|-------------|
 | `Enter` | Send message |
-| `Shift+Enter` | Insert newline |
-| `Ctrl+C` | Cancel / quit |
-| `Ctrl+Z` | Undo |
+| `Ctrl+C` | Cancel stream / quit |
+| `Escape` | Cancel stream / dismiss error |
 | `↑` / `↓` | Input history |
 
 ### Agent
@@ -138,26 +124,11 @@ Type `/` in the input area to open the command palette. 21 commands available:
 | Key | Description |
 |-----|-------------|
 | `Ctrl+P` | Approve pending permission |
-| `Ctrl+K` | Open command palette |
-| `Ctrl+T` | Show tool list |
-| `Ctrl+D` | Dismiss notification |
-
-### Leader Key (`Space` then key)
-
-| Key | Description |
-|-----|-------------|
-| `?` | Show keyboard help |
-| `S` | Save session |
-| `K` | Kill background tasks |
-| `R` | Restart backend |
-| `E` | Export session |
-| `Q` | Quit all |
 
 ## Input Modes
 
-- **`@`** — file autocomplete (e.g. `@src/index.tsx`)
-- **`!`** — inline shell command (e.g. `!git status`)
 - **`/`** — slash command palette
+- **`!`** — inline shell command (e.g. `!git status`)
 
 ## Architecture
 
@@ -166,29 +137,24 @@ tui/src/
 ├── index.tsx              # Entry point (Ink render)
 ├── components/            # React/Ink UI components
 │   ├── App.tsx            # Root provider tree + layout
-│   ├── ChatView.tsx       # Message list (virtualized, last 50 visible)
-│   ├── InputArea.tsx      # Multi-line input with mode detection
-│   ├── StatusBar.tsx      # Header + footer bars (debounced)
-│   ├── SplitView.tsx      # 70/30 chat + sidebar layout
-│   ├── PermissionPrompt.tsx
-│   ├── ToolDisplay.tsx    # 12 tool states (memo'd)
-│   ├── DiffDisplay.tsx    # Inline + side-by-side diffs
+│   ├── ConversationView.tsx # Block-based conversation display
+│   ├── InputPrompt.tsx    # Text input with slash command support
+│   ├── ActiveStreamView.tsx # Live streaming content + tool indicators
+│   ├── BottomBar.tsx      # Status bar (model, cost, context, agents)
+│   ├── PermissionPrompt.tsx # Tool permission approval UI
+│   ├── ToolDisplay.tsx    # Completed tool summary (ToolSummary-based)
 │   ├── SlashCommands.tsx  # Fuzzy-filtered command overlay
-│   ├── ErrorStates.tsx    # Rate limit, context, API key, network, crash
 │   ├── SessionPicker.tsx  # Session resume/history
 │   ├── AgentTree.tsx      # Delegation hierarchy visualization
-│   ├── BackgroundTaskPanel.tsx
-│   ├── PlanningPanel.tsx
-│   └── KeyboardHelp.tsx
-├── state/                 # AppContext (useReducer, 16 action types)
+│   └── blocks/            # StaticBlock, UserBlock, TextBlock
+├── state/                 # BlockContext + blockReducer (block-based state)
 ├── ipc/                   # SageClient (JSON-RPC over stdio)
-├── integration/           # EventRouter, CommandExecutor, LifecycleManager, wiring
+├── integration/           # BlockEventRouter, LifecycleManager
 ├── renderer/              # Markdown + syntax-highlighted code blocks
-├── hooks/                 # useKeyboard, useMarkdownStream, useResizeHandler, etc.
+├── hooks/                 # useInputHistory, useResizeHandler
 ├── commands/              # Slash command registry (21 commands)
-├── config/                # Keybindings (30+ shortcuts)
 ├── utils/                 # Terminal detection, Unicode fallback, string width
-└── types/                 # Protocol, state, events, shortcuts
+└── types/                 # Protocol, state, blocks
 ```
 
 Communication is JSON-RPC only — zero Python imports in the TUI. The backend runs as a subprocess (`sage serve`) reading/writing newline-delimited JSON-RPC 2.0 on stdin/stdout.
