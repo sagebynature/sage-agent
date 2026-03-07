@@ -1,7 +1,7 @@
 import { Box, Text, useInput } from "ink";
 import { type ReactNode, useCallback, useEffect, useRef } from "react";
 import { SageClient } from "../ipc/client.js";
-import { SageClientContext, useSageClient } from "../ipc/hooks.js";
+import { SageClientContext, useSageClient, useClientStatus } from "../ipc/hooks.js";
 import { METHODS } from "../types/protocol.js";
 import { BlockProvider, useBlocks } from "../state/BlockContext.js";
 import { BlockEventRouter } from "../integration/BlockEventRouter.js";
@@ -28,6 +28,7 @@ const NOTIFICATION_METHODS = [
 function AppShell(): ReactNode {
   const { state, dispatch } = useBlocks();
   const client = useSageClient();
+  const connectionStatus = useClientStatus();
   const { width: columns } = useResizeHandler();
   const stateRef = useRef<BlockState>(state);
   stateRef.current = state;
@@ -58,7 +59,7 @@ function AppShell(): ReactNode {
 
   const handleSubmit = useCallback(
     async (text: string) => {
-      if (client.status !== "connected") return;
+      if (connectionStatus !== "connected") return;
 
       dispatch({ type: "SUBMIT_MESSAGE", content: text });
 
@@ -76,7 +77,7 @@ function AppShell(): ReactNode {
         });
       }
     },
-    [client, dispatch],
+    [client, connectionStatus, dispatch],
   );
 
   const handleCancel = useCallback(async () => {
@@ -89,18 +90,84 @@ function AppShell(): ReactNode {
   }, [client, dispatch]);
 
   const handlePermissionRespond = useCallback(
-    async (id: string, decision: PermissionDecision) => {
+    async (id: string, decision: PermissionDecision, modifiedArgs?: Record<string, unknown>) => {
       dispatch({ type: "PERMISSION_RESPOND", id, decision });
       try {
         await client.request(METHODS.PERMISSION_RESPOND, {
           request_id: id,
           decision,
+          ...(modifiedArgs ? { arguments: modifiedArgs } : {}),
         });
       } catch {
         // Best effort
       }
     },
     [client, dispatch],
+  );
+
+  const handleCommand = useCallback(
+    async (commandName: string, _args: string) => {
+      const cmd = commandName.replace(/^\//, "").toLowerCase();
+      let result: string | undefined;
+
+      try {
+        switch (cmd) {
+          case "help":
+            result = "Commands: /help, /model, /models, /tools, /usage, /compact, /sessions, /clear, /quit";
+            break;
+          case "model":
+          case "models": {
+            const r = await client.request("config/get", { key: "model" });
+            result = `Current model: ${JSON.stringify(r, null, 2)}`;
+            break;
+          }
+          case "tools": {
+            const r = await client.request("tools/list", {});
+            result = JSON.stringify(r, null, 2);
+            break;
+          }
+          case "usage":
+            result = [
+              `Model: ${state.usage.model}`,
+              `Prompt tokens: ${state.usage.promptTokens}`,
+              `Completion tokens: ${state.usage.completionTokens}`,
+              `Cost: $${state.usage.totalCost.toFixed(2)}`,
+              `Context: ${state.usage.contextUsagePercent}%`,
+            ].join("\n");
+            break;
+          case "compact": {
+            const r = await client.request("agent/compact", {});
+            result = JSON.stringify(r, null, 2);
+            break;
+          }
+          case "sessions": {
+            const r = await client.request("session/list", {});
+            result = JSON.stringify(r, null, 2);
+            break;
+          }
+          case "clear":
+            await client.request("session/clear", {});
+            dispatch({ type: "SET_SESSION", session: null });
+            dispatch({ type: "CLEAR_ERROR" });
+            result = "Session cleared.";
+            break;
+          case "quit":
+          case "exit":
+          case "q":
+            process.exit(0);
+            break;
+          default:
+            result = `Unknown command: /${cmd}. Type /help for available commands.`;
+        }
+      } catch (err: unknown) {
+        result = `Command failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+
+      if (result) {
+        dispatch({ type: "ADD_SYSTEM_BLOCK", content: result });
+      }
+    },
+    [client, dispatch, state.usage],
   );
 
   useInput((input, key) => {
@@ -132,7 +199,6 @@ function AppShell(): ReactNode {
       {state.error && (
         <Box>
           <Text color="red">{"● Error: "}{state.error}</Text>
-          <Text dimColor>{" (ESC to dismiss)"}</Text>
         </Box>
       )}
       {pendingPermissions.map((perm) => (
@@ -142,8 +208,19 @@ function AppShell(): ReactNode {
           onRespond={handlePermissionRespond}
         />
       ))}
-      <InputPrompt onSubmit={handleSubmit} isActive={!state.activeStream} />
-      <BottomBar usage={state.usage} />
+      <InputPrompt
+        onSubmit={handleSubmit}
+        onCommand={handleCommand}
+        isActive={!state.activeStream && connectionStatus === "connected"}
+        width={columns}
+      />
+      <BottomBar
+        usage={state.usage}
+        activeStream={state.activeStream}
+        permissions={state.permissions}
+        error={state.error}
+        connectionStatus={connectionStatus}
+      />
     </Box>
   );
 }
