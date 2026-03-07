@@ -130,8 +130,8 @@ export function ActiveStreamView({ stream }: ActiveStreamViewProps): ReactNode {
 
   return (
     <Box flexDirection="column">
-      {stream.tools.map((tool) => (
-        <ToolStatusIndicator key={tool.callId} tool={tool} />
+      {stream.tools.map((tool, idx) => (
+        <ToolStatusIndicator key={`${idx}_${tool.callId}`} tool={tool} />
       ))}
       {stream.isThinking && !hasTools ? (
         <ThinkingIndicator startedAt={stream.startedAt} />
