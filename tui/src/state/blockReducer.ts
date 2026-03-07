@@ -8,6 +8,7 @@ import type {
   PermissionState,
   PermissionDecision,
   SessionState,
+  AgentNode,
 } from "../types/state.js";
 
 export interface BlockState {
@@ -17,6 +18,7 @@ export interface BlockState {
   permissions: PermissionState[];
   error: string | null;
   session: SessionState | null;
+  agents: AgentNode[];
 }
 
 export type BlockAction =
@@ -47,7 +49,10 @@ export type BlockAction =
   | { type: "PERMISSION_REQUEST"; permission: PermissionState }
   | { type: "PERMISSION_RESPOND"; id: string; decision: PermissionDecision }
   | { type: "SET_SESSION"; session: SessionState | null }
-  | { type: "ADD_SYSTEM_BLOCK"; content: string };
+  | { type: "ADD_SYSTEM_BLOCK"; content: string }
+  | { type: "AGENT_STARTED"; agent: AgentNode }
+  | { type: "AGENT_COMPLETED"; name: string; status: "completed" | "failed" }
+  | { type: "CLEAR_BLOCKS" };
 
 export const INITIAL_BLOCK_STATE: BlockState = {
   completedBlocks: [],
@@ -62,6 +67,7 @@ export const INITIAL_BLOCK_STATE: BlockState = {
   permissions: [],
   error: null,
   session: null,
+  agents: [],
 };
 
 export function makeId(prefix: string): string {
@@ -172,6 +178,7 @@ export function blockReducer(
         callId: action.callId,
         arguments: action.arguments,
         status: "running",
+        startedAt: Date.now(),
       };
       return {
         ...state,
@@ -222,6 +229,7 @@ export function blockReducer(
         ...state,
         completedBlocks: [...state.completedBlocks, ...newBlocks],
         activeStream: null,
+        permissions: state.permissions.filter((p) => p.status === "pending"),
       };
     }
 
@@ -272,6 +280,35 @@ export function blockReducer(
       return {
         ...state,
         completedBlocks: [...state.completedBlocks, block],
+      };
+    }
+
+    case "AGENT_STARTED": {
+      return {
+        ...state,
+        agents: [...state.agents, action.agent],
+      };
+    }
+
+    case "AGENT_COMPLETED": {
+      return {
+        ...state,
+        agents: state.agents.map((a) =>
+          a.name === action.name
+            ? { ...a, status: action.status, completedAt: Date.now() }
+            : a,
+        ),
+      };
+    }
+
+    case "CLEAR_BLOCKS": {
+      return {
+        ...state,
+        completedBlocks: [],
+        activeStream: null,
+        agents: [],
+        permissions: [],
+        error: null,
       };
     }
 
