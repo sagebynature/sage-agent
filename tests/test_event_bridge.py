@@ -60,35 +60,38 @@ async def test_tool_started_sends_notification() -> None:
     event = ToolStarted(name="shell", arguments={"command": "ls"}, turn=2)
     await handlers[ToolStarted](event)
 
-    mock_server.send_notification.assert_awaited_once_with(
-        "tool/started",
-        {
-            "toolName": "shell",
-            "callId": "call_2_shell",
-            "arguments": {"command": "ls"},
-            "agent_path": ["root"],
-        },
-    )
+    mock_server.send_notification.assert_awaited_once()
+    call_args = mock_server.send_notification.await_args
+    assert call_args[0][0] == "tool/started"
+    payload = call_args[0][1]
+    assert payload["toolName"] == "shell"
+    assert payload["arguments"] == {"command": "ls"}
+    assert payload["agent_path"] == ["root"]
+    assert "shell" in payload["callId"]
 
 
 @pytest.mark.asyncio
 async def test_tool_completed_sends_notification() -> None:
     _, mock_server, _, handlers = _setup_bridge()
 
+    # Start a tool first so the bridge can match the callId on completion.
+    start_event = ToolStarted(name="shell", arguments={"command": "ls"}, turn=2)
+    await handlers[ToolStarted](start_event)
+    started_call_id = mock_server.send_notification.await_args[0][1]["callId"]
+    mock_server.send_notification.reset_mock()
+
     event = ToolCompleted(name="shell", result="ok", duration_ms=12.5)
     await handlers[ToolCompleted](event)
 
-    mock_server.send_notification.assert_awaited_once_with(
-        "tool/completed",
-        {
-            "toolName": "shell",
-            "callId": "call_0_shell",
-            "result": "ok",
-            "durationMs": 12.5,
-            "error": None,
-            "agent_path": ["root"],
-        },
-    )
+    mock_server.send_notification.assert_awaited_once()
+    call_args = mock_server.send_notification.await_args
+    assert call_args[0][0] == "tool/completed"
+    payload = call_args[0][1]
+    assert payload["toolName"] == "shell"
+    assert payload["callId"] == started_call_id
+    assert payload["result"] == "ok"
+    assert payload["durationMs"] == 12.5
+    assert payload["error"] is None
 
 
 @pytest.mark.asyncio

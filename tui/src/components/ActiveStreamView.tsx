@@ -1,5 +1,5 @@
 import { Box, Text } from "ink";
-import { type ReactNode, useEffect, useState } from "react";
+import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
 import type { ActiveStream } from "../types/blocks.js";
 
 const ELAPSED_INTERVAL_MS = 1000;
@@ -8,6 +8,30 @@ const SPINNER_INTERVAL_MS = 80;
 
 interface ActiveStreamViewProps {
   stream: ActiveStream | null;
+}
+
+// Shared spinner context — single timer drives all spinners to prevent flickering.
+const SpinnerContext = createContext("⠋");
+
+function SpinnerProvider({ children }: { children: ReactNode }): ReactNode {
+  const [frame, setFrame] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setFrame((prev) => (prev + 1) % SPINNER_FRAMES.length);
+    }, SPINNER_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <SpinnerContext value={SPINNER_FRAMES[frame]!}>
+      {children}
+    </SpinnerContext>
+  );
+}
+
+function useSpinner(): string {
+  return useContext(SpinnerContext);
 }
 
 function useElapsedTimer(startedAt: number | null): string {
@@ -31,20 +55,6 @@ function useElapsedTimer(startedAt: number | null): string {
   return `${min}m ${sec}s`;
 }
 
-function useSpinner(): string {
-  const [frame, setFrame] = useState(0);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setFrame((prev) => (prev + 1) % SPINNER_FRAMES.length);
-    }, SPINNER_INTERVAL_MS);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  return SPINNER_FRAMES[frame]!;
-}
-
 function formatToolArgs(args: Record<string, unknown>): string {
   if (args.path) return ` ${args.path}`;
   if (args.file_path) return ` ${args.file_path}`;
@@ -53,7 +63,6 @@ function formatToolArgs(args: Record<string, unknown>): string {
   if (args.url) return ` ${args.url}`;
   return "";
 }
-
 
 function ThinkingIndicator({ startedAt }: { startedAt: number }): ReactNode {
   const elapsed = useElapsedTimer(startedAt);
@@ -113,23 +122,34 @@ function ToolStatusIndicator({ tool }: { tool: ToolInfo }): ReactNode {
   }
 }
 
+function StreamContent({ content }: { content: string }): ReactNode {
+  const lines = content.split("\n");
+  return (
+    <Box flexDirection="column">
+      {lines.map((line, i) => (
+        <Text key={i}>{i === 0 ? `● ${line}` : `  ${line}`}</Text>
+      ))}
+    </Box>
+  );
+}
+
 export function ActiveStreamView({ stream }: ActiveStreamViewProps): ReactNode {
   if (!stream) return null;
 
   const hasTools = stream.tools.length > 0;
 
   return (
-    <Box flexDirection="column">
-      {stream.tools.map((tool, idx) => (
-        <ToolStatusIndicator key={`${idx}_${tool.callId}`} tool={tool} />
-      ))}
-      {stream.isThinking && !hasTools ? (
-        <ThinkingIndicator startedAt={stream.startedAt} />
-      ) : stream.content.length > 0 ? (
-        <Box flexDirection="column">
-          <Text>{"● "}{stream.content}</Text>
-        </Box>
-      ) : null}
-    </Box>
+    <SpinnerProvider>
+      <Box flexDirection="column">
+        {stream.tools.map((tool, idx) => (
+          <ToolStatusIndicator key={`${idx}_${tool.callId}`} tool={tool} />
+        ))}
+        {stream.isThinking && !hasTools ? (
+          <ThinkingIndicator startedAt={stream.startedAt} />
+        ) : stream.content.length > 0 ? (
+          <StreamContent content={stream.content} />
+        ) : null}
+      </Box>
+    </SpinnerProvider>
   );
 }
