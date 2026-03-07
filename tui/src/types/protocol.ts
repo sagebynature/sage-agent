@@ -191,4 +191,6 @@ export const METHODS = {
   COMPACTION_STARTED: "compaction/started",
   ERROR: "error",
   RUN_COMPLETED: "run/completed",
+  LLM_TURN_STARTED: "llm/turn_started",
+  LLM_TURN_COMPLETED: "llm/turn_completed",
 } as const;

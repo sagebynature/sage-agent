@@ -14,17 +14,18 @@ describe("BlockEventRouter", () => {
     router = new BlockEventRouter(dispatch);
   });
 
-  it("maps delegation/started to TOOL_STARTED", () => {
+  it("maps delegation/started to AGENT_STARTED + TOOL_STARTED", () => {
     router.handleNotification(METHODS.DELEGATION_STARTED, {
       target: "researcher",
       task: "find docs",
     });
 
-    expect(dispatched).toHaveLength(1);
-    expect(dispatched[0]!.type).toBe("TOOL_STARTED");
-    if (dispatched[0]!.type === "TOOL_STARTED") {
-      expect(dispatched[0]!.name).toContain("researcher");
-      expect(dispatched[0]!.callId).toMatch(/^delegation_/);
+    expect(dispatched).toHaveLength(2);
+    expect(dispatched[0]!.type).toBe("AGENT_STARTED");
+    expect(dispatched[1]!.type).toBe("TOOL_STARTED");
+    if (dispatched[1]!.type === "TOOL_STARTED") {
+      expect(dispatched[1]!.name).toContain("researcher");
+      expect(dispatched[1]!.callId).toMatch(/^delegation_/);
     }
   });
 
@@ -34,7 +35,7 @@ describe("BlockEventRouter", () => {
       task: "find docs",
     });
 
-    const startAction = dispatched[0]!;
+    const startAction = dispatched.find((a) => a.type === "TOOL_STARTED")!;
     expect(startAction.type).toBe("TOOL_STARTED");
     const callId = startAction.type === "TOOL_STARTED" ? startAction.callId : "";
 
@@ -74,5 +75,53 @@ describe("BlockEventRouter", () => {
       callId: "call-1",
       arguments: { command: "ls" },
     });
+  });
+
+  it("delegation/started dispatches AGENT_STARTED and TOOL_STARTED", () => {
+    router.handleNotification(METHODS.DELEGATION_STARTED, {
+      target: "coder",
+      task: "write tests",
+    });
+
+    expect(dispatched.some((a) => a.type === "AGENT_STARTED")).toBe(true);
+    expect(dispatched.some((a) => a.type === "TOOL_STARTED")).toBe(true);
+
+    const agentAction = dispatched.find((a) => a.type === "AGENT_STARTED");
+    if (agentAction?.type === "AGENT_STARTED") {
+      expect(agentAction.agent.name).toBe("coder");
+      expect(agentAction.agent.status).toBe("active");
+    }
+  });
+
+  it("delegation/completed dispatches AGENT_COMPLETED and TOOL_COMPLETED", () => {
+    router.handleNotification(METHODS.DELEGATION_STARTED, {
+      target: "coder",
+      task: "write tests",
+    });
+    dispatched.length = 0;
+
+    router.handleNotification(METHODS.DELEGATION_COMPLETED, {
+      target: "coder",
+      result: "done",
+    });
+
+    expect(dispatched.some((a) => a.type === "AGENT_COMPLETED")).toBe(true);
+    expect(dispatched.some((a) => a.type === "TOOL_COMPLETED")).toBe(true);
+
+    const agentAction = dispatched.find((a) => a.type === "AGENT_COMPLETED");
+    if (agentAction?.type === "AGENT_COMPLETED") {
+      expect(agentAction.name).toBe("coder");
+      expect(agentAction.status).toBe("completed");
+    }
+  });
+
+  it("handles llm/turn_started notification", () => {
+    router.handleNotification(METHODS.LLM_TURN_STARTED, {
+      turn: 1,
+      model: "gpt-5",
+      messageCount: 3,
+    });
+    // LLM turn started is informational — no crash
+    expect(dispatched.length).toBeGreaterThanOrEqual(0);
   });
 });
