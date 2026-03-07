@@ -1,126 +1,95 @@
 import { render } from 'ink-testing-library';
 import { describe, it, expect } from 'vitest';
 import { ToolDisplay } from '../ToolDisplay.js';
-import type { ToolCallState } from '../../types/state.js';
+import type { ToolSummary } from '../../types/blocks.js';
 
-const mockTool = (overrides: Partial<ToolCallState>): ToolCallState => ({
-  id: '1',
+const mockTool = (overrides: Partial<ToolSummary> = {}): ToolSummary => ({
   name: 'test_tool',
-  status: 'completed',
+  callId: 'call-1',
   arguments: {},
+  status: 'completed',
   ...overrides,
 });
 
 describe('ToolDisplay', () => {
-  it('renders running state', () => {
-    const { lastFrame } = render(<ToolDisplay tool={mockTool({ status: 'running', name: 'shell', startedAt: Date.now() })} />);
-    expect(lastFrame()).toContain('shell running...');
-    expect(lastFrame()).toMatch(/\d+ms/);
+  it('renders nothing when tools array is empty', () => {
+    const { lastFrame } = render(<ToolDisplay tools={[]} />);
+    expect(lastFrame()).toBe('');
   });
 
-  it('renders completed success state collapsed by default', () => {
-    const { lastFrame } = render(<ToolDisplay tool={mockTool({ status: 'completed', name: 'shell' })} />);
-    expect(lastFrame()).toContain('✓');
-    expect(lastFrame()).toContain('shell');
+  it('renders single completed tool with name', () => {
+    const { lastFrame } = render(<ToolDisplay tools={[mockTool({ name: 'shell' })]} />);
+    const frame = lastFrame() ?? '';
+    expect(frame).toContain('●');
+    expect(frame).toContain('shell');
   });
 
-  it('renders failed state expanded', () => {
-    const error = 'Something went wrong';
-    const { lastFrame } = render(<ToolDisplay tool={mockTool({ status: 'failed', error })} />);
-    expect(lastFrame()).toContain('✗');
-    expect(lastFrame()).toContain(error);
+  it('renders single failed tool with error', () => {
+    const { lastFrame } = render(
+      <ToolDisplay tools={[mockTool({ name: 'shell', status: 'failed', error: 'Permission denied' })]} />
+    );
+    const frame = lastFrame() ?? '';
+    expect(frame).toContain('✗');
+    expect(frame).toContain('shell');
+    expect(frame).toContain('Permission denied');
   });
 
-  it('renders file_write', () => {
-    const tool = mockTool({
-      name: 'file_write',
-      arguments: { path: '/tmp/test', content: 'hello world' }
-    });
-    const { lastFrame } = render(<ToolDisplay tool={tool} defaultExpanded={true} />);
-    expect(lastFrame()).toContain('Writing to /tmp/test');
-    expect(lastFrame()).toContain('hello world');
+  it('renders tool with path argument', () => {
+    const { lastFrame } = render(
+      <ToolDisplay tools={[mockTool({ name: 'read', arguments: { path: '/tmp/file.txt' } })]} />
+    );
+    expect(lastFrame()).toContain('/tmp/file.txt');
   });
 
-  it('renders file_edit', () => {
-    const tool = mockTool({
-      name: 'file_edit',
-      arguments: { path: '/tmp/test', old_string: 'foo', new_string: 'bar' }
-    });
-    const { lastFrame } = render(<ToolDisplay tool={tool} defaultExpanded={true} />);
-    expect(lastFrame()).toContain('Editing /tmp/test');
-    expect(lastFrame()).toContain('foo');
+  it('renders tool with command argument', () => {
+    const { lastFrame } = render(
+      <ToolDisplay tools={[mockTool({ name: 'shell', arguments: { command: 'ls -la' } })]} />
+    );
+    expect(lastFrame()).toContain('ls -la');
   });
 
-  it('renders shell command', () => {
-    const tool = mockTool({
-      name: 'shell',
-      arguments: { command: 'ls -la' },
-      result: 'file1\nfile2'
-    });
-    const { lastFrame } = render(<ToolDisplay tool={tool} defaultExpanded={true} />);
-    expect(lastFrame()).toContain('$ ls -la');
-    expect(lastFrame()).toContain('file1');
+  it('renders tool with duration', () => {
+    const { lastFrame } = render(
+      <ToolDisplay tools={[mockTool({ name: 'shell', durationMs: 1500 })]} />
+    );
+    expect(lastFrame()).toContain('1.5s');
   });
 
-  it('renders http_request', () => {
-    const tool = mockTool({
-      name: 'http_request',
-      arguments: { method: 'GET', url: 'https://example.com' },
-      result: '<html>...</html>'
-    });
-    const { lastFrame } = render(<ToolDisplay tool={tool} defaultExpanded={true} />);
-    expect(lastFrame()).toContain('GET https://example.com');
+  it('renders duration in ms when under 1 second', () => {
+    const { lastFrame } = render(
+      <ToolDisplay tools={[mockTool({ name: 'read', durationMs: 150 })]} />
+    );
+    expect(lastFrame()).toContain('150ms');
   });
 
-  it('renders delegation', () => {
-    const tool = mockTool({
-      name: 'delegate',
-      arguments: { agent: 'researcher', task: 'find facts' },
-      result: 'Found facts'
-    });
-    const { lastFrame } = render(<ToolDisplay tool={tool} defaultExpanded={true} />);
-    expect(lastFrame()).toContain('Delegating to researcher');
-    expect(lastFrame()).toContain('Task: find facts');
+  it('renders multiple tools of same name as count', () => {
+    const tools = [
+      mockTool({ name: 'read', callId: 'c1' }),
+      mockTool({ name: 'read', callId: 'c2' }),
+      mockTool({ name: 'read', callId: 'c3' }),
+    ];
+    const { lastFrame } = render(<ToolDisplay tools={tools} />);
+    expect(lastFrame()).toContain('read (3 calls)');
   });
 
-  it('renders background_task', () => {
-    const tool = mockTool({
-      name: 'delegate_background',
-      arguments: { agent_name: 'helper' },
-      result: 'task_123'
-    });
-    const { lastFrame } = render(<ToolDisplay tool={tool} defaultExpanded={true} />);
-    expect(lastFrame()).toContain('Background Task ID: task_123');
-    expect(lastFrame()).toContain('Agent: helper');
+  it('renders multiple tools of different names as generic count', () => {
+    const tools = [
+      mockTool({ name: 'read', callId: 'c1' }),
+      mockTool({ name: 'write', callId: 'c2' }),
+    ];
+    const { lastFrame } = render(<ToolDisplay tools={tools} />);
+    expect(lastFrame()).toContain('2 tool calls');
   });
 
-  it('renders memory operation', () => {
-    const tool = mockTool({
-      name: 'memory_store',
-      arguments: { key: 'user_pref', value: 'dark_mode' },
-      result: 'Stored successfully'
-    });
-    const { lastFrame } = render(<ToolDisplay tool={tool} defaultExpanded={true} />);
-    expect(lastFrame()).toContain('Stored: user_pref');
-  });
-
-  it('renders git operation', () => {
-    const tool = mockTool({
-      name: 'git_status',
-      arguments: {},
-      result: 'On branch main'
-    });
-    const { lastFrame } = render(<ToolDisplay tool={tool} defaultExpanded={true} />);
-    expect(lastFrame()).toContain('On branch main');
-  });
-
-  it('renders mcp operation', () => {
-    const tool = mockTool({
-      name: 'mcp_filesystem',
-      arguments: { op: 'list' },
-      result: '[]'
-    });
-    const { lastFrame } = render(<ToolDisplay tool={tool} defaultExpanded={true} />);
-    expect(lastFrame()).toContain('op: list');
+  it('shows individual tool status lines for multiple tools', () => {
+    const tools = [
+      mockTool({ name: 'read', callId: 'c1', arguments: { path: '/a' } }),
+      mockTool({ name: 'read', callId: 'c2', status: 'failed', error: 'not found' }),
+    ];
+    const { lastFrame } = render(<ToolDisplay tools={tools} />);
+    const frame = lastFrame() ?? '';
+    expect(frame).toContain('✓');
+    expect(frame).toContain('✗');
+    expect(frame).toContain('not found');
   });
 });
