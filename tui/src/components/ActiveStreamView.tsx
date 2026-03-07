@@ -67,16 +67,33 @@ function ThinkingIndicator({ startedAt }: { startedAt: number }): ReactNode {
   );
 }
 
-function ToolStatusIndicator({ tool }: { tool: { status: string; name: string; arguments: Record<string, unknown>; durationMs?: number; error?: string } }): ReactNode {
+interface ToolInfo {
+  status: string;
+  name: string;
+  arguments: Record<string, unknown>;
+  durationMs?: number;
+  error?: string;
+}
+
+function RunningToolIndicator({ tool }: { tool: ToolInfo }): ReactNode {
+  const spinner = useSpinner();
+  const args = formatToolArgs(tool.arguments);
+  const isDelegate = tool.name.startsWith("delegate");
+  const color = isDelegate ? "magenta" : "blue";
+
+  return (
+    <Text>
+      <Text color={color}>{spinner} {tool.name}</Text>
+      <Text dimColor>{args}</Text>
+    </Text>
+  );
+}
+
+function ToolStatusIndicator({ tool }: { tool: ToolInfo }): ReactNode {
   const args = formatToolArgs(tool.arguments);
   switch (tool.status) {
     case "running":
-      return (
-        <Text>
-          <Text color="blue">{"⏵ "}{tool.name}</Text>
-          <Text dimColor>{args}{"  ... running"}</Text>
-        </Text>
-      );
+      return <RunningToolIndicator tool={tool} />;
     case "completed":
       return (
         <Text dimColor>
@@ -108,10 +125,6 @@ export function ActiveStreamView({ stream }: ActiveStreamViewProps): ReactNode {
       ))}
       {stream.isThinking && !hasTools ? (
         <ThinkingIndicator startedAt={stream.startedAt} />
-      ) : stream.isThinking && hasTools ? (
-        <Box>
-          <Text color="cyan">{"  ..."}</Text>
-        </Box>
       ) : stream.content.length > 0 ? (
         <Box flexDirection="column">
           <Text>{"● "}{stream.content}</Text>
