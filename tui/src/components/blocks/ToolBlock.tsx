@@ -43,7 +43,7 @@ function formatToolArgs(tool: ToolSummary): string {
   return "";
 }
 
-export function ToolBlock({ name, tools }: ToolBlockProps): ReactNode {
+export function ToolBlock({ tools }: ToolBlockProps): ReactNode {
   const summary = toolSummaryLine(tools);
   const subItems = tools.length > 1 ? tools : [];
 
