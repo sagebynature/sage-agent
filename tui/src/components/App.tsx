@@ -109,49 +109,159 @@ function AppShell(): ReactNode {
 
       try {
         switch (cmd) {
-          case "help":
-            result = "Commands: /help, /model, /models, /tools, /usage, /compact, /sessions, /clear, /quit";
-            break;
-          case "model":
-          case "models": {
-            const r = await client.request("config/get", { key: "model" });
-            result = `Current model: ${JSON.stringify(r, null, 2)}`;
+          case "help": {
+            const commands = [
+              "/help — Show available commands",
+              "/clear — Clear conversation",
+              "/reset — Reset session and state",
+              "/session — Show current session info",
+              "/sessions — List and switch sessions",
+              "/compact — Compact context history",
+              "/model — Show current model",
+              "/models — List available models",
+              "/usage — Show token usage statistics",
+              "/tools — List available tools",
+              "/permissions — Show permission grants",
+              "/agent — Show active agents",
+              "/agents — List all agents",
+              "/export — Export session transcript",
+              "/theme — Change UI theme (planned)",
+              "/split — Split view (planned)",
+              "/plan — Show plan (planned)",
+              "/notepad — Open scratchpad (planned)",
+              "/bg — Background tasks (planned)",
+              "/diff — Show diff (planned)",
+              "/quit — Exit",
+            ];
+            result = commands.join("\n");
             break;
           }
-          case "tools": {
-            const r = await client.request("tools/list", {});
-            result = JSON.stringify(r, null, 2);
+          case "clear":
+            try {
+              await client.request("session/clear", {
+                ...(stateRef.current.session?.id
+                  ? { sessionId: stateRef.current.session.id }
+                  : {}),
+              });
+            } catch { /* best effort */ }
+            dispatch({ type: "CLEAR_BLOCKS" });
+            result = "Conversation cleared.";
             break;
-          }
-          case "usage":
-            result = [
-              `Model: ${state.usage.model}`,
-              `Prompt tokens: ${state.usage.promptTokens}`,
-              `Completion tokens: ${state.usage.completionTokens}`,
-              `Cost: $${state.usage.totalCost.toFixed(2)}`,
-              `Context: ${state.usage.contextUsagePercent}%`,
-            ].join("\n");
+          case "reset":
+          case "restart":
+            try {
+              await client.request("session/clear", {});
+            } catch { /* best effort */ }
+            dispatch({ type: "CLEAR_BLOCKS" });
+            dispatch({ type: "SET_SESSION", session: null });
+            dispatch({
+              type: "UPDATE_USAGE",
+              usage: { promptTokens: 0, completionTokens: 0, totalCost: 0, model: "", contextUsagePercent: 0 },
+            });
+            result = "Session reset.";
             break;
-          case "compact": {
-            const r = await client.request("agent/compact", {});
-            result = JSON.stringify(r, null, 2);
+          case "session":
+            result = stateRef.current.session
+              ? `Session: ${stateRef.current.session.id}\nAgent: ${stateRef.current.session.agentName}\nMessages: ${stateRef.current.session.messageCount}`
+              : "No active session.";
             break;
-          }
           case "sessions": {
             const r = await client.request("session/list", {});
             result = JSON.stringify(r, null, 2);
             break;
           }
-          case "clear":
-            await client.request("session/clear", {});
-            dispatch({ type: "SET_SESSION", session: null });
-            dispatch({ type: "CLEAR_ERROR" });
-            result = "Session cleared.";
+          case "compact": {
+            const r = await client.request("agent/compact", {});
+            result = JSON.stringify(r, null, 2);
             break;
+          }
+          case "model": {
+            const r = await client.request("config/get", { key: "model" });
+            result = `Current model: ${JSON.stringify(r)}`;
+            break;
+          }
+          case "models": {
+            const r = await client.request("config/get", { key: "model" });
+            result = `Current model: ${JSON.stringify(r)}`;
+            break;
+          }
+          case "usage":
+            result = [
+              `Model: ${stateRef.current.usage.model || "unknown"}`,
+              `Prompt tokens: ${stateRef.current.usage.promptTokens}`,
+              `Completion tokens: ${stateRef.current.usage.completionTokens}`,
+              `Cost: $${stateRef.current.usage.totalCost.toFixed(4)}`,
+              `Context: ${stateRef.current.usage.contextUsagePercent}%`,
+            ].join("\n");
+            break;
+          case "tools": {
+            const r = await client.request("tools/list", {});
+            result = JSON.stringify(r, null, 2);
+            break;
+          }
+          case "permissions":
+          case "perms": {
+            const pending = stateRef.current.permissions.filter((p) => p.status === "pending");
+            result = pending.length === 0
+              ? "No pending permission requests."
+              : pending.map((p) => `[${p.status}] ${p.tool}: ${JSON.stringify(p.arguments)}`).join("\n");
+            break;
+          }
+          case "agent": {
+            const active = stateRef.current.agents.filter((a) => a.status === "active");
+            result = active.length === 0
+              ? "No active agents."
+              : active.map((a) => `${a.name} [${a.status}] — ${a.task ?? "no task"}`).join("\n");
+            break;
+          }
+          case "agents": {
+            result = stateRef.current.agents.length === 0
+              ? "No agents."
+              : stateRef.current.agents.map((a) => `${a.name} [${a.status}]`).join("\n");
+            break;
+          }
+          case "export": {
+            const lines = ["# Session Export", ""];
+            for (const block of stateRef.current.completedBlocks) {
+              if (block.type === "user") {
+                lines.push(`## You\n${block.content}\n`);
+              } else if (block.type === "text") {
+                lines.push(`## Assistant\n${block.content}\n`);
+              } else if (block.type === "tool") {
+                lines.push(`## Tool: ${block.content}\n`);
+              } else if (block.type === "system") {
+                lines.push(`> ${block.content}\n`);
+              }
+            }
+            result = lines.join("\n");
+            break;
+          }
           case "quit":
           case "exit":
           case "q":
+            client.dispose();
             process.exit(0);
+            break;
+          // Honest stubs
+          case "theme":
+            result = "Theme switching is not yet available.";
+            break;
+          case "split":
+            result = "Split view is not yet available.";
+            break;
+          case "plan":
+            result = "Plan view is not yet available.";
+            break;
+          case "notepad":
+          case "note":
+            result = "Notepad is not yet available.";
+            break;
+          case "bg":
+          case "background":
+            result = "No background tasks tracked.";
+            break;
+          case "diff":
+            result = "Diff view is not yet available.";
             break;
           default:
             result = `Unknown command: /${cmd}. Type /help for available commands.`;
@@ -164,7 +274,7 @@ function AppShell(): ReactNode {
         dispatch({ type: "ADD_SYSTEM_BLOCK", content: result });
       }
     },
-    [client, dispatch, state.usage],
+    [client, dispatch],
   );
 
   useInput((input, key) => {
