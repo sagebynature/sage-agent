@@ -49,7 +49,7 @@ describe("ActiveStreamView", () => {
     const { lastFrame } = render(<ActiveStreamView stream={stream} />);
     const frame = lastFrame() ?? "";
     expect(frame).toContain("Read");
-    expect(frame).toContain("running");
+    expect(frame).toContain("file.txt");
   });
 
   it("returns null when stream is null", () => {
