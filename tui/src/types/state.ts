@@ -1,7 +1,3 @@
-export type ViewMode = "focused" | "split" | "dashboard";
-
-export type ToolStatus = "pending" | "running" | "completed" | "failed";
-
 export type PermissionDecision =
   | "allow_once"
   | "allow_always"
@@ -12,17 +8,6 @@ export type PermissionDecision =
 export type PermissionStatus = "pending" | "approved" | "denied";
 
 export type AgentStatus = "idle" | "active" | "completed" | "failed";
-
-export interface ToolCallState {
-  id: string;
-  name: string;
-  status: ToolStatus;
-  arguments: Record<string, unknown>;
-  result?: string;
-  error?: string;
-  startedAt?: number;
-  completedAt?: number;
-}
 
 export interface PermissionState {
   id: string;
