@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { blockReducer, INITIAL_BLOCK_STATE } from "../blockReducer.js";
-import type { BlockAction, BlockState } from "../blockReducer.js";
+import type { BlockAction } from "../blockReducer.js";
 import type { PermissionState } from "../../types/state.js";
 
 describe("blockReducer", () => {
@@ -8,9 +8,9 @@ describe("blockReducer", () => {
     const action: BlockAction = { type: "SUBMIT_MESSAGE", content: "hello" };
     const state = blockReducer(INITIAL_BLOCK_STATE, action);
     expect(state.completedBlocks).toHaveLength(1);
-    expect(state.completedBlocks[0].type).toBe("user");
-    expect(state.completedBlocks[0].content).toBe("hello");
-    expect(state.completedBlocks[0].id).toMatch(/^user_/);
+    expect(state.completedBlocks[0]!.type).toBe("user");
+    expect(state.completedBlocks[0]!.content).toBe("hello");
+    expect(state.completedBlocks[0]!.id).toMatch(/^user_/);
   });
 
   it("STREAM_START creates activeStream with isThinking true", () => {
@@ -88,7 +88,7 @@ describe("blockReducer", () => {
       result: "file contents",
       durationMs: 150,
     });
-    const tool = state.activeStream!.tools[0];
+    const tool = state.activeStream!.tools[0]!;
     expect(tool.status).toBe("completed");
     expect(tool.result).toBe("file contents");
     expect(tool.durationMs).toBe(150);
@@ -111,7 +111,7 @@ describe("blockReducer", () => {
       callId: "call-2",
       error: "Permission denied",
     });
-    const tool = state.activeStream!.tools[0];
+    const tool = state.activeStream!.tools[0]!;
     expect(tool.status).toBe("failed");
     expect(tool.error).toBe("Permission denied");
   });
@@ -143,11 +143,11 @@ describe("blockReducer", () => {
 
     expect(state.activeStream).toBeNull();
     expect(state.completedBlocks).toHaveLength(2);
-    expect(state.completedBlocks[0].type).toBe("tool");
-    expect(state.completedBlocks[0].content).toBe("read_file");
-    expect(state.completedBlocks[0].tools).toHaveLength(1);
-    expect(state.completedBlocks[1].type).toBe("text");
-    expect(state.completedBlocks[1].content).toBe("Here is the file.");
+    expect(state.completedBlocks[0]!.type).toBe("tool");
+    expect(state.completedBlocks[0]!.content).toBe("read_file");
+    expect(state.completedBlocks[0]!.tools).toHaveLength(1);
+    expect(state.completedBlocks[1]!.type).toBe("text");
+    expect(state.completedBlocks[1]!.content).toBe("Here is the file.");
   });
 
   it("STREAM_END with error appends error block", () => {
@@ -168,10 +168,10 @@ describe("blockReducer", () => {
     expect(state.activeStream).toBeNull();
     // text block from "partial " + error block
     expect(state.completedBlocks).toHaveLength(2);
-    expect(state.completedBlocks[0].type).toBe("text");
-    expect(state.completedBlocks[0].content).toBe("partial");
-    expect(state.completedBlocks[1].type).toBe("error");
-    expect(state.completedBlocks[1].content).toBe("Connection lost");
+    expect(state.completedBlocks[0]!.type).toBe("text");
+    expect(state.completedBlocks[0]!.content).toBe("partial");
+    expect(state.completedBlocks[1]!.type).toBe("error");
+    expect(state.completedBlocks[1]!.content).toBe("Connection lost");
   });
 
   it("UPDATE_USAGE updates usage state", () => {
@@ -210,7 +210,7 @@ describe("blockReducer", () => {
       permission,
     });
     expect(state.permissions).toHaveLength(1);
-    expect(state.permissions[0].status).toBe("pending");
+    expect(state.permissions[0]!.status).toBe("pending");
 
     // approve
     state = blockReducer(state, {
@@ -218,7 +218,7 @@ describe("blockReducer", () => {
       id: "perm-1",
       decision: "allow_once",
     });
-    expect(state.permissions[0].status).toBe("approved");
+    expect(state.permissions[0]!.status).toBe("approved");
 
     // add another and deny
     const perm2: PermissionState = {
@@ -237,7 +237,7 @@ describe("blockReducer", () => {
       id: "perm-2",
       decision: "deny",
     });
-    expect(state.permissions[1].status).toBe("denied");
+    expect(state.permissions[1]!.status).toBe("denied");
   });
 
   it("SET_SESSION replaces session", () => {
@@ -263,8 +263,8 @@ describe("blockReducer", () => {
       content: "Agent initialized",
     });
     expect(state.completedBlocks).toHaveLength(1);
-    expect(state.completedBlocks[0].type).toBe("system");
-    expect(state.completedBlocks[0].content).toBe("Agent initialized");
-    expect(state.completedBlocks[0].id).toMatch(/^system_/);
+    expect(state.completedBlocks[0]!.type).toBe("system");
+    expect(state.completedBlocks[0]!.content).toBe("Agent initialized");
+    expect(state.completedBlocks[0]!.id).toMatch(/^system_/);
   });
 });

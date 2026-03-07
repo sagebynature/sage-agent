@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render } from "ink-testing-library";
-import React from "react";
+
 import { ActiveStreamView } from "../ActiveStreamView.js";
 import type { ActiveStream } from "../../types/blocks.js";
 

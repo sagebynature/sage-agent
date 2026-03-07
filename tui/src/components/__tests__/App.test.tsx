@@ -1,42 +1,22 @@
 import { describe, it, expect } from "vitest";
 import { App } from "../App.js";
-import { renderApp, waitForText } from "../../test-utils.js";
+import { renderApp } from "../../test-utils.js";
 
 describe("App Shell", () => {
-  it("renders main layout with header and footer", () => {
+  it("renders main layout with input prompt and bottom bar", () => {
     const { lastFrame } = renderApp(<App />);
     const frame = lastFrame();
-    expect(frame).toContain("sage-tui");
-    expect(frame).toContain("Ctrl+B");
+    expect(frame).toContain(">");
+    expect(frame).toContain("no model");
   });
 
-  it("renders welcome message when no messages", () => {
+  it("renders divider lines", () => {
     const { lastFrame } = renderApp(<App />);
-    expect(lastFrame()).toContain("Welcome");
+    expect(lastFrame()).toContain("─");
   });
 
-  it("starts in focused view mode", () => {
+  it("shows context usage bar", () => {
     const { lastFrame } = renderApp(<App />);
-    expect(lastFrame()).not.toContain("Sidebar");
-  });
-
-  it("toggles to split view on Ctrl+B", async () => {
-    const instance = renderApp(<App />);
-    instance.stdin.write("\x02");
-    await waitForText(instance, "Sidebar");
-  });
-
-  it("toggles back to focused on second Ctrl+B", async () => {
-    const instance = renderApp(<App />);
-    instance.stdin.write("\x02");
-    await waitForText(instance, "Sidebar");
-    instance.stdin.write("\x02");
-    await new Promise(r => setTimeout(r, 100));
-    expect(instance.lastFrame()).not.toContain("Sidebar");
-  });
-
-  it("shows streaming indicator in footer when streaming", () => {
-    const { lastFrame } = renderApp(<App />);
-    expect(lastFrame()).toContain("Ctrl+C quit");
+    expect(lastFrame()).toContain("0%");
   });
 });

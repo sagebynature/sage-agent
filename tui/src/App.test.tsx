@@ -8,13 +8,13 @@ describe("App", () => {
     expect(lastFrame()).toBeTruthy();
   });
 
-  it("displays sage-tui text", () => {
+  it("displays input prompt", () => {
     const { lastFrame } = renderApp(<App />);
-    expect(lastFrame()).toContain("sage-tui");
+    expect(lastFrame()).toContain(">");
   });
 
-  it("displays welcome message", () => {
+  it("displays bottom bar with model info", () => {
     const { lastFrame } = renderApp(<App />);
-    expect(lastFrame()).toContain("Welcome");
+    expect(lastFrame()).toContain("no model");
   });
 });
