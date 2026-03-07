@@ -74,15 +74,27 @@ function resolvePermissionStatus(
   return decision === "deny" ? "denied" : "approved";
 }
 
-function flattenStream(stream: ActiveStream): OutputBlock[] {
+function flattenStream(
+  stream: ActiveStream,
+  endStatus: "success" | "error" | "cancelled",
+): OutputBlock[] {
   const blocks: OutputBlock[] = [];
   const now = Date.now();
   for (const tool of stream.tools) {
+    const resolvedTool: ToolSummary =
+      tool.status === "running"
+        ? {
+            ...tool,
+            status: endStatus === "cancelled" ? "failed" : "completed",
+            error: endStatus === "cancelled" ? "cancelled" : tool.error,
+            durationMs: now - stream.startedAt,
+          }
+        : tool;
     blocks.push({
       id: makeId("tool"),
       type: "tool",
-      content: tool.name,
-      tools: [tool],
+      content: resolvedTool.name,
+      tools: [resolvedTool],
       timestamp: now,
     });
   }
@@ -196,7 +208,7 @@ export function blockReducer(
     case "STREAM_END": {
       const newBlocks: OutputBlock[] = [];
       if (state.activeStream) {
-        newBlocks.push(...flattenStream(state.activeStream));
+        newBlocks.push(...flattenStream(state.activeStream, action.status));
       }
       if (action.status === "error" && action.error) {
         newBlocks.push({
