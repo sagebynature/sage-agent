@@ -185,7 +185,6 @@ export class SageClient extends EventEmitter {
     try {
       parsed = JSON.parse(line);
     } catch {
-      console.error("Invalid JSON-RPC line from sage process", line);
       return;
     }
 
@@ -242,7 +241,7 @@ export class SageClient extends EventEmitter {
     const payload = `${JSON.stringify(data)}\n`;
     this.process.stdin.write(payload, (error) => {
       if (error) {
-        console.error("Failed to write to sage process stdin", error);
+        this.emit("error", new Error(`Failed to write to sage process: ${error.message}`));
       }
     });
   }
