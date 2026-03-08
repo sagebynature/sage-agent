@@ -16,7 +16,7 @@ export function ConversationView({
   width,
 }: ConversationViewProps): ReactNode {
   return (
-    <Box flexDirection="column" width={width}>
+    <Box flexDirection="column" width={width} paddingX={1}>
       <Static items={completedBlocks}>
         {(block) => (
           <Box key={block.id} flexDirection="column">

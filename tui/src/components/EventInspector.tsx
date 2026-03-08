@@ -26,6 +26,7 @@ export function EventInspector({ event, maxHeight }: EventInspectorProps): React
 
   return (
     <Box
+      flexGrow={1}
       flexDirection="column"
       borderStyle="round"
       borderColor="gray"
