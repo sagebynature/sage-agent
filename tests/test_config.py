@@ -309,6 +309,7 @@ class TestMCPServerConfig:
         assert cfg.url is None
         assert cfg.args == []
         assert cfg.env == {}
+        assert cfg.timeout == 10.0
 
     def test_invalid_transport_rejected(self) -> None:
         with pytest.raises(Exception):  # noqa: B017

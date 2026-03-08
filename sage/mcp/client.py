@@ -67,12 +67,14 @@ class MCPClient:
         url: str | None = None,
         args: list[str] | None = None,
         env: dict[str, str] | None = None,
+        initialize_timeout: float = 10.0,
     ) -> None:
         self._transport = transport
         self._command = command
         self._url = url
         self._args = args or []
         self._env = env or {}
+        self._initialize_timeout = initialize_timeout
         self._session: ClientSession | None = None
         self._exit_stack = AsyncExitStack()
 
@@ -171,3 +173,8 @@ class MCPClient:
     def is_connected(self) -> bool:
         """Whether the client is currently connected."""
         return self._session is not None
+
+    @property
+    def initialize_timeout(self) -> float:
+        """Maximum time allowed for connect/discovery during agent startup."""
+        return self._initialize_timeout
