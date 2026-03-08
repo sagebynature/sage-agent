@@ -1,6 +1,6 @@
 ---
 name: summarizer
-model: azure_ai/claude-haiku-4-5
+# model: azure_ai/claude-haiku-4-5
 max_turns: 5
 model_params:
   temperature: 0.3

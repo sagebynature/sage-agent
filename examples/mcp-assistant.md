@@ -1,6 +1,6 @@
 ---
 name: mcp-assistant
-model: azure_ai/claude-sonnet-4-6
+# model: azure_ai/claude-sonnet-4-6
 model_params:
   temperature: 0.0
   max_tokens: 4096
