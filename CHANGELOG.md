@@ -2,6 +2,293 @@
 
 <!-- version list -->
 
+## v1.6.0-rc.3 (2026-03-08)
+
+### Bug Fixes
+
+- Cap event pane height to terminal rows to prevent flickering
+  ([`1a40c59`](https://github.com/sagebynature/sage-agent/commit/1a40c590f7fa9d91d59d8c190ac4962a42add8be))
+
+- Clean up barrel export for deleted lifecycle.ts and fix TS strict errors
+  ([`2e868de`](https://github.com/sagebynature/sage-agent/commit/2e868deb56a0d1d3e8389840f1fde51593e37baf))
+
+- Enhance input handling in App component
+  ([`fb1c6df`](https://github.com/sagebynature/sage-agent/commit/fb1c6df03859e961ab766e835b02d91e60748a50))
+
+- Enhance layout of ConversationView, EventInspector, and EventTimeline components
+  ([`7de6885`](https://github.com/sagebynature/sage-agent/commit/7de688590170b5b7458ad7500b6106085d7686c2))
+
+- Improve event pane responsiveness and layout adjustments
+  ([`169e04b`](https://github.com/sagebynature/sage-agent/commit/169e04bb915ceb4147de2f75b2f2fed870a45090))
+
+- Optimize event handling and component performance
+  ([`d7837db`](https://github.com/sagebynature/sage-agent/commit/d7837db7732c349545832af5f25ad858095fa526))
+
+- Resolve assistant message disappearance caused by Ink Static throttle race
+  ([`9e67403`](https://github.com/sagebynature/sage-agent/commit/9e67403a98e0983393b7d0cee76ea13e1b8f7735))
+
+- Restructure event pane layout to work with Ink's Static/dynamic split
+  ([`76a336e`](https://github.com/sagebynature/sage-agent/commit/76a336ea9490bb18f4ba01be7be31c9ed12652d2))
+
+- Typo
+  ([`9bb9079`](https://github.com/sagebynature/sage-agent/commit/9bb9079b8e22cfdee26cae3954f2faa4091d1df9))
+
+- **config**: Raise ConfigError for non-dict frontmatter memory value
+  ([`d9f20fb`](https://github.com/sagebynature/sage-agent/commit/d9f20fb8b20a69b3e1da9deadf811a45036ce63e))
+
+- **memory**: Add timeout and response-parsing guards to OllamaEmbedding
+  ([`fd32b96`](https://github.com/sagebynature/sage-agent/commit/fd32b961751971b9acc577fa628d36667d18f0d2))
+
+- **memory**: Broaden OllamaEmbedding error handling to cover TransportError and TypeError
+  ([`a8e549a`](https://github.com/sagebynature/sage-agent/commit/a8e549aa0949ed2620c2659eaa1e6223fd698fa8))
+
+- **memory**: Guard whitespace-only model name in create_embedding
+  ([`f35a46e`](https://github.com/sagebynature/sage-agent/commit/f35a46e3d05f2daf40f49ff8abbae243244bfadb))
+
+- **tools**: Simplify web_fetch to use direct URL instead of IP-pinned connection
+  ([`4237622`](https://github.com/sagebynature/sage-agent/commit/42376221ed8f3fffb5d2d3aaa3de608226f4dc77))
+
+- **tui**: Disable text input when permission prompt is active
+  ([`8ae3818`](https://github.com/sagebynature/sage-agent/commit/8ae3818b15887920c0d30e90c8750338a7a6b001))
+
+- **tui**: Fix flickering, tool completion tracking, and streaming line breaks
+  ([`254afab`](https://github.com/sagebynature/sage-agent/commit/254afab962dcbc12215fc6ee9b16e89d66733d37))
+
+- **tui**: Fix race condition dropping tool events, add delegation support, show all tool activity
+  ([`238c8b6`](https://github.com/sagebynature/sage-agent/commit/238c8b666c7b9f155a7c39d80d7c6c7d34efbc14))
+
+- **tui**: Force-resolve running tools on stream end
+  ([`74c4700`](https://github.com/sagebynature/sage-agent/commit/74c4700ecbc5cb01b242af222db358714965c7d9))
+
+- **tui**: Live elapsed timer, animated spinner, cancel hints
+  ([`4b1c95f`](https://github.com/sagebynature/sage-agent/commit/4b1c95ff58aa5e2edad4957e7153041217c2efe3))
+
+- **tui**: Restore lost features and fix critical UX issues
+  ([`92a1494`](https://github.com/sagebynature/sage-agent/commit/92a149423b2a5ad8dd9f9bdfdb86fde308537bb5))
+
+- **tui**: Suppress console.error in IPC client, route through event emitter
+  ([`a6a3892`](https://github.com/sagebynature/sage-agent/commit/a6a3892256fce3565daf0fb4371beb15b0501abf))
+
+- **tui**: Track delegation callIds so completion marks tool as done
+  ([`ef053f7`](https://github.com/sagebynature/sage-agent/commit/ef053f76bc5c1d76c3c511be8b4a93135d6de3ab))
+
+- **tui**: Use unique keys for tool list items to avoid React duplicate key warnings
+  ([`7c82a27`](https://github.com/sagebynature/sage-agent/commit/7c82a27654f8d922e7c034b2fca8f8947dd88607))
+
+### Chores
+
+- Clean up config.toml by removing an empty line and update pyproject.toml to include truststore
+  dependency
+  ([`b2c3004`](https://github.com/sagebynature/sage-agent/commit/b2c3004b73051b5297ee18e6fe97d35679d276bb))
+
+- Remove dead code — framing.py, SplitView.tsx, lifecycle.ts
+  ([`8c2f9f1`](https://github.com/sagebynature/sage-agent/commit/8c2f9f150bdd30d38f919546903c84123262eb84))
+
+- Update configuration settings.
+  ([`d93579d`](https://github.com/sagebynature/sage-agent/commit/d93579dde933116811d6135a25a165308f0572fb))
+
+- Updated examples
+  ([`931479d`](https://github.com/sagebynature/sage-agent/commit/931479d7607ab523387362535cd5693ee28861fb))
+
+- **config**: Add OPENROUTER_API_KEY to config and update example paths
+  ([`e559581`](https://github.com/sagebynature/sage-agent/commit/e5595814d1f3b11b497986264f4731d1e1709732))
+
+- **config**: Set default memory embedding to ollama/nomic-embed-text
+  ([`c227b26`](https://github.com/sagebynature/sage-agent/commit/c227b26f2d1ed7a41566d83e6b3117ca6e39a25c))
+
+- **config**: Update agent configurations and clean up memory settings
+  ([`bbea47a`](https://github.com/sagebynature/sage-agent/commit/bbea47a519c3ddde75bbcb35957c165453a1d572))
+
+### Documentation
+
+- Add default memory config design doc
+  ([`1b47f3c`](https://github.com/sagebynature/sage-agent/commit/1b47f3ce6f768ad12bab00c6669740225d749b3a))
+
+- Add default memory config implementation plan
+  ([`c541e61`](https://github.com/sagebynature/sage-agent/commit/c541e61ccdccdc040bb46df0aa77a25bc57cbd19))
+
+- Add Ollama embedding implementation plan
+  ([`dd345e2`](https://github.com/sagebynature/sage-agent/commit/dd345e2d1ed4389968b68814dda2f7c87d1f2b8f))
+
+- Add Ollama embedding support design doc
+  ([`29cdc81`](https://github.com/sagebynature/sage-agent/commit/29cdc81e01ce846a48c5f22c49175d821e62b23d))
+
+- Correct MemoryConfig validation description in design doc
+  ([`6e0a0f3`](https://github.com/sagebynature/sage-agent/commit/6e0a0f329bc314764ffbaf4d577c356236894f37))
+
+- Future enhancement plans
+  ([`c78cbcc`](https://github.com/sagebynature/sage-agent/commit/c78cbcc290a0c0149b93178f7fd2e709ba055bd6))
+
+- Remove outdated plan and design documents.
+  ([`9e71b86`](https://github.com/sagebynature/sage-agent/commit/9e71b862be5f3e85b4139a047b11ba3042eb737f))
+
+- TUI UX overhaul design — Claude Code-inspired redesign
+  ([`2077ad7`](https://github.com/sagebynature/sage-agent/commit/2077ad74a46573a53eac23339125c4fc1715f239))
+
+- Update documentation for hook/event/observability enhancements and Node.js TUI
+  ([`b931054`](https://github.com/sagebynature/sage-agent/commit/b931054926a91d3372d69d13671d32ba93a1ed0c))
+
+- **tui**: Add bug fix design and implementation plan
+  ([`542db45`](https://github.com/sagebynature/sage-agent/commit/542db4552c944d2cd1e64beaf72494a82f0f5ad5))
+
+- **tui**: Update README to reflect current feature state
+  ([`0b049e8`](https://github.com/sagebynature/sage-agent/commit/0b049e8cedc555d3eb3d0dd5e4bd78421018869d))
+
+### Features
+
+- Implement canonical event system in TUI with dedicated normalizer, projector, and new event-driven
+  components.
+  ([`d550329`](https://github.com/sagebynature/sage-agent/commit/d5503293ae4be98c770f9ccb3a3f16b1980ca448))
+
+- Implement event normalization and display system, including timeline and inspector components, and
+  enhance tool rendering for delegate and use_skill.
+  ([`499bb67`](https://github.com/sagebynature/sage-agent/commit/499bb6718b94f7d25b10a068e87685c9473bc114))
+
+- Introduce event timeline and inspector UI with verbosity and filtering options
+  ([`1c431dc`](https://github.com/sagebynature/sage-agent/commit/1c431dcdc41e2b09953c363c8c04960ef92ca9ab))
+
+- Refactor safe_coder example structure and add global install script for the TUI.
+  ([`3dfe74c`](https://github.com/sagebynature/sage-agent/commit/3dfe74caf90948c8d2448d019b31795d9b3434be))
+
+- **agent**: Propagate subagent tool/stream events to parent agent
+  ([`12bce34`](https://github.com/sagebynature/sage-agent/commit/12bce34765342632f927dadc2038521ee0fbc9ba))
+
+- **config**: Deep-merge memory config across defaults, agent overrides, and frontmatter
+  ([`7018f62`](https://github.com/sagebynature/sage-agent/commit/7018f62a1aec21db5ea16c0477451260e8fc5f79))
+
+- **config**: Move memory field to ConfigOverrides to support [defaults.memory]
+  ([`6f3e2b0`](https://github.com/sagebynature/sage-agent/commit/6f3e2b0b062b4419f9a005d3f097f62bc3aae578))
+
+- **memory**: Add create_embedding() factory with ollama/ prefix routing
+  ([`36fe61d`](https://github.com/sagebynature/sage-agent/commit/36fe61de41652e3e761475d97ac2dd004d40a687))
+
+- **memory**: Add OllamaEmbedding with direct HTTP client
+  ([`d3d3752`](https://github.com/sagebynature/sage-agent/commit/d3d375228ad6f4157a1703907eeedf02b7ac67ba))
+
+- **memory**: Wire create_embedding() in agent bootstrap, export new symbols
+  ([`a8dfa24`](https://github.com/sagebynature/sage-agent/commit/a8dfa242cc2e1f191c716ddcd58ee52309be19e3))
+
+- **protocol**: Compute real contextUsagePercent from agent usage stats
+  ([`0298f49`](https://github.com/sagebynature/sage-agent/commit/0298f4906a272e704043372a328a9f7a9df4df0d))
+
+- **protocol**: Switch agent/run to streaming and add run/completed notification
+  ([`93f2677`](https://github.com/sagebynature/sage-agent/commit/93f267705a93f46b79c19f89bf812d10021da9ef))
+
+- **protocol**: Wire JsonRpcPermissionHandler in serve.py
+  ([`cc7ad3d`](https://github.com/sagebynature/sage-agent/commit/cc7ad3d1ace43a7620e44c28d06795b7b39b1800))
+
+- **tui**: Add ActiveStreamView with thinking indicator and live markdown
+  ([`0d21aea`](https://github.com/sagebynature/sage-agent/commit/0d21aea54bd9331cc6b01b44af7bb75cd0c265fb))
+
+- **tui**: Add agent indicator and session name to BottomBar
+  ([`5aa5e7d`](https://github.com/sagebynature/sage-agent/commit/5aa5e7d8f9c89ea027123a20bdf94e582257cc19))
+
+- **tui**: Add animated spinners for running tools and delegations
+  ([`5676eed`](https://github.com/sagebynature/sage-agent/commit/5676eed2c58571ac295632104ad542f6fc0ce6bc))
+
+- **tui**: Add block renderers — UserBlock, TextBlock, ToolBlock, StaticBlock
+  ([`a378329`](https://github.com/sagebynature/sage-agent/commit/a37832960b9b2598ea353ac58bde8e2b58cc10ad))
+
+- **tui**: Add blockReducer with OutputBlock/ActiveStream state model
+  ([`f9bdd9f`](https://github.com/sagebynature/sage-agent/commit/f9bdd9f10845c176273282d497ac0d62390c4602))
+
+- **tui**: Add BottomBar and InputPrompt with minimal chrome
+  ([`bc25d48`](https://github.com/sagebynature/sage-agent/commit/bc25d48392a08418789c3479d6c147ed5987d308))
+
+- **tui**: Add ConversationView with Static scroll + ActiveStreamView
+  ([`c05ff9d`](https://github.com/sagebynature/sage-agent/commit/c05ff9d6e8578e744bdf5e123530ff637e1c4267))
+
+- **tui**: Add executable script and update package.json
+  ([`1c5f691`](https://github.com/sagebynature/sage-agent/commit/1c5f691020ef9cecb10b5cb97f29459f454deb8a))
+
+- **tui**: Add OutputBlock, ActiveStream, AppStateV2 types
+  ([`331fd49`](https://github.com/sagebynature/sage-agent/commit/331fd49bb2803a0e484e6fb1d809812c7f31dab4))
+
+- **tui**: Add RUN_COMPLETED protocol constant and payload type
+  ([`1068e46`](https://github.com/sagebynature/sage-agent/commit/1068e46d5f437913511ed1828505d61a5895a142))
+
+- **tui**: Add scroll state for active stream view
+  ([`70ed11d`](https://github.com/sagebynature/sage-agent/commit/70ed11d4647949fb66c72027d928f8fcf72d4abd))
+
+- **tui**: Add TypeScript TUI with Ink v6 and JSON-RPC protocol layer
+  ([`0f6bef6`](https://github.com/sagebynature/sage-agent/commit/0f6bef6e40d4da63ff936c648afb5ab34776b734))
+
+- **tui**: Complete BlockEventRouter with agent tracking and LLM turn methods
+  ([`5413622`](https://github.com/sagebynature/sage-agent/commit/54136224371f69bc6c521c9b05971cc8b302f38e))
+
+- **tui**: Extend BlockState with agents, CLEAR_BLOCKS, permission pruning
+  ([`3b62120`](https://github.com/sagebynature/sage-agent/commit/3b621208911a5e6e9082820c7e8627d0357e0e61))
+
+- **tui**: Handle run/completed notification in EventRouter
+  ([`5d5c2e3`](https://github.com/sagebynature/sage-agent/commit/5d5c2e38e4c3e5ecf016d55cc8b479f48a2dfe36))
+
+- **tui**: Implement all 21 slash commands with honest stubs for unbuilt features
+  ([`8fd614b`](https://github.com/sagebynature/sage-agent/commit/8fd614b6662ce2286800b65619991c0108f1f6ea))
+
+- **tui**: Implement all missing command handlers in CommandExecutor
+  ([`8dd5bb6`](https://github.com/sagebynature/sage-agent/commit/8dd5bb6bfcacf14acb30e19fc6138c28b30d71c2))
+
+- **tui**: Implement BACKGROUND_TASK_UPDATE and COMPACTION_STARTED reducers
+  ([`55ddd25`](https://github.com/sagebynature/sage-agent/commit/55ddd25d695b6e58a7119b065c52750681bf9a3c))
+
+- **tui**: Implement keyboard shortcuts for scroll, clear, reset, permissions
+  ([`48a6f4c`](https://github.com/sagebynature/sage-agent/commit/48a6f4cb00654380fc62545e50b0636528778732))
+
+- **tui**: Render PermissionPrompt in AppShell and wire permission/respond
+  ([`78aea7f`](https://github.com/sagebynature/sage-agent/commit/78aea7f67f43a4aae513135d3ce91a26ddf56b98))
+
+- **tui**: Render streaming text as plain text for instant display
+  ([`f582b33`](https://github.com/sagebynature/sage-agent/commit/f582b337dc8ee4c3e85d93d72e784dd3aa44f271))
+
+- **tui**: Subscribe to run/completed in wiring layer
+  ([`101c6ff`](https://github.com/sagebynature/sage-agent/commit/101c6ffb04e49e2bf6626fe6e8ee00d4583d09dc))
+
+- **tui**: Wire Ctrl+C and ESC to agent/cancel request
+  ([`6d81233`](https://github.com/sagebynature/sage-agent/commit/6d81233295a7075d9976b76beca7baec96307be1))
+
+- **tui**: Wire new block-based architecture into AppShell
+  ([`3bb8a5e`](https://github.com/sagebynature/sage-agent/commit/3bb8a5ed840fdc297ce5cd830e152b3e7ddd5c86))
+
+- **tui**: Wire SlashCommands autocomplete and command execution
+  ([`12008ba`](https://github.com/sagebynature/sage-agent/commit/12008bafddba29c2c4153537ad1a537aedae96c8))
+
+- **tui**: Wire useResizeHandler for dynamic terminal dimensions
+  ([`bc288df`](https://github.com/sagebynature/sage-agent/commit/bc288df60839d8c8cd051605725a5f5d1a8000a2))
+
+### Performance Improvements
+
+- **tui**: Cache Marked parser instance to avoid recreation per render
+  ([`8b088e1`](https://github.com/sagebynature/sage-agent/commit/8b088e178fc24a7d804ccb2bdda6df6545202ae6))
+
+- **tui**: Isolate spinner provider from stream content to reduce re-renders
+  ([`20f2da8`](https://github.com/sagebynature/sage-agent/commit/20f2da85d288ffae97a1bd4d7df2316ed75ef22a))
+
+- **tui**: Truncate active stream to last 30 lines to prevent overflow
+  ([`f0062f5`](https://github.com/sagebynature/sage-agent/commit/f0062f5b9bf75b7c6dbf108e4cdeb742c965dea9))
+
+### Refactoring
+
+- Remove outdated ADR-0001 on hook observability and event publishing
+  ([`7d6fa28`](https://github.com/sagebynature/sage-agent/commit/7d6fa28966b04a81f4a82755aa033437ea6c953e))
+
+- **tui**: Delete all orphaned components, hooks, and utils
+  ([`5cb2aea`](https://github.com/sagebynature/sage-agent/commit/5cb2aea1a8d08aed0cf4d1e52e08a11535d88035))
+
+- **tui**: Delete old AppState/EventRouter/CommandExecutor state system
+  ([`8742300`](https://github.com/sagebynature/sage-agent/commit/8742300d3ede6a0e46aa5ae81a3324acb98ac3dc))
+
+- **tui**: Port ToolDisplay to ToolSummary, replace ToolBlock in StaticBlock
+  ([`2cb053e`](https://github.com/sagebynature/sage-agent/commit/2cb053e138b0d640d6a03abe700c748347a3dcea))
+
+- **tui**: Remove dead ChatMessage, AppState, AppStateV2 types
+  ([`4d14e62`](https://github.com/sagebynature/sage-agent/commit/4d14e62927cff2f174848160c37be7c63e0600df))
+
+### Testing
+
+- **tui**: Update tests for block-based architecture, fix TS strict errors
+  ([`12d390a`](https://github.com/sagebynature/sage-agent/commit/12d390af3579268a14e87bd7029ab6c6dc1749d7))
+
+
 ## v1.6.0-rc.2 (2026-03-06)
 
 ### Bug Fixes
