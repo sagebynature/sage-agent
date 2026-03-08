@@ -61,6 +61,8 @@ export function EventTimeline({
 
   return (
     <Box
+      width={70}
+      flexShrink={0}
       flexDirection="column"
       borderStyle="round"
       borderColor="gray"
