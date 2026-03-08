@@ -14,6 +14,7 @@ interface EventTimelineProps {
   verbosity: VerbosityMode;
   filters: EventFilters;
   limit?: number;
+  maxHeight?: number;
 }
 
 function statusColor(event: EventRecord): string {
@@ -48,15 +49,24 @@ export function EventTimeline({
   selectedEventId,
   verbosity,
   filters,
-  limit = 18,
+  limit,
+  maxHeight,
 }: EventTimelineProps): ReactNode {
+  // Border (2) + header (1) = 3 rows of chrome; remaining rows are for events.
+  const effectiveLimit = limit ?? (maxHeight ? Math.max(1, maxHeight - 3) : 18);
   const visibleEvents = events
     .filter((event) => eventVisibleAtVerbosity(event, verbosity))
     .filter((event) => eventMatchesFilters(event, filters))
-    .slice(-limit);
+    .slice(-effectiveLimit);
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="gray" paddingX={1}>
+    <Box
+      flexDirection="column"
+      borderStyle="round"
+      borderColor="gray"
+      paddingX={1}
+      {...(maxHeight ? { height: maxHeight, overflowY: "hidden" as const } : {})}
+    >
       <Text bold>Events</Text>
       {visibleEvents.length === 0 ? (
         <Text dimColor>No events</Text>

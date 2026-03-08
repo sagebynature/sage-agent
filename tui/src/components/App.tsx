@@ -75,7 +75,7 @@ function AppShell(): ReactNode {
   const { state, dispatch } = useBlocks();
   const client = useSageClient();
   const connectionStatus = useClientStatus();
-  const { width: columns } = useResizeHandler();
+  const { width: columns, height: rows } = useResizeHandler();
   const stateRef = useRef<BlockState>(state);
   stateRef.current = state;
   const visibleEvents = state.events
@@ -506,9 +506,19 @@ function AppShell(): ReactNode {
 
   const pendingPermissions = state.permissions.filter((p) => p.status === "pending");
 
+  // Reserve rows for chrome: input (2), bottom bar (1), error (1 if present),
+  // each pending permission (~4 lines each).
+  const chromeRows = 3 + (state.error ? 1 : 0) + pendingPermissions.length * 4;
+  const availableRows = Math.max(6, rows - chromeRows);
+
+  // Budget for the three event-pane sections (borders consume 2 rows each).
+  const timelineHeight = Math.max(5, Math.floor(availableRows * 0.45));
+  const inspectorHeight = Math.max(4, Math.floor(availableRows * 0.40));
+  const agentTreeHeight = Math.max(0, availableRows - timelineHeight - inspectorHeight - 2);
+
   return (
     <Box flexDirection="column" width={columns}>
-      <Box flexDirection={stackEventPane ? "column" : "row"} width={columns}>
+      <Box flexDirection={stackEventPane ? "column" : "row"} width={columns} height={availableRows}>
         <ConversationView
           completedBlocks={state.completedBlocks}
           activeStream={state.activeStream}
@@ -518,21 +528,24 @@ function AppShell(): ReactNode {
           <Box
             flexDirection="column"
             width={eventPaneWidth}
+            height={availableRows}
             marginLeft={stackEventPane ? 0 : 1}
             marginTop={stackEventPane ? 1 : 0}
+            overflowY="hidden"
           >
             <EventTimeline
               events={state.events}
               selectedEventId={selectedEvent?.id ?? null}
               verbosity={state.ui.verbosity}
               filters={state.ui.filters}
+              maxHeight={timelineHeight}
             />
-            <Box marginTop={1}>
-              <EventInspector event={selectedEvent} />
-            </Box>
-            <Box marginTop={1}>
-              <AgentTree />
-            </Box>
+            <EventInspector event={selectedEvent} maxHeight={inspectorHeight} />
+            {agentTreeHeight > 2 && (
+              <Box height={agentTreeHeight} overflowY="hidden">
+                <AgentTree />
+              </Box>
+            )}
           </Box>
         )}
       </Box>
