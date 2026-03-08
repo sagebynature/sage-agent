@@ -1,5 +1,5 @@
 import { Box, Text } from "ink";
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import type { EventRecord } from "../types/events.js";
 
 interface EventInspectorProps {
@@ -19,7 +19,7 @@ function formatObject(value: Record<string, unknown> | undefined, maxLines: numb
   return text.length > 600 ? `${text.slice(0, 597)}...` : text;
 }
 
-export function EventInspector({ event, maxHeight }: EventInspectorProps): ReactNode {
+export const EventInspector = memo(function EventInspector({ event, maxHeight }: EventInspectorProps): ReactNode {
   // Border (2) + header (1) + metadata lines (~5-7) = ~9 rows of chrome;
   // remaining budget goes to the JSON payload.
   const payloadMaxLines = maxHeight ? Math.max(2, maxHeight - 9) : 20;
@@ -54,4 +54,4 @@ export function EventInspector({ event, maxHeight }: EventInspectorProps): React
       )}
     </Box>
   );
-}
+});

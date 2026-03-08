@@ -71,6 +71,11 @@ export class SageClient extends EventEmitter {
       }
 
       this.process = child;
+
+      // Consume stderr to prevent it from buffering and flushing to the
+      // parent terminal, which would corrupt Ink's rendering output.
+      child.stderr?.resume();
+
       this.readline = createInterface({
         input: child.stdout,
         crlfDelay: Infinity,
