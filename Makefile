@@ -63,15 +63,15 @@ validate-examples:
 # Note: mcp_agent requires npx and @modelcontextprotocol/server-filesystem.
 run-examples:
 	@echo "--- simple_agent ---"
-	uv run sage agent run examples/simple_assistant.md -i "Reply with exactly one word: hello."
+	uv run sage agent run examples/simple-assistant.md -i "Reply with exactly one word: hello."
 	@echo "--- orchestrator ---"
-	uv run sage agent run examples/parallel_agents -i "In one sentence, what is 1 + 1?"
+	uv run sage agent run examples/parallel_agents/orchestrator.md -i "research python vs rust and give me a summary"
 	@echo "--- custom_tools ---"
-	uv run sage agent run examples/custom_tools -i "List your available tools."
+	uv run sage agent run examples/custom_tools/tool-agent.md -i "List your available tools."
 	@echo "--- mcp_agent ---"
-	uv run sage agent run examples/mcp_agent -i "List the files in /tmp."
+	uv run sage agent run examples/mcp-assistant.md -i "List the files in /tmp using MCP"
 	@echo "--- skills_agent ---"
-	uv run sage agent run examples/skills_agent -i "Review this code for issues: def add(a, b): return a + b"
+	uv run sage agent run examples/skills_agent/skills-agent.md -i "Review this code for issues: def add(a, b): return a + b"
 	@echo "--- memory_agent ---"
 	uv run python examples/memory_agent/run.py
 

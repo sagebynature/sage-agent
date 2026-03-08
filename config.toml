@@ -34,7 +34,7 @@ OPENROUTER_API_KEY = "${OPENROUTER_API_KEY}"
 [defaults]
 
 # LLM model identifier (provider/model format)
-model = "azure_ai/kimi-k2.5"
+model = "openrouter/openrouter/free"
 
 # Maximum agentic turns before stopping
 max_turns = 10
