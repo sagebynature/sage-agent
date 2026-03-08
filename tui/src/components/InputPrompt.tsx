@@ -1,10 +1,22 @@
 import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
-import { type ReactNode, useState, useCallback } from "react";
+import {
+  type ReactNode,
+  useState,
+  useCallback,
+  useImperativeHandle,
+  forwardRef,
+  type Ref,
+} from "react";
 import { useInputHistory } from "../hooks/useInputHistory.js";
 import { SlashCommands } from "./SlashCommands.js";
 
 type InputMode = "normal" | "command";
+
+export interface InputPromptHandle {
+  clear: () => void;
+  hasValue: () => boolean;
+}
 
 interface InputPromptProps {
   onSubmit: (text: string) => void;
@@ -21,15 +33,21 @@ function Divider({ width }: { width: number }): ReactNode {
   );
 }
 
-export function InputPrompt({
-  onSubmit,
-  onCommand,
-  isActive = true,
-  width = 80,
-}: InputPromptProps): ReactNode {
+export const InputPrompt = forwardRef(function InputPrompt(
+  { onSubmit, onCommand, isActive = true, width = 80 }: InputPromptProps,
+  ref: Ref<InputPromptHandle>,
+): ReactNode {
   const [value, setValue] = useState("");
   const [mode, setMode] = useState<InputMode>("normal");
   const history = useInputHistory();
+
+  useImperativeHandle(ref, () => ({
+    clear: () => {
+      setValue("");
+      setMode("normal");
+    },
+    hasValue: () => value !== "",
+  }));
 
   const handleSubmit = useCallback(
     (text: string) => {
@@ -128,4 +146,4 @@ export function InputPrompt({
       </Box>
     </Box>
   );
-}
+});
