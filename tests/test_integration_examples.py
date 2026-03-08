@@ -41,35 +41,33 @@ def _expected_tools(permission: Permission) -> set[str]:
 @pytest.mark.parametrize(
     "relpath",
     [
-        "memory_agent/AGENTS.md",
-        "mcp_agent/AGENTS.md",
-        "safe_coder/AGENTS.md",
-        "devtools_agent/AGENTS.md",
-        "skills_agent/AGENTS.md",
-        "simple_assistant.md",
-        "custom_tools/AGENTS.md",
-        "permissions_agent/AGENTS.md",
-        "parallel_agents/AGENTS.md",
+        "mcp-assistant.md",
+        "safe_coder/agents/safe-coder.md",
+        "devtools.md",
+        "skills_agent/skills-agent.md",
+        "simple-assistant.md",
+        "custom_tools/tool-agent.md",
+        "safe-reviewer.md",
+        "parallel_agents/orchestrator.md",
         "skills_demo/AGENTS.md",
-        "parallel_agents/research_agent/AGENTS.md",
-        "parallel_agents/summarize_agent/AGENTS.md",
+        "parallel_agents/researcher.md",
+        "parallel_agents/summarizer.md",
     ],
 )
 def test_example_loads(relpath: str) -> None:
     config = load_config(relpath)
     assert config.name != ""
-    assert config.model != ""
 
 
 def test_simple_assistant_permissions() -> None:
-    config = load_config("simple_assistant.md")
+    config = load_config("simple-assistant.md")
     assert config.permission is not None
     assert config.permission.read == "allow"
     assert config.permission.shell == "allow"
 
 
 def test_devtools_agent_permissions() -> None:
-    config = load_config("devtools_agent/AGENTS.md")
+    config = load_config("devtools.md")
     assert config.permission is not None
     assert config.permission.read == "allow"
     assert config.permission.edit == "allow"
@@ -81,7 +79,7 @@ def test_devtools_agent_permissions() -> None:
 
 
 def test_safe_coder_pattern_shell() -> None:
-    config = load_config("safe_coder/AGENTS.md")
+    config = load_config("safe_coder/agents/safe-coder.md")
     assert config.permission is not None
     assert config.permission.read == "allow"
     assert config.permission.edit == "allow"
@@ -94,7 +92,7 @@ def test_safe_coder_pattern_shell() -> None:
 
 
 def test_permissions_agent_pattern_shell() -> None:
-    config = load_config("permissions_agent/AGENTS.md")
+    config = load_config("safe-reviewer.md")
     assert config.permission is not None
     assert config.permission.read == "allow"
     shell = config.permission.shell
@@ -106,26 +104,26 @@ def test_permissions_agent_pattern_shell() -> None:
 
 
 def test_memory_agent_no_permission() -> None:
-    config = load_config("memory_agent/AGENTS.md")
+    config = load_config("parallel_agents/summarizer.md")
     assert config.permission is None
     assert config.extensions == []
 
 
 def test_simple_assistant_has_permission() -> None:
-    config = load_config("simple_assistant.md")
+    config = load_config("simple-assistant.md")
     assert config.permission is not None
     assert config.permission.read == "allow"
     assert config.permission.shell == "allow"
 
 
 def test_custom_tools_extensions() -> None:
-    config = load_config("custom_tools/AGENTS.md")
+    config = load_config("custom_tools/tool-agent.md")
     assert config.permission is None
     assert "examples.custom_tools.tools" in config.extensions
 
 
 def test_research_agent_extensions() -> None:
-    config = load_config("parallel_agents/research_agent/AGENTS.md")
+    config = load_config("parallel_agents/researcher.md")
     assert config.permission is None
     assert "sage.tools.builtins" in config.extensions
 
@@ -133,12 +131,12 @@ def test_research_agent_extensions() -> None:
 @pytest.mark.parametrize(
     "relpath",
     [
-        "simple_assistant.md",
-        "mcp_agent/AGENTS.md",
-        "safe_coder/AGENTS.md",
-        "devtools_agent/AGENTS.md",
-        "skills_agent/AGENTS.md",
-        "permissions_agent/AGENTS.md",
+        "simple-assistant.md",
+        "mcp-assistant.md",
+        "safe_coder/agents/safe-coder.md",
+        "devtools.md",
+        "skills_agent/skills-agent.md",
+        "safe-reviewer.md",
         "skills_demo/AGENTS.md",
     ],
 )

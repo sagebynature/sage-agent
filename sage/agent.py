@@ -2004,9 +2004,7 @@ class Agent:
                     self.tool_registry.register_mcp_tool(schema, client)
                 return None  # Success
             except asyncio.TimeoutError as exc:
-                logger.error(
-                    "Timed out initializing MCP server %s after %.1fs", client, timeout
-                )
+                logger.error("Timed out initializing MCP server %s after %.1fs", client, timeout)
                 try:
                     await asyncio.wait_for(client.disconnect(), timeout=1.0)
                 except Exception:
