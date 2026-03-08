@@ -28,7 +28,7 @@ agents_dir = "agents/"
 [env]
 # AZURE_AI_API_KEY = "${AZURE_AI_API_KEY}"
 # AZURE_AI_API_BASE = "${AZURE_AI_API_BASE}"
-OPENROUTER_API_KEY = "${OPENROUTER_API_KEY}"
+# OPENROUTER_API_KEY = "${OPENROUTER_API_KEY}"
 
 # ─── Global Defaults ──────────────────────────────────────────────────────────
 [defaults]
