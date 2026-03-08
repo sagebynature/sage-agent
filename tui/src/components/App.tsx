@@ -127,10 +127,14 @@ function AppShell(): ReactNode {
       dispatch({ type: "SUBMIT_MESSAGE", content: text });
 
       try {
-        const response = await client.request<{ runId: string }>(METHODS.AGENT_RUN, { message: text });
-        if (response && response.runId) {
-          dispatch({ type: "STREAM_START", runId: response.runId });
-        }
+        // The backend returns immediately with { runId } while the actual run
+        // executes asynchronously.  Stream lifecycle (STREAM_START → deltas →
+        // STREAM_END) is driven entirely by event notifications that arrive via
+        // onNotification handlers.  Dispatching STREAM_START here would race
+        // with those notifications: if the run completes before this await
+        // resolves (common when readline buffers multiple lines), the late
+        // STREAM_START creates a phantom empty activeStream that never ends.
+        await client.request<{ runId: string }>(METHODS.AGENT_RUN, { message: text });
       } catch (err: unknown) {
         dispatch({ type: "STREAM_END", status: "error", error: err instanceof Error ? err.message : "Failed to send message" });
       }

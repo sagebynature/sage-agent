@@ -58,6 +58,7 @@ export function getIcons(forceUnicode?: boolean): IconSet {
   return cachedIcons;
 }
 
+/** @internal Exposed for tests that need to verify cache behaviour. */
 export function resetIconCache(): void {
   cachedIcons = null;
 }

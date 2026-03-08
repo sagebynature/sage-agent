@@ -31,6 +31,10 @@ export interface BlockUiState {
 export interface BlockState {
   completedBlocks: OutputBlock[];
   activeStream: ActiveStream | null;
+  /** Run IDs that have already reached STREAM_END.  Prevents late STREAM_START
+   *  dispatches (e.g. from an RPC response arriving after event notifications)
+   *  from creating phantom empty streams. */
+  completedRunIds: Set<string>;
   usage: UsageState;
   permissions: PermissionState[];
   error: string | null;
@@ -96,6 +100,7 @@ export type BlockAction =
 export const INITIAL_BLOCK_STATE: BlockState = {
   completedBlocks: [],
   activeStream: null,
+  completedRunIds: new Set(),
   usage: {
     promptTokens: 0,
     completionTokens: 0,
@@ -146,7 +151,7 @@ function flattenStream(
             ...tool,
             status: endStatus === "cancelled" ? "failed" : "completed",
             error: endStatus === "cancelled" ? "cancelled" : tool.error,
-            durationMs: now - stream.startedAt,
+            durationMs: now - (tool.startedAt ?? stream.startedAt),
           }
         : tool;
     blocks.push({
@@ -347,6 +352,12 @@ export function blockReducer(
     }
 
     case "STREAM_START": {
+      // Guard: if this run already completed, don't create a phantom stream.
+      // This prevents late STREAM_START dispatches (e.g. from an RPC response
+      // arriving after event notifications have already ended the run).
+      if (state.completedRunIds.has(action.runId)) {
+        return state;
+      }
       return {
         ...state,
         activeStream: {
@@ -441,10 +452,15 @@ export function blockReducer(
           timestamp: Date.now(),
         });
       }
+      const completedRunIds = new Set(state.completedRunIds);
+      if (state.activeStream?.runId) {
+        completedRunIds.add(state.activeStream.runId);
+      }
       return {
         ...state,
         completedBlocks: [...state.completedBlocks, ...newBlocks],
         activeStream: null,
+        completedRunIds,
         permissions: state.permissions.filter((permission) => permission.status === "pending"),
       };
     }
@@ -641,9 +657,11 @@ export function blockReducer(
         ...state,
         completedBlocks: [],
         activeStream: null,
+        completedRunIds: new Set(),
         agents: [],
         permissions: [],
         error: null,
+        scrollOffset: 0,
         events: [],
         runs: {},
         ui: {
