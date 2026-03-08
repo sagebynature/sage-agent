@@ -1,6 +1,6 @@
 ---
 name: simple-assistant
-model: openrouter/openrouter/free
+# model: openrouter/openrouter/free
 permission:
   read: allow
   shell: allow
