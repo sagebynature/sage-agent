@@ -69,7 +69,7 @@ describe('PermissionPrompt', () => {
     expect(lastFrame()).toContain('Edit Arguments');
     stdin.write('\u001B'); // Escape
     // Ink uses a 100ms timeout to distinguish bare escape from escape sequences
-    await delay(150);
+    await delay(400);
     expect(lastFrame()).toContain('PERMS REQUEST');
   });
 
@@ -77,12 +77,11 @@ describe('PermissionPrompt', () => {
     const { lastFrame, stdin } = render(<PermissionPrompt request={mockRequest} onRespond={onRespond} />);
     stdin.write('e');
     await delay(10);
-    // Clear input (Backspace multiple times - illustrative, might be hard to get right count)
-    // Instead, append invalid chars
+    expect(lastFrame()).toContain('Edit Arguments');
     stdin.write('INVALID');
-    await delay(10);
+    await delay(25);
     stdin.write('\r'); // Enter
-    await delay(10);
+    await delay(50);
     expect(lastFrame()).toContain('Invalid JSON');
   });
 

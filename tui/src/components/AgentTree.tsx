@@ -9,6 +9,10 @@ interface AgentTreeProps {
 
 const TRUNCATE_LENGTH = 40;
 
+function nodeKey(node: AgentNodeType): string {
+  return node.delegationId ?? node.agentPath?.join('/') ?? `${node.parentName ?? 'root'}:${node.name}`;
+}
+
 const StatusIndicator = ({ status }: { status: AgentNodeType['status'] }) => {
   if (status === 'active') {
     return <Text color="yellow">●</Text>;
@@ -51,7 +55,7 @@ const TreeNode = ({
   const connector = isLast ? '└── ' : '├── ';
   const childPrefix = prefix + (isLast ? '    ' : '│   ');
 
-  const showChildren = depth < maxDepth && node.children && node.children.length > 0;
+  const showChildren = depth + 1 < maxDepth && node.children && node.children.length > 0;
 
   return (
     <Box flexDirection="column">
@@ -70,7 +74,7 @@ const TreeNode = ({
       </Box>
       {showChildren && node.children.map((child, index) => (
         <TreeNode
-          key={child.name}
+          key={nodeKey(child)}
           node={child}
           isLast={index === node.children.length - 1}
           prefix={childPrefix}
@@ -90,16 +94,24 @@ export const AgentTree: React.FC<AgentTreeProps> = ({ maxDepth = 5 }) => {
     if (!agents || agents.length === 0) return [];
 
     const agentMap = new Map<string, AgentNodeType>();
-    agents.forEach(agent => {
-      agentMap.set(agent.name, { ...agent, children: [] });
-    });
-
+    const parentNameMap = new Map<string, AgentNodeType[]>();
     const roots: AgentNodeType[] = [];
 
+    agents.forEach(agent => {
+      const node = { ...agent, children: [] };
+      agentMap.set(nodeKey(agent), node);
+      const bucket = parentNameMap.get(agent.name) ?? [];
+      bucket.push(node);
+      parentNameMap.set(agent.name, bucket);
+    });
+
     agents.forEach(originalAgent => {
-      const agent = agentMap.get(originalAgent.name)!;
-      if (agent.parentName && agentMap.has(agent.parentName)) {
-        agentMap.get(agent.parentName)!.children.push(agent);
+      const agent = agentMap.get(nodeKey(originalAgent))!;
+      const parentPath = originalAgent.agentPath?.slice(0, -1).join('/');
+      const parent = (parentPath ? agentMap.get(parentPath) : undefined)
+        ?? (originalAgent.parentName ? parentNameMap.get(originalAgent.parentName)?.[0] : undefined);
+      if (parent) {
+        parent.children.push(agent);
       } else {
         roots.push(agent);
       }
@@ -116,11 +128,11 @@ export const AgentTree: React.FC<AgentTreeProps> = ({ maxDepth = 5 }) => {
     <Box flexDirection="column">
       {rootNodes.map((node, index) => (
         <TreeNode
-          key={node.name}
+          key={nodeKey(node)}
           node={node}
           isLast={index === rootNodes.length - 1}
           prefix=""
-          depth={1}
+          depth={0}
           maxDepth={maxDepth}
         />
       ))}

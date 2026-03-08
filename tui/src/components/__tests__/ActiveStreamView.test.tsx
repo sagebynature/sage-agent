@@ -70,6 +70,51 @@ describe("ActiveStreamView", () => {
     expect(frame).toContain("file.txt");
   });
 
+  it("shows delegation target and task for delegate tools", () => {
+    const stream: ActiveStream = {
+      runId: "r1",
+      content: "",
+      tools: [
+        {
+          name: "delegate",
+          callId: "c2",
+          arguments: {
+            agent_name: "researcher",
+            task: "deep research on openfang vs openclaw and key differentiators",
+          },
+          status: "running",
+        },
+      ],
+      isThinking: false,
+      startedAt: Date.now(),
+    };
+    const { lastFrame } = render(<ActiveStreamView stream={stream} />);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("delegate");
+    expect(frame).toContain("researcher");
+    expect(frame).toContain("openfang vs openclaw");
+  });
+
+  it("shows skill name for use_skill tools", () => {
+    const stream: ActiveStream = {
+      runId: "r1",
+      content: "",
+      tools: [
+        {
+          name: "use_skill",
+          callId: "c3",
+          arguments: { name: "agent-evaluation" },
+          status: "running",
+        },
+      ],
+      isThinking: false,
+      startedAt: Date.now(),
+    };
+    const { lastFrame } = render(<ActiveStreamView stream={stream} />);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("use_skill -> agent-evaluation");
+  });
+
   it("returns null when stream is null", () => {
     const { lastFrame } = render(<ActiveStreamView stream={null} />);
     expect(lastFrame()).toBe("");

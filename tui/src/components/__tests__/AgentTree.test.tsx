@@ -138,4 +138,29 @@ describe('AgentTree', () => {
     expect(lastFrame()).not.toContain(longTask);
     expect(lastFrame()).toContain('This is a very long task description tha...');
   });
+
+  it('renders repeated subagent names as separate nodes when paths differ', () => {
+    mockState = {
+      ...INITIAL_BLOCK_STATE,
+      agents: [
+        { ...createAgent('root', 'active'), agentPath: ['root'] },
+        {
+          ...createAgent('worker', 'completed', 'root', 'first task'),
+          agentPath: ['root', 'worker'],
+          delegationId: 'delegation-1',
+        },
+        {
+          ...createAgent('worker', 'active', 'root', 'second task'),
+          agentPath: ['root', 'worker-2'],
+          delegationId: 'delegation-2',
+        },
+      ],
+    };
+
+    const { lastFrame } = render(<AgentTree />);
+    const frame = lastFrame() || '';
+    expect(frame.match(/worker/g)?.length).toBe(2);
+    expect(frame).toContain('first task');
+    expect(frame).toContain('second task');
+  });
 });

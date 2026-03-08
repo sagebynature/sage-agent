@@ -7,14 +7,16 @@ import { ActiveStreamView } from "./ActiveStreamView.js";
 interface ConversationViewProps {
   completedBlocks: OutputBlock[];
   activeStream: ActiveStream | null;
+  width?: number;
 }
 
 export function ConversationView({
   completedBlocks,
   activeStream,
+  width,
 }: ConversationViewProps): ReactNode {
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" width={width}>
       <Static items={completedBlocks}>
         {(block) => (
           <Box key={block.id} flexDirection="column">
