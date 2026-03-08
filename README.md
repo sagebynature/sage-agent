@@ -98,7 +98,7 @@ Control what tools can do via a single `permission:` block in YAML frontmatter. 
 
 ### Hook System
 
-A lifecycle event bus for intercepting and extending agent behavior without modifying core code. Register async handlers against named `HookEvent` values (`PRE_LLM_CALL`, `POST_LLM_CALL`, `POST_TOOL_EXECUTE`, `ON_DELEGATION`, `ON_COMPACTION`, `ON_PLAN_CREATED`, `BACKGROUND_TASK_COMPLETED`, …). Built-in hooks cover credential scrubbing, query-based model routing, bail-out retry (follow-through), automatic memory injection, notepad injection, and plan analysis. Hooks that raise never crash the agent — errors are logged and swallowed.
+A lifecycle event bus for intercepting and extending agent behavior without modifying core code. Register async handlers against named `HookEvent` values — 31 events across seven categories: run lifecycle (`ON_RUN_STARTED`, `ON_RUN_COMPLETED`, `ON_RUN_FAILED`, `ON_RUN_CANCELLED`), LLM calls (`PRE_LLM_CALL`, `POST_LLM_CALL`, `ON_LLM_STREAM_DELTA`, `ON_LLM_ERROR`, `ON_LLM_RETRY`), tools (`PRE_TOOL_EXECUTE`, `POST_TOOL_EXECUTE`, `ON_TOOL_FAILED`), delegation (`ON_DELEGATION`, `ON_DELEGATION_COMPLETE`, `ON_DELEGATION_FAILED`), memory, compaction, permissions, sessions, coordination, and planning. Built-in hooks cover credential scrubbing, query-based model routing, bail-out retry (follow-through), automatic memory injection, notepad injection, and plan analysis. Hooks that raise never crash the agent — errors are logged and swallowed.
 
 ```python
 from sage.hooks.registry import HookRegistry
@@ -112,6 +112,8 @@ async def log_calls(event, data):
 hr.register(HookEvent.PRE_LLM_CALL, log_calls)
 agent = Agent(name="a", model="gpt-4o", hook_registry=hr)
 ```
+
+Every hook emission is also recorded as a canonical `EventEnvelope` by the telemetry layer (`sage/telemetry.py`). Each event carries correlation IDs (`run_id`, `session_id`, `originating_session_id`), timing, token usage, and a sanitized payload. The TUI's event timeline and inspector consume these envelopes via JSON-RPC for real-time visibility into agent behavior. See [ADR-012](.docs/adrs/012-event-telemetry-and-observability.md).
 
 ### Coordination
 
@@ -541,3 +543,9 @@ tui/                # TypeScript terminal UI (Ink v6 + React 19)
 
 - Python 3.10+
 - See `pyproject.toml` for full dependency list
+
+### TUI (optional)
+
+- Node.js 22+
+- pnpm 10+
+- See `tui/package.json` for full dependency list
