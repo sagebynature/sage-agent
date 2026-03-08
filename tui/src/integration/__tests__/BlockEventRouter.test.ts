@@ -14,30 +14,25 @@ describe("BlockEventRouter", () => {
     router = new BlockEventRouter(dispatch);
   });
 
-  it("maps delegation/started to AGENT_STARTED + TOOL_STARTED", () => {
+  it("maps delegation/started to AGENT_STARTED", () => {
     router.handleNotification(METHODS.DELEGATION_STARTED, {
       target: "researcher",
       task: "find docs",
     });
 
-    expect(dispatched).toHaveLength(2);
-    expect(dispatched[0]!.type).toBe("AGENT_STARTED");
-    expect(dispatched[1]!.type).toBe("TOOL_STARTED");
-    if (dispatched[1]!.type === "TOOL_STARTED") {
-      expect(dispatched[1]!.name).toContain("researcher");
-      expect(dispatched[1]!.callId).toMatch(/^delegation_/);
+    expect(dispatched[0]!.type).toBe("EVENT_RECEIVED");
+    expect(dispatched.some((action) => action.type === "AGENT_STARTED")).toBe(true);
+    const agentStarted = dispatched.find((action) => action.type === "AGENT_STARTED");
+    if (agentStarted?.type === "AGENT_STARTED") {
+      expect(agentStarted.agent.name).toBe("researcher");
     }
   });
 
-  it("maps delegation/completed to TOOL_COMPLETED with matching callId", () => {
+  it("maps delegation/completed to AGENT_COMPLETED", () => {
     router.handleNotification(METHODS.DELEGATION_STARTED, {
       target: "researcher",
       task: "find docs",
     });
-
-    const startAction = dispatched.find((a) => a.type === "TOOL_STARTED")!;
-    expect(startAction.type).toBe("TOOL_STARTED");
-    const callId = startAction.type === "TOOL_STARTED" ? startAction.callId : "";
 
     dispatched.length = 0;
 
@@ -46,11 +41,11 @@ describe("BlockEventRouter", () => {
       result: "found 3 docs",
     });
 
-    const completedAction = dispatched.find((a) => a.type === "TOOL_COMPLETED");
+    const completedAction = dispatched.find((a) => a.type === "AGENT_COMPLETED");
     expect(completedAction).toBeDefined();
-    if (completedAction?.type === "TOOL_COMPLETED") {
-      expect(completedAction.callId).toBe(callId);
-      expect(completedAction.result).toBe("found 3 docs");
+    if (completedAction?.type === "AGENT_COMPLETED") {
+      expect(completedAction.name).toBe("researcher");
+      expect(completedAction.status).toBe("completed");
     }
   });
 
@@ -69,7 +64,9 @@ describe("BlockEventRouter", () => {
       callId: "call-1",
       arguments: { command: "ls" },
     });
-    expect(dispatched[0]).toEqual({
+
+    expect(dispatched[0]!.type).toBe("EVENT_RECEIVED");
+    expect(dispatched[1]).toEqual({
       type: "TOOL_STARTED",
       name: "shell",
       callId: "call-1",
@@ -77,14 +74,14 @@ describe("BlockEventRouter", () => {
     });
   });
 
-  it("delegation/started dispatches AGENT_STARTED and TOOL_STARTED", () => {
+  it("delegation/started dispatches AGENT_STARTED", () => {
     router.handleNotification(METHODS.DELEGATION_STARTED, {
       target: "coder",
       task: "write tests",
     });
 
     expect(dispatched.some((a) => a.type === "AGENT_STARTED")).toBe(true);
-    expect(dispatched.some((a) => a.type === "TOOL_STARTED")).toBe(true);
+    expect(dispatched.some((a) => a.type === "TOOL_STARTED")).toBe(false);
 
     const agentAction = dispatched.find((a) => a.type === "AGENT_STARTED");
     if (agentAction?.type === "AGENT_STARTED") {
@@ -93,7 +90,7 @@ describe("BlockEventRouter", () => {
     }
   });
 
-  it("delegation/completed dispatches AGENT_COMPLETED and TOOL_COMPLETED", () => {
+  it("delegation/completed dispatches AGENT_COMPLETED", () => {
     router.handleNotification(METHODS.DELEGATION_STARTED, {
       target: "coder",
       task: "write tests",
@@ -106,7 +103,7 @@ describe("BlockEventRouter", () => {
     });
 
     expect(dispatched.some((a) => a.type === "AGENT_COMPLETED")).toBe(true);
-    expect(dispatched.some((a) => a.type === "TOOL_COMPLETED")).toBe(true);
+    expect(dispatched.some((a) => a.type === "TOOL_COMPLETED")).toBe(false);
 
     const agentAction = dispatched.find((a) => a.type === "AGENT_COMPLETED");
     if (agentAction?.type === "AGENT_COMPLETED") {
@@ -123,5 +120,26 @@ describe("BlockEventRouter", () => {
     });
     // LLM turn started is informational — no crash
     expect(dispatched.length).toBeGreaterThanOrEqual(0);
+  });
+
+  it("de-duplicates legacy events once event/emitted is seen", () => {
+    // 1. Send legacy event -> should be processed
+    router.handleNotification(METHODS.STREAM_DELTA, { delta: "hello" });
+    expect(dispatched.some((a) => a.type === "STREAM_DELTA")).toBe(true);
+    dispatched.length = 0;
+
+    // 2. Send event/emitted -> should be processed and set hasCanonicalEvents=true
+    router.handleNotification(METHODS.EVENT_EMITTED, {
+      eventName: "on_llm_stream_delta",
+      payload: { delta: "world" },
+      agentName: "agent",
+      agentPath: ["agent"],
+    });
+    expect(dispatched.some((a) => a.type === "STREAM_DELTA")).toBe(true);
+    dispatched.length = 0;
+
+    // 3. Send legacy event again -> should be IGNORED
+    router.handleNotification(METHODS.STREAM_DELTA, { delta: "ignored" });
+    expect(dispatched.some((a) => a.type === "STREAM_DELTA")).toBe(false);
   });
 });

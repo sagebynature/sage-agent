@@ -2,6 +2,7 @@ import { Box, Text } from "ink";
 import type { ReactNode } from "react";
 import type { UsageState, PermissionState, AgentNode } from "../types/state.js";
 import type { ActiveStream } from "../types/blocks.js";
+import type { RunSummary, VerbosityMode, EventRecord } from "../types/events.js";
 
 type AppMode = "idle" | "connecting" | "streaming" | "tool" | "permission" | "error";
 
@@ -13,6 +14,10 @@ interface BottomBarProps {
   connectionStatus: "connecting" | "connected" | "disconnected" | "error";
   agents: AgentNode[];
   sessionName?: string;
+  verbosity: VerbosityMode;
+  showEventPane: boolean;
+  activeRun?: RunSummary;
+  selectedEvent?: EventRecord | null;
 }
 
 function contextBar(percent: number): string {
@@ -81,11 +86,13 @@ function ModeIndicator({ props }: { props: BottomBarProps }): ReactNode {
 }
 
 export function BottomBar(props: BottomBarProps): ReactNode {
-  const { usage, agents, sessionName } = props;
+  const { usage, agents, sessionName, verbosity, showEventPane, activeRun, selectedEvent } = props;
   const cost = `$${usage.totalCost.toFixed(2)}`;
   const model = usage.model || "no model";
   const pct = usage.contextUsagePercent;
   const activeAgents = agents.filter((a) => a.status === "active").length;
+  const runLabel = activeRun?.runId ? activeRun.runId.slice(0, 8) : undefined;
+  const agentPath = selectedEvent?.agentPath.join(" > ") || activeRun?.agentPath.join(" > ");
 
   return (
     <Box>
@@ -97,7 +104,10 @@ export function BottomBar(props: BottomBarProps): ReactNode {
         {" | "}{cost}
       </Text>
       {activeAgents > 0 && <Text color="magenta">{" | "}{activeAgents} agent{activeAgents > 1 ? "s" : ""}</Text>}
+      <Text dimColor>{" | "}{verbosity}{showEventPane ? "+events" : ""}</Text>
+      {runLabel && <Text dimColor>{" | run "}{runLabel}</Text>}
       {sessionName && <Text dimColor>{" | "}{sessionName}</Text>}
+      {agentPath && <Text dimColor>{" | "}{agentPath}</Text>}
       <Text dimColor>{"  "}</Text>
       <ModeIndicator props={props} />
     </Box>

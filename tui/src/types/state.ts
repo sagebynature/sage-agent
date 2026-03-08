@@ -37,6 +37,10 @@ export interface AgentNode {
   children: AgentNode[];
   startedAt?: number;
   completedAt?: number;
+  agentPath?: string[];
+  runId?: string;
+  sessionId?: string;
+  delegationId?: string;
 }
 
 export interface UsageState {

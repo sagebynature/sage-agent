@@ -7,25 +7,69 @@ import { BlockProvider, useBlocks } from "../state/BlockContext.js";
 import { BlockEventRouter } from "../integration/BlockEventRouter.js";
 import type { BlockState } from "../state/blockReducer.js";
 import type { PermissionDecision } from "../types/state.js";
+import { eventMatchesFilters, eventVisibleAtVerbosity, type VerbosityMode } from "../types/events.js";
 import { ConversationView } from "./ConversationView.js";
 import { InputPrompt } from "./InputPrompt.js";
 import { BottomBar } from "./BottomBar.js";
 import { PermissionPrompt } from "./PermissionPrompt.js";
 import { useResizeHandler } from "../hooks/useResizeHandler.js";
+import { EventTimeline } from "./EventTimeline.js";
+import { EventInspector } from "./EventInspector.js";
+import { AgentTree } from "./AgentTree.js";
 
 const NOTIFICATION_METHODS = [
+  METHODS.EVENT_EMITTED,
   METHODS.STREAM_DELTA,
   METHODS.TOOL_STARTED,
   METHODS.TOOL_COMPLETED,
   METHODS.RUN_COMPLETED,
-  METHODS.USAGE_UPDATE,
-  METHODS.PERMISSION_REQUEST,
-  METHODS.COMPACTION_STARTED,
-  METHODS.BACKGROUND_COMPLETED,
   METHODS.DELEGATION_STARTED,
   METHODS.DELEGATION_COMPLETED,
+  METHODS.BACKGROUND_COMPLETED,
+  METHODS.PERMISSION_REQUEST,
+  METHODS.USAGE_UPDATE,
+  METHODS.COMPACTION_STARTED,
   METHODS.ERROR,
+  METHODS.TURN_STARTED,
+  METHODS.TURN_COMPLETED,
 ] as const;
+
+const VERBOSITY_ORDER: VerbosityMode[] = ["compact", "normal", "debug"];
+
+function cycleVerbosity(current: VerbosityMode): VerbosityMode {
+  const index = VERBOSITY_ORDER.indexOf(current);
+  return VERBOSITY_ORDER[(index + 1) % VERBOSITY_ORDER.length] ?? "compact";
+}
+
+function parseKeyValueArgs(args: string): Record<string, string> {
+  const pairs: Record<string, string> = {};
+  const pattern = /(\w+)=("([^"]*)"|'([^']*)'|(\S+))/g;
+
+  for (const match of args.matchAll(pattern)) {
+    const [, key, , doubleQuoted, singleQuoted, bare] = match;
+    if (key) {
+      pairs[key] = (doubleQuoted ?? singleQuoted ?? bare ?? "").trim();
+    }
+  }
+
+  return pairs;
+}
+
+function parseCsvValues(args: string, key: string): string[] {
+  const value = parseKeyValueArgs(args)[key];
+  return value ? value.split(",").map((entry) => entry.trim()).filter(Boolean) : [];
+}
+
+function parseSearchValue(args: string): string {
+  return parseKeyValueArgs(args).search ?? "";
+}
+
+function getCurrentSessionId(state: BlockState): string | undefined {
+  const activeRun = state.activeStream?.runId
+    ? state.runs[state.activeStream.runId]
+    : Object.values(state.runs).at(-1);
+  return state.session?.id ?? activeRun?.sessionId ?? Object.values(state.runs).at(-1)?.sessionId;
+}
 
 function AppShell(): ReactNode {
   const { state, dispatch } = useBlocks();
@@ -34,6 +78,23 @@ function AppShell(): ReactNode {
   const { width: columns } = useResizeHandler();
   const stateRef = useRef<BlockState>(state);
   stateRef.current = state;
+  const visibleEvents = state.events
+    .filter((event) => eventVisibleAtVerbosity(event, state.ui.verbosity))
+    .filter((event) => eventMatchesFilters(event, state.ui.filters));
+  const selectedEvent = visibleEvents.find((event) => event.id === state.ui.selectedEventId)
+    ?? state.events.find((event) => event.id === state.ui.selectedEventId)
+    ?? visibleEvents.at(-1)
+    ?? null;
+  const activeRun = state.activeStream?.runId
+    ? state.runs[state.activeStream.runId]
+    : Object.values(state.runs).at(-1);
+  const stackEventPane = state.ui.showEventPane && columns < 100;
+  const eventPaneWidth = state.ui.showEventPane && !stackEventPane
+    ? Math.max(36, Math.floor(columns * 0.38))
+    : columns;
+  const conversationWidth = state.ui.showEventPane && !stackEventPane
+    ? Math.max(40, columns - eventPaneWidth - 1)
+    : columns;
 
   useEffect(() => {
     const router = new BlockEventRouter(dispatch);
@@ -64,12 +125,12 @@ function AppShell(): ReactNode {
       if (connectionStatus !== "connected") return;
 
       dispatch({ type: "SUBMIT_MESSAGE", content: text });
-      // Start stream immediately BEFORE the RPC so notifications aren't dropped
-      const optimisticRunId = `run_${Date.now()}`;
-      dispatch({ type: "STREAM_START", runId: optimisticRunId });
 
       try {
-        await client.request(METHODS.AGENT_RUN, { message: text });
+        const response = await client.request<{ runId: string }>(METHODS.AGENT_RUN, { message: text });
+        if (response && response.runId) {
+          dispatch({ type: "STREAM_START", runId: response.runId });
+        }
       } catch (err: unknown) {
         dispatch({ type: "STREAM_END", status: "error", error: err instanceof Error ? err.message : "Failed to send message" });
       }
@@ -122,6 +183,9 @@ function AppShell(): ReactNode {
               "/usage — Show token usage statistics",
               "/tools — List available tools",
               "/permissions — Show permission grants",
+              "/verbosity [compact|normal|debug] — Set event verbosity",
+              "/events [show|hide|toggle|next|prev|follow] — Event pane controls",
+              "/filters [category=tool,llm] [status=error] [search=text] — Event filters",
               "/agent — Show active agents",
               "/agents — List all agents",
               "/export — Export session transcript",
@@ -137,21 +201,29 @@ function AppShell(): ReactNode {
             break;
           }
           case "clear":
-            try {
-              await client.request("session/clear", {
-                ...(stateRef.current.session?.id
-                  ? { sessionId: stateRef.current.session.id }
-                  : {}),
+            if (getCurrentSessionId(stateRef.current)) {
+              const currentSessionId = getCurrentSessionId(stateRef.current)!;
+              const response = await client.request<{ cleared: boolean }>(METHODS.SESSION_CLEAR, {
+                sessionId: currentSessionId,
               });
-            } catch { /* best effort */ }
+              if (!response.cleared) {
+                throw new Error(`Session ${currentSessionId} could not be cleared`);
+              }
+            }
             dispatch({ type: "CLEAR_BLOCKS" });
             result = "Conversation cleared.";
             break;
           case "reset":
           case "restart":
-            try {
-              await client.request("session/clear", {});
-            } catch { /* best effort */ }
+            if (getCurrentSessionId(stateRef.current)) {
+              const currentSessionId = getCurrentSessionId(stateRef.current)!;
+              const response = await client.request<{ cleared: boolean }>(METHODS.SESSION_CLEAR, {
+                sessionId: currentSessionId,
+              });
+              if (!response.cleared) {
+                throw new Error(`Session ${currentSessionId} could not be cleared`);
+              }
+            }
             dispatch({ type: "CLEAR_BLOCKS" });
             dispatch({ type: "SET_SESSION", session: null });
             dispatch({
@@ -205,6 +277,74 @@ function AppShell(): ReactNode {
             result = pending.length === 0
               ? "No pending permission requests."
               : pending.map((p) => `[${p.status}] ${p.tool}: ${JSON.stringify(p.arguments)}`).join("\n");
+            break;
+          }
+          case "verbosity": {
+            const nextVerbosity = (_args.trim().toLowerCase() || cycleVerbosity(stateRef.current.ui.verbosity)) as VerbosityMode;
+            if (!VERBOSITY_ORDER.includes(nextVerbosity)) {
+              result = `Unknown verbosity: ${_args || "empty"}`;
+              break;
+            }
+            dispatch({ type: "SET_VERBOSITY", verbosity: nextVerbosity });
+            result = `Verbosity set to ${nextVerbosity}.`;
+            break;
+          }
+          case "events": {
+            const subcommand = _args.trim().toLowerCase();
+            if (subcommand === "show") {
+              if (!stateRef.current.ui.showEventPane) {
+                dispatch({ type: "TOGGLE_EVENT_PANE" });
+              }
+              result = "Event pane shown.";
+              break;
+            }
+            if (subcommand === "hide") {
+              if (stateRef.current.ui.showEventPane) {
+                dispatch({ type: "TOGGLE_EVENT_PANE" });
+              }
+              result = "Event pane hidden.";
+              break;
+            }
+            if (subcommand === "next") {
+              dispatch({ type: "SELECT_NEXT_EVENT" });
+              result = "Selected next event.";
+              break;
+            }
+            if (subcommand === "prev") {
+              dispatch({ type: "SELECT_PREV_EVENT" });
+              result = "Selected previous event.";
+              break;
+            }
+            if (subcommand === "follow" || subcommand === "follow on") {
+              dispatch({ type: "SET_EVENT_FOLLOW", follow: true });
+              result = "Event follow enabled.";
+              break;
+            }
+            if (subcommand === "follow off") {
+              dispatch({ type: "SET_EVENT_FOLLOW", follow: false });
+              result = "Event follow disabled.";
+              break;
+            }
+            dispatch({ type: "TOGGLE_EVENT_PANE" });
+            result = `Event pane ${stateRef.current.ui.showEventPane ? "hidden" : "shown"}.`;
+            break;
+          }
+          case "filters": {
+            const raw = _args.trim();
+            if (raw === "clear") {
+              dispatch({ type: "CLEAR_EVENT_FILTERS" });
+              result = "Event filters cleared.";
+              break;
+            }
+            dispatch({
+              type: "SET_EVENT_FILTERS",
+              filters: {
+                categories: parseCsvValues(raw, "category") as typeof stateRef.current.ui.filters.categories,
+                statuses: parseCsvValues(raw, "status") as typeof stateRef.current.ui.filters.statuses,
+                search: parseSearchValue(raw),
+              },
+            });
+            result = "Event filters updated.";
             break;
           }
           case "agent": {
@@ -329,6 +469,26 @@ function AppShell(): ReactNode {
       return;
     }
 
+    if (key.ctrl && input === "v") {
+      dispatch({ type: "SET_VERBOSITY", verbosity: cycleVerbosity(stateRef.current.ui.verbosity) });
+      return;
+    }
+
+    if (key.ctrl && input === "e") {
+      dispatch({ type: "TOGGLE_EVENT_PANE" });
+      return;
+    }
+
+    if (key.ctrl && input === "j") {
+      dispatch({ type: "SELECT_NEXT_EVENT" });
+      return;
+    }
+
+    if (key.ctrl && input === "k") {
+      dispatch({ type: "SELECT_PREV_EVENT" });
+      return;
+    }
+
     // Scroll: Ctrl+Up / Ctrl+Down
     if (key.ctrl && key.upArrow) {
       dispatch({ type: "SCROLL_UP" });
@@ -344,10 +504,34 @@ function AppShell(): ReactNode {
 
   return (
     <Box flexDirection="column" width={columns}>
-      <ConversationView
-        completedBlocks={state.completedBlocks}
-        activeStream={state.activeStream}
-      />
+      <Box flexDirection={stackEventPane ? "column" : "row"} width={columns}>
+        <ConversationView
+          completedBlocks={state.completedBlocks}
+          activeStream={state.activeStream}
+          width={conversationWidth}
+        />
+        {state.ui.showEventPane && (
+          <Box
+            flexDirection="column"
+            width={eventPaneWidth}
+            marginLeft={stackEventPane ? 0 : 1}
+            marginTop={stackEventPane ? 1 : 0}
+          >
+            <EventTimeline
+              events={state.events}
+              selectedEventId={selectedEvent?.id ?? null}
+              verbosity={state.ui.verbosity}
+              filters={state.ui.filters}
+            />
+            <Box marginTop={1}>
+              <EventInspector event={selectedEvent} />
+            </Box>
+            <Box marginTop={1}>
+              <AgentTree />
+            </Box>
+          </Box>
+        )}
+      </Box>
       {state.error && (
         <Box>
           <Text color="red">{"● Error: "}{state.error}</Text>
@@ -374,6 +558,10 @@ function AppShell(): ReactNode {
         connectionStatus={connectionStatus}
         agents={state.agents}
         sessionName={state.session?.agentName}
+        verbosity={state.ui.verbosity}
+        showEventPane={state.ui.showEventPane}
+        activeRun={activeRun}
+        selectedEvent={selectedEvent}
       />
     </Box>
   );

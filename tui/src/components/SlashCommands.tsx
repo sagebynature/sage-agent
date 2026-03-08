@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { commandRegistry } from '../commands/registry.js';
 
@@ -18,6 +18,7 @@ export const SlashCommands: React.FC<SlashCommandsProps> = ({
   onDismiss,
 }) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const selectedIndexRef = useRef(0);
 
   const query = input.startsWith('/') ? input.slice(1) : '';
 
@@ -27,6 +28,7 @@ export const SlashCommands: React.FC<SlashCommandsProps> = ({
 
   useEffect(() => {
     setSelectedIndex(0);
+    selectedIndexRef.current = 0;
   }, [filteredCommands.length, query]);
 
   useInput((_input, key) => {
@@ -38,17 +40,25 @@ export const SlashCommands: React.FC<SlashCommandsProps> = ({
     }
 
     if (key.upArrow) {
-      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : filteredCommands.length - 1));
+      const nextIndex = selectedIndexRef.current > 0
+        ? selectedIndexRef.current - 1
+        : filteredCommands.length - 1;
+      selectedIndexRef.current = nextIndex;
+      setSelectedIndex(nextIndex);
       return;
     }
 
     if (key.downArrow) {
-      setSelectedIndex((prev) => (prev < filteredCommands.length - 1 ? prev + 1 : 0));
+      const nextIndex = selectedIndexRef.current < filteredCommands.length - 1
+        ? selectedIndexRef.current + 1
+        : 0;
+      selectedIndexRef.current = nextIndex;
+      setSelectedIndex(nextIndex);
       return;
     }
 
     if (key.return || key.tab) {
-      const selected = filteredCommands[selectedIndex];
+      const selected = filteredCommands[selectedIndexRef.current];
       if (selected) {
         onSelect(selected.name, '');
       }

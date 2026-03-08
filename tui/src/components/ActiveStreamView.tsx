@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
 import type { ActiveStream } from "../types/blocks.js";
+import { formatToolLabel, formatToolResultPreview } from "../utils/tool-format.js";
 
 const ELAPSED_INTERVAL_MS = 1000;
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -55,15 +56,6 @@ function useElapsedTimer(startedAt: number | null): string {
   return `${min}m ${sec}s`;
 }
 
-function formatToolArgs(args: Record<string, unknown>): string {
-  if (args.path) return ` ${args.path}`;
-  if (args.file_path) return ` ${args.file_path}`;
-  if (args.command) return ` ${args.command}`;
-  if (args.pattern) return ` ${args.pattern}`;
-  if (args.url) return ` ${args.url}`;
-  return "";
-}
-
 function ThinkingIndicator({ startedAt }: { startedAt: number }): ReactNode {
   const elapsed = useElapsedTimer(startedAt);
   const spinner = useSpinner();
@@ -86,36 +78,46 @@ interface ToolInfo {
 
 function RunningToolIndicator({ tool }: { tool: ToolInfo }): ReactNode {
   const spinner = useSpinner();
-  const args = formatToolArgs(tool.arguments);
+  const label = formatToolLabel(tool.name, tool.arguments);
   const isDelegate = tool.name.startsWith("delegate");
   const color = isDelegate ? "magenta" : "blue";
 
   return (
     <Text>
-      <Text color={color}>{spinner} {tool.name}</Text>
-      <Text dimColor>{args}</Text>
+      <Text color={color}>{spinner} {label}</Text>
     </Text>
   );
 }
 
 function ToolStatusIndicator({ tool }: { tool: ToolInfo }): ReactNode {
-  const args = formatToolArgs(tool.arguments);
+  const label = formatToolLabel(tool.name, tool.arguments);
+  const resultPreview = formatToolResultPreview(tool);
   switch (tool.status) {
     case "running":
-      return <RunningToolIndicator tool={tool} />;
+      return <Box><RunningToolIndicator tool={tool} /></Box>;
     case "completed":
       return (
-        <Text dimColor>
-          {"✓ "}{tool.name}{args}
-          {tool.durationMs !== undefined ? `  ${tool.durationMs < 1000 ? `${tool.durationMs}ms` : `${(tool.durationMs / 1000).toFixed(1)}s`}` : ""}
-        </Text>
+        <Box flexDirection="column">
+          <Text dimColor>
+            {"✓ "}{label}
+            {tool.durationMs !== undefined ? `  ${tool.durationMs < 1000 ? `${tool.durationMs}ms` : `${(tool.durationMs / 1000).toFixed(1)}s`}` : ""}
+          </Text>
+          {resultPreview && (
+            <Text dimColor>{"  -> "}{resultPreview}</Text>
+          )}
+        </Box>
       );
     case "failed":
       return (
-        <Text>
-          <Text color="red">{"✗ "}{tool.name}</Text>
-          <Text dimColor>{args}{"  "}{tool.error ?? "failed"}</Text>
-        </Text>
+        <Box flexDirection="column">
+          <Text>
+            <Text color="red">{"✗ "}{label}</Text>
+            {tool.error ? <Text dimColor>{"  "}{tool.error}</Text> : null}
+          </Text>
+          {resultPreview && (
+            <Text dimColor>{"  -> "}{resultPreview}</Text>
+          )}
+        </Box>
       );
     default:
       return null;
