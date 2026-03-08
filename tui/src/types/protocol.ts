@@ -29,6 +29,7 @@ export interface JsonRpcError {
 export interface AgentRunParams {
   message: string;
   sessionId?: string;
+  originatingSessionId?: string;
 }
 
 export interface AgentCancelParams {
@@ -44,7 +45,7 @@ export interface SessionResumeParams {
 }
 
 export interface SessionClearParams {
-  sessionId: string;
+  sessionId?: string;
 }
 
 export interface ConfigGetParams {
@@ -167,6 +168,31 @@ export interface RunCompletedPayload {
   error?: string;
 }
 
+export interface EventEnvelopePayload {
+  version: number;
+  eventId: string;
+  eventName: string;
+  category: string;
+  phase: "start" | "delta" | "complete" | "fail" | "cancel" | "point";
+  timestamp: number;
+  agentName: string;
+  agentPath?: string[];
+  runId: string;
+  turnId?: string;
+  turnIndex?: number;
+  sessionId?: string;
+  originatingSessionId?: string;
+  parentEventId?: string;
+  triggerEventId?: string;
+  traceId?: string;
+  spanId?: string;
+  status?: "ok" | "error" | "cancelled" | "skipped";
+  durationMs?: number;
+  usage?: Record<string, unknown>;
+  payload?: Record<string, unknown>;
+  error?: Record<string, unknown>;
+}
+
 // Method name constants
 export const METHODS = {
   INITIALIZE: "initialize",
@@ -180,6 +206,7 @@ export const METHODS = {
   TOOLS_LIST: "tools/list",
   PERMISSION_RESPOND: "permission/respond",
   // Notification methods (server -> client)
+  EVENT_EMITTED: "event/emitted",
   STREAM_DELTA: "stream/delta",
   TOOL_STARTED: "tool/started",
   TOOL_COMPLETED: "tool/completed",
@@ -191,6 +218,8 @@ export const METHODS = {
   COMPACTION_STARTED: "compaction/started",
   ERROR: "error",
   RUN_COMPLETED: "run/completed",
-  LLM_TURN_STARTED: "llm/turn_started",
-  LLM_TURN_COMPLETED: "llm/turn_completed",
+  TURN_STARTED: "turn/started",
+  TURN_COMPLETED: "turn/completed",
+  LLM_TURN_STARTED: "turn/started",
+  LLM_TURN_COMPLETED: "turn/completed",
 } as const;

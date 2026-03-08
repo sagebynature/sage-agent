@@ -2,6 +2,35 @@ import { describe, it, expect } from "vitest";
 import { blockReducer, INITIAL_BLOCK_STATE } from "../blockReducer.js";
 import type { BlockAction } from "../blockReducer.js";
 import type { PermissionState, AgentNode } from "../../types/state.js";
+import type { EventRecord } from "../../types/events.js";
+
+function makeEvent(overrides: Partial<EventRecord> = {}): EventRecord {
+  return {
+    id: overrides.id ?? "event-1",
+    eventName: overrides.eventName ?? "pre_tool_execute",
+    category: overrides.category ?? "tool",
+    phase: overrides.phase ?? "start",
+    status: overrides.status,
+    timestamp: overrides.timestamp ?? 1,
+    agentName: overrides.agentName ?? "sage",
+    agentPath: overrides.agentPath ?? ["sage"],
+    runId: overrides.runId,
+    turnId: overrides.turnId,
+    turnIndex: overrides.turnIndex,
+    sessionId: overrides.sessionId,
+    originatingSessionId: overrides.originatingSessionId,
+    parentEventId: overrides.parentEventId,
+    triggerEventId: overrides.triggerEventId,
+    traceId: overrides.traceId,
+    spanId: overrides.spanId,
+    durationMs: overrides.durationMs,
+    usage: overrides.usage,
+    payload: overrides.payload ?? {},
+    error: overrides.error,
+    sourceMethod: overrides.sourceMethod,
+    summary: overrides.summary ?? "summary",
+  };
+}
 
 describe("blockReducer", () => {
   it("SUBMIT_MESSAGE appends user block", () => {
@@ -430,5 +459,36 @@ describe("blockReducer", () => {
     expect(state.scrollOffset).toBe(5);
     state = blockReducer(state, { type: "STREAM_DELTA", delta: "hello" });
     expect(state.scrollOffset).toBe(0);
+  });
+
+  it("event navigation respects current filters", () => {
+    let state = blockReducer(INITIAL_BLOCK_STATE, { type: "SET_VERBOSITY", verbosity: "debug" });
+    state = blockReducer(state, { type: "EVENT_RECEIVED", event: makeEvent({ id: "tool-1", category: "tool" }) });
+    state = blockReducer(state, { type: "EVENT_RECEIVED", event: makeEvent({ id: "llm-1", category: "llm", eventName: "pre_llm_call" }) });
+    state = blockReducer(state, {
+      type: "SET_EVENT_FILTERS",
+      filters: { categories: ["llm"] },
+    });
+
+    expect(state.ui.selectedEventId).toBe("llm-1");
+    state = blockReducer(state, { type: "SELECT_PREV_EVENT" });
+    expect(state.ui.selectedEventId).toBe("llm-1");
+  });
+
+  it("changing filters reselects a visible event", () => {
+    let state = blockReducer(INITIAL_BLOCK_STATE, { type: "SET_VERBOSITY", verbosity: "debug" });
+    state = blockReducer(state, { type: "EVENT_RECEIVED", event: makeEvent({ id: "tool-1", category: "tool" }) });
+    state = blockReducer(state, { type: "SELECT_EVENT", eventId: "tool-1" });
+    state = blockReducer(state, {
+      type: "SET_EVENT_FILTERS",
+      filters: { categories: ["llm"] },
+    });
+
+    expect(state.ui.selectedEventId).toBeNull();
+    state = blockReducer(state, {
+      type: "EVENT_RECEIVED",
+      event: makeEvent({ id: "llm-1", category: "llm", eventName: "pre_llm_call" }),
+    });
+    expect(state.ui.selectedEventId).toBe("llm-1");
   });
 });

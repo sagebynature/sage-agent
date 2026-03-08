@@ -48,6 +48,35 @@ describe('ToolDisplay', () => {
     expect(lastFrame()).toContain('ls -la');
   });
 
+  it('renders delegate tool with target agent and task preview', () => {
+    const { lastFrame } = render(
+      <ToolDisplay
+        tools={[mockTool({
+          name: 'delegate',
+          arguments: { agent_name: 'researcher', task: 'compare openfang and openclaw deeply' },
+        })]}
+      />
+    );
+    const frame = lastFrame() ?? '';
+    expect(frame).toContain('delegate -> researcher');
+    expect(frame).toContain('openfang and openclaw');
+  });
+
+  it('renders use_skill tool with skill name and loaded preview', () => {
+    const { lastFrame } = render(
+      <ToolDisplay
+        tools={[mockTool({
+          name: 'use_skill',
+          arguments: { name: 'frontend-developer' },
+          result: '# Frontend Developer\nFull instructions here',
+        })]}
+      />
+    );
+    const frame = lastFrame() ?? '';
+    expect(frame).toContain('use_skill -> frontend-developer');
+    expect(frame).toContain('loaded Frontend Developer');
+  });
+
   it('renders tool with duration', () => {
     const { lastFrame } = render(
       <ToolDisplay tools={[mockTool({ name: 'shell', durationMs: 1500 })]} />

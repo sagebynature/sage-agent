@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React, { type ReactNode } from "react";
 import type { ToolSummary } from "../types/blocks.js";
+import { formatToolLabel, formatToolResultPreview } from "../utils/tool-format.js";
 
 interface ToolDisplayProps {
   tools: ToolSummary[];
@@ -12,33 +13,30 @@ function formatDuration(ms?: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-function formatToolArgs(tool: ToolSummary): string {
-  const args = tool.arguments;
-  if (args.path) return ` ${args.path}`;
-  if (args.file_path) return ` ${args.file_path}`;
-  if (args.command) return ` ${args.command}`;
-  if (args.pattern) return ` ${args.pattern}`;
-  if (args.url) return ` ${args.url}`;
-  return "";
-}
-
 function ToolStatusLine({ tool }: { tool: ToolSummary }): ReactNode {
-  const args = formatToolArgs(tool);
+  const label = formatToolLabel(tool.name, tool.arguments);
   const duration = formatDuration(tool.durationMs);
+  const preview = formatToolResultPreview(tool);
 
   if (tool.status === "failed") {
     return (
-      <Text>
-        <Text color="red">{"  ✗ "}{tool.name}</Text>
-        <Text dimColor>{args}{"  "}{tool.error ?? "failed"}</Text>
-      </Text>
+      <Box flexDirection="column">
+        <Text>
+          <Text color="red">{"  ✗ "}{label}</Text>
+          <Text dimColor>{"  "}{tool.error ?? "failed"}</Text>
+        </Text>
+        {preview && <Text dimColor>{"    -> "}{preview}</Text>}
+      </Box>
     );
   }
 
   return (
-    <Text dimColor>
-      {"  ✓ "}{tool.name}{args}{duration ? `  ${duration}` : ""}
-    </Text>
+    <Box flexDirection="column">
+      <Text dimColor>
+        {"  ✓ "}{label}{duration ? `  ${duration}` : ""}
+      </Text>
+      {preview && <Text dimColor>{"    -> "}{preview}</Text>}
+    </Box>
   );
 }
 
@@ -46,13 +44,14 @@ function ToolDisplayComponent({ tools }: ToolDisplayProps): ReactNode {
   if (tools.length === 0) return null;
 
   const primary = tools[0]!;
-  const args = formatToolArgs(primary);
+  const primaryLabel = formatToolLabel(primary.name, primary.arguments);
   const duration = formatDuration(primary.durationMs);
   const isFailed = primary.status === "failed";
+  const preview = tools.length === 1 ? formatToolResultPreview(primary) : null;
 
   const summary =
     tools.length === 1
-      ? `${primary.name}${args}${isFailed ? ` ✗ ${primary.error ?? "failed"}` : duration ? `  ${duration}` : ""}`
+      ? `${primaryLabel}${isFailed ? ` ✗ ${primary.error ?? "failed"}` : duration ? `  ${duration}` : ""}`
       : tools.every((t) => t.name === primary.name)
         ? `${primary.name} (${tools.length} calls)`
         : `${tools.length} tool calls`;
@@ -66,6 +65,7 @@ function ToolDisplayComponent({ tools }: ToolDisplayProps): ReactNode {
         <Text color={iconColor}>{icon} </Text>
         {summary}
       </Text>
+      {preview && <Text dimColor>{"  -> "}{preview}</Text>}
       {tools.length > 1 &&
         tools.map((tool, idx) => (
           <ToolStatusLine key={`${idx}_${tool.callId}`} tool={tool} />
