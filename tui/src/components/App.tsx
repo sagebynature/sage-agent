@@ -15,7 +15,7 @@ import { PermissionPrompt } from "./PermissionPrompt.js";
 import { useResizeHandler } from "../hooks/useResizeHandler.js";
 import { EventTimeline } from "./EventTimeline.js";
 import { EventInspector } from "./EventInspector.js";
-import { AgentTree } from "./AgentTree.js";
+
 
 const NOTIFICATION_METHODS = [
   METHODS.EVENT_EMITTED,
@@ -88,13 +88,6 @@ function AppShell(): ReactNode {
   const activeRun = state.activeStream?.runId
     ? state.runs[state.activeStream.runId]
     : Object.values(state.runs).at(-1);
-  const stackEventPane = state.ui.showEventPane && columns < 100;
-  const eventPaneWidth = state.ui.showEventPane && !stackEventPane
-    ? Math.max(36, Math.floor(columns * 0.38))
-    : columns;
-  const conversationWidth = state.ui.showEventPane && !stackEventPane
-    ? Math.max(40, columns - eventPaneWidth - 1)
-    : columns;
 
   useEffect(() => {
     const router = new BlockEventRouter(dispatch);
@@ -506,49 +499,41 @@ function AppShell(): ReactNode {
 
   const pendingPermissions = state.permissions.filter((p) => p.status === "pending");
 
-  // Reserve rows for chrome: input (2), bottom bar (1), error (1 if present),
-  // each pending permission (~4 lines each).
-  const chromeRows = 3 + (state.error ? 1 : 0) + pendingPermissions.length * 4;
-  const availableRows = Math.max(6, rows - chromeRows);
-
-  // Budget for the three event-pane sections (borders consume 2 rows each).
-  const timelineHeight = Math.max(5, Math.floor(availableRows * 0.45));
-  const inspectorHeight = Math.max(4, Math.floor(availableRows * 0.40));
-  const agentTreeHeight = Math.max(0, availableRows - timelineHeight - inspectorHeight - 2);
+  // The event pane lives in Ink's dynamic area (below <Static> messages).
+  // To keep it compact, timeline and inspector sit side-by-side in a
+  // horizontal strip with a capped height.
+  const eventPaneHeight = state.ui.showEventPane
+    ? Math.max(8, Math.min(16, Math.floor(rows * 0.35)))
+    : 0;
 
   return (
     <Box flexDirection="column" width={columns}>
-      <Box flexDirection={stackEventPane ? "column" : "row"} width={columns} height={availableRows}>
-        <ConversationView
-          completedBlocks={state.completedBlocks}
-          activeStream={state.activeStream}
-          width={conversationWidth}
-        />
-        {state.ui.showEventPane && (
-          <Box
-            flexDirection="column"
-            width={eventPaneWidth}
-            height={availableRows}
-            marginLeft={stackEventPane ? 0 : 1}
-            marginTop={stackEventPane ? 1 : 0}
-            overflowY="hidden"
-          >
-            <EventTimeline
-              events={state.events}
-              selectedEventId={selectedEvent?.id ?? null}
-              verbosity={state.ui.verbosity}
-              filters={state.ui.filters}
-              maxHeight={timelineHeight}
-            />
-            <EventInspector event={selectedEvent} maxHeight={inspectorHeight} />
-            {agentTreeHeight > 2 && (
-              <Box height={agentTreeHeight} overflowY="hidden">
-                <AgentTree />
-              </Box>
-            )}
-          </Box>
-        )}
-      </Box>
+      {/* Conversation: <Static> items go to Ink's permanent area above;
+          ActiveStreamView stays in the dynamic area. */}
+      <ConversationView
+        completedBlocks={state.completedBlocks}
+        activeStream={state.activeStream}
+        width={columns}
+      />
+      {/* Event pane: compact horizontal strip in the dynamic area.
+          Timeline and inspector sit side-by-side to save vertical space. */}
+      {state.ui.showEventPane && (
+        <Box
+          flexDirection="row"
+          width={columns}
+          height={eventPaneHeight}
+          overflowY="hidden"
+        >
+          <EventTimeline
+            events={state.events}
+            selectedEventId={selectedEvent?.id ?? null}
+            verbosity={state.ui.verbosity}
+            filters={state.ui.filters}
+            maxHeight={eventPaneHeight}
+          />
+          <EventInspector event={selectedEvent} maxHeight={eventPaneHeight} />
+        </Box>
+      )}
       {state.error && (
         <Box>
           <Text color="red">{"● Error: "}{state.error}</Text>
@@ -567,19 +552,21 @@ function AppShell(): ReactNode {
         isActive={!state.activeStream && connectionStatus === "connected" && pendingPermissions.length === 0}
         width={columns}
       />
-      <BottomBar
-        usage={state.usage}
-        activeStream={state.activeStream}
-        permissions={state.permissions}
-        error={state.error}
-        connectionStatus={connectionStatus}
-        agents={state.agents}
-        sessionName={state.session?.agentName}
-        verbosity={state.ui.verbosity}
-        showEventPane={state.ui.showEventPane}
-        activeRun={activeRun}
-        selectedEvent={selectedEvent}
-      />
+      <Box marginTop={1}>
+        <BottomBar
+          usage={state.usage}
+          activeStream={state.activeStream}
+          permissions={state.permissions}
+          error={state.error}
+          connectionStatus={connectionStatus}
+          agents={state.agents}
+          sessionName={state.session?.agentName}
+          verbosity={state.ui.verbosity}
+          showEventPane={state.ui.showEventPane}
+          activeRun={activeRun}
+          selectedEvent={selectedEvent}
+        />
+      </Box>
     </Box>
   );
 }
