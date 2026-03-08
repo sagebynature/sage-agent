@@ -1,5 +1,5 @@
 import { Box, Text, useInput } from "ink";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SageClient } from "../ipc/client.js";
 import { SageClientContext, useSageClient, useClientStatus } from "../ipc/hooks.js";
 import { METHODS } from "../types/protocol.js";
@@ -105,6 +105,8 @@ function AppShell(): ReactNode {
   const client = useSageClient();
   const connectionStatus = useClientStatus();
   const { width: columns, height: rows } = useResizeHandler();
+  const [mainAgentName, setMainAgentName] = useState("");
+  const [configuredModel, setConfiguredModel] = useState("");
   const stateRef = useRef<BlockState>(state);
   stateRef.current = state;
   const inputRef = useRef<InputPromptHandle>(null);
@@ -131,9 +133,15 @@ function AppShell(): ReactNode {
   const activeRun = state.activeStream?.runId
     ? state.runs[state.activeStream.runId]
     : Object.values(state.runs).at(-1);
+  const currentMainAgentName = activeRun?.agentPath[0]
+    ?? state.events.at(-1)?.agentPath[0]
+    ?? state.session?.agentName
+    ?? mainAgentName;
+  const currentModelName = state.usage.model || configuredModel;
 
   useEffect(() => {
     const router = new BlockEventRouter(batchedDispatch);
+    let isMounted = true;
 
     const unsubscribers = NOTIFICATION_METHODS.map((method) =>
       client.onNotification(method, (params) => {
@@ -141,14 +149,31 @@ function AppShell(): ReactNode {
       }),
     );
 
-    client.spawn().catch((err: unknown) => {
-      dispatch({
-        type: "SET_ERROR",
-        error: err instanceof Error ? err.message : "Failed to connect to backend",
-      });
-    });
+    void (async () => {
+      try {
+        await client.spawn();
+
+        const [nameResponse, modelResponse] = await Promise.all([
+          client.request<{ value?: unknown }>(METHODS.CONFIG_GET, { key: "name" }),
+          client.request<{ value?: unknown }>(METHODS.CONFIG_GET, { key: "model" }),
+        ]);
+
+        if (isMounted && typeof nameResponse?.value === "string" && nameResponse.value.length > 0) {
+          setMainAgentName(nameResponse.value);
+        }
+        if (isMounted && typeof modelResponse?.value === "string" && modelResponse.value.length > 0) {
+          setConfiguredModel(modelResponse.value);
+        }
+      } catch (err: unknown) {
+        dispatch({
+          type: "SET_ERROR",
+          error: err instanceof Error ? err.message : "Failed to connect to backend",
+        });
+      }
+    })();
 
     return () => {
+      isMounted = false;
       for (const unsub of unsubscribers) {
         unsub();
       }
@@ -601,13 +626,15 @@ function AppShell(): ReactNode {
       />
       <Box marginTop={1}>
         <BottomBar
+          width={columns}
           usage={state.usage}
           activeStream={state.activeStream}
           permissions={state.permissions}
           error={state.error}
           connectionStatus={connectionStatus}
           agents={state.agents}
-          sessionName={state.session?.agentName}
+          sessionName={currentMainAgentName}
+          modelName={currentModelName}
           verbosity={state.ui.verbosity}
           showEventPane={state.ui.showEventPane}
           activeRun={state.activeStream ? activeRun : undefined}

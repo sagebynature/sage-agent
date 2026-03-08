@@ -7,6 +7,7 @@ import type { RunSummary, VerbosityMode, EventRecord } from "../types/events.js"
 type AppMode = "idle" | "connecting" | "streaming" | "tool" | "permission" | "error";
 
 interface BottomBarProps {
+  width: number;
   usage: UsageState;
   activeStream: ActiveStream | null;
   permissions: PermissionState[];
@@ -14,6 +15,7 @@ interface BottomBarProps {
   connectionStatus: "connecting" | "connected" | "disconnected" | "error";
   agents: AgentNode[];
   sessionName?: string;
+  modelName?: string;
   verbosity: VerbosityMode;
   showEventPane: boolean;
   activeRun?: RunSummary;
@@ -86,30 +88,35 @@ function ModeIndicator({ props }: { props: BottomBarProps }): ReactNode {
 }
 
 export const BottomBar = memo(function BottomBar(props: BottomBarProps): ReactNode {
-  const { usage, agents, sessionName, verbosity, showEventPane, activeRun, selectedEvent } = props;
+  const { width, usage, agents, sessionName, modelName, verbosity, showEventPane, activeRun, selectedEvent } = props;
   const cost = `$${usage.totalCost.toFixed(2)}`;
-  const model = usage.model || "no model";
+  const agentLabel = sessionName || "no agent";
+  const activeModel = modelName || usage.model || "no model";
   const pct = usage.contextUsagePercent;
   const activeAgents = agents.filter((a) => a.status === "active").length;
   const runLabel = activeRun?.runId ? activeRun.runId.slice(0, 8) : undefined;
   const agentPath = selectedEvent?.agentPath.join(" > ") || activeRun?.agentPath.join(" > ");
 
   return (
-    <Box>
-      <Text dimColor>
-        {"  "}{model}
-        {" | "}
+    <Box width={width}>
+      <Text wrap="truncate-end">
+        <Text dimColor>
+          {"  "}{agentLabel}
+          {" | "}{activeModel}
+          {" | "}
+        </Text>
         <Text color={contextColor(pct)}>{contextBar(pct)}</Text>
-        {" "}{pct}%
-        {" | "}{cost}
+        <Text dimColor>
+          {" "}{pct}%
+          {" | "}{cost}
+        </Text>
+        {activeAgents > 0 && <Text color="magenta">{" | "}{activeAgents} agent{activeAgents > 1 ? "s" : ""}</Text>}
+        <Text dimColor>{" | "}{verbosity}{showEventPane ? "+events" : ""}</Text>
+        {runLabel && <Text dimColor>{" | run "}{runLabel}</Text>}
+        {agentPath && <Text dimColor>{" | "}{agentPath}</Text>}
+        <Text dimColor>{"  "}</Text>
+        <ModeIndicator props={props} />
       </Text>
-      {activeAgents > 0 && <Text color="magenta">{" | "}{activeAgents} agent{activeAgents > 1 ? "s" : ""}</Text>}
-      <Text dimColor>{" | "}{verbosity}{showEventPane ? "+events" : ""}</Text>
-      {runLabel && <Text dimColor>{" | run "}{runLabel}</Text>}
-      {sessionName && <Text dimColor>{" | "}{sessionName}</Text>}
-      {agentPath && <Text dimColor>{" | "}{agentPath}</Text>}
-      <Text dimColor>{"  "}</Text>
-      <ModeIndicator props={props} />
     </Box>
   );
 });
