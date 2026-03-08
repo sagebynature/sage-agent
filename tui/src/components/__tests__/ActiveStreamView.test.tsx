@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { render } from "ink-testing-library";
 
-import { ActiveStreamView, truncateStreamLines } from "../ActiveStreamView.js";
+import {
+  ActiveStreamView,
+  resolveActiveStatusStyle,
+  truncateStreamLines,
+} from "../ActiveStreamView.js";
 import type { ActiveStream } from "../../types/blocks.js";
 
 describe("truncateStreamLines", () => {
@@ -23,6 +27,16 @@ describe("truncateStreamLines", () => {
 });
 
 describe("ActiveStreamView", () => {
+  it("uses truecolor glow only on 24-bit terminals and static fallback elsewhere", () => {
+    expect(resolveActiveStatusStyle(0, false, 24)).toEqual({ color: "#7fe7ff", bold: true });
+    expect(resolveActiveStatusStyle(1, false, 24)).toEqual({ color: "#4dcfff", bold: false });
+    expect(resolveActiveStatusStyle(2, false, 24)).toEqual({ color: "#2f9bff", bold: false });
+    expect(resolveActiveStatusStyle(0, false, 256)).toEqual({ color: "cyan", bold: false });
+    expect(resolveActiveStatusStyle(1, false, 256)).toEqual({ color: "cyan", bold: false });
+    expect(resolveActiveStatusStyle(0, true, 24)).toEqual({ color: "#ff8cf6", bold: true });
+    expect(resolveActiveStatusStyle(1, true, 16)).toEqual({ color: "magenta", bold: false });
+  });
+
   it("shows thinking indicator when isThinking", () => {
     const stream: ActiveStream = {
       runId: "r1",

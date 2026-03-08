@@ -105,10 +105,9 @@ export const BottomBar = memo(function BottomBar(props: BottomBarProps): ReactNo
           {" | "}{activeModel}
           {" | "}
         </Text>
-        <Text color={contextColor(pct)}>{contextBar(pct)}</Text>
+        {/* <Text color={contextColor(pct)}>{contextBar(pct)}</Text> */}
         <Text dimColor>
-          {" "}{pct}%
-          {" | "}{cost}
+          {pct}%{" used | "}{cost}
         </Text>
         {activeAgents > 0 && <Text color="magenta">{" | "}{activeAgents} agent{activeAgents > 1 ? "s" : ""}</Text>}
         <Text dimColor>{" | "}{verbosity}{showEventPane ? "+events" : ""}</Text>
