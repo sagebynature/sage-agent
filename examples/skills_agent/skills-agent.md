@@ -1,6 +1,6 @@
 ---
-name: dev-assistant
-model: azure_ai/gpt-4o
+name: skills-agent
+# model: azure_ai/gpt-4o
 permission:
   read: allow
   shell: allow

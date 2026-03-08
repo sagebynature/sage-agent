@@ -80,7 +80,7 @@ async def main() -> None:
         context = "\n".join(f"- {e.content}" for e in recalled)
 
         agent = Agent(
-            name="sage-historian",
+            name="historian",
             model=CHAT_MODEL,
             body=(
                 "You are a concise historian. "

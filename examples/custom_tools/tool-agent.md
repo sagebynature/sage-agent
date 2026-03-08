@@ -1,6 +1,6 @@
 ---
 name: tool-agent
-model: azure_ai/gpt-4o
+# model: azure_ai/gpt-4o
 extensions:
   - examples.custom_tools.tools
 max_turns: 10

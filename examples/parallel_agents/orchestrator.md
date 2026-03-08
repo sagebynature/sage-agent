@@ -1,12 +1,12 @@
 ---
 name: orchestrator
-model: azure_ai/gpt-4o
+# model: azure_ai/gpt-4o
 permission:
   read: allow
   shell: allow
 subagents:
-  - research_agent
-  - summarize_agent
+  - researcher.md
+  - summarizer.md
 model_params:
   temperature: 0.5
   max_tokens: 4096
