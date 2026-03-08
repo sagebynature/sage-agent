@@ -9,7 +9,7 @@ import type { BlockState } from "../state/blockReducer.js";
 import type { PermissionDecision } from "../types/state.js";
 import { eventMatchesFilters, eventVisibleAtVerbosity, type VerbosityMode } from "../types/events.js";
 import { ConversationView } from "./ConversationView.js";
-import { InputPrompt } from "./InputPrompt.js";
+import { InputPrompt, type InputPromptHandle } from "./InputPrompt.js";
 import { BottomBar } from "./BottomBar.js";
 import { PermissionPrompt } from "./PermissionPrompt.js";
 import { useResizeHandler } from "../hooks/useResizeHandler.js";
@@ -78,6 +78,7 @@ function AppShell(): ReactNode {
   const { width: columns, height: rows } = useResizeHandler();
   const stateRef = useRef<BlockState>(state);
   stateRef.current = state;
+  const inputRef = useRef<InputPromptHandle>(null);
   const visibleEvents = state.events
     .filter((event) => eventVisibleAtVerbosity(event, state.ui.verbosity))
     .filter((event) => eventMatchesFilters(event, state.ui.filters));
@@ -419,10 +420,12 @@ function AppShell(): ReactNode {
   }, [client]);
 
   useInput((input, key) => {
-    // Cancel / quit
+    // Cancel / clear input / quit
     if (key.ctrl && input === "c") {
       if (state.activeStream) {
         void handleCancel();
+      } else if (inputRef.current?.hasValue()) {
+        inputRef.current.clear();
       } else {
         shutdown();
       }
@@ -547,6 +550,7 @@ function AppShell(): ReactNode {
         />
       ))}
       <InputPrompt
+        ref={inputRef}
         onSubmit={handleSubmit}
         onCommand={handleCommand}
         isActive={!state.activeStream && connectionStatus === "connected" && pendingPermissions.length === 0}
