@@ -1,3 +1,6 @@
+import { execFileSync } from "node:child_process";
+import { homedir } from "node:os";
+import { sep } from "node:path";
 import { Box, Text } from "ink";
 import { memo, type ReactNode } from "react";
 import type { UsageState, PermissionState, AgentNode } from "../types/state.js";
@@ -8,6 +11,8 @@ type AppMode = "idle" | "connecting" | "streaming" | "tool" | "permission" | "er
 
 interface BottomBarProps {
   width: number;
+  cwd?: string;
+  gitBranch?: string;
   usage: UsageState;
   activeStream: ActiveStream | null;
   permissions: PermissionState[];
@@ -22,10 +27,27 @@ interface BottomBarProps {
   selectedEvent?: EventRecord | null;
 }
 
-function contextBar(percent: number): string {
-  const filled = Math.round(percent / 10);
-  const empty = 10 - filled;
-  return "█".repeat(filled) + "░".repeat(empty);
+function formatCurrentDirectory(cwd: string): string {
+  const home = homedir();
+  if (cwd === home) return "~";
+  if (cwd.startsWith(`${home}${sep}`)) {
+    return `~${cwd.slice(home.length)}`;
+  }
+  return cwd;
+}
+
+function resolveGitBranch(cwd: string): string | undefined {
+  try {
+    const branch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+
+    return branch && branch !== "HEAD" ? branch : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function contextColor(percent: number): string {
@@ -33,6 +55,9 @@ function contextColor(percent: number): string {
   if (percent >= 70) return "yellow";
   return "green";
 }
+
+const DEFAULT_CWD = formatCurrentDirectory(process.cwd());
+const DEFAULT_GIT_BRANCH = resolveGitBranch(process.cwd());
 
 function getMode(props: BottomBarProps): AppMode {
   if (props.connectionStatus === "connecting" || props.connectionStatus === "disconnected") return "connecting";
@@ -88,7 +113,19 @@ function ModeIndicator({ props }: { props: BottomBarProps }): ReactNode {
 }
 
 export const BottomBar = memo(function BottomBar(props: BottomBarProps): ReactNode {
-  const { width, usage, agents, sessionName, modelName, verbosity, showEventPane, activeRun, selectedEvent } = props;
+  const {
+    width,
+    cwd = DEFAULT_CWD,
+    gitBranch = DEFAULT_GIT_BRANCH,
+    usage,
+    agents,
+    sessionName,
+    modelName,
+    verbosity,
+    showEventPane,
+    activeRun,
+    selectedEvent,
+  } = props;
   const cost = `$${usage.totalCost.toFixed(2)}`;
   const agentLabel = sessionName || "no agent";
   const activeModel = modelName || usage.model || "no model";
@@ -98,23 +135,31 @@ export const BottomBar = memo(function BottomBar(props: BottomBarProps): ReactNo
   const agentPath = selectedEvent?.agentPath.join(" > ") || activeRun?.agentPath.join(" > ");
 
   return (
-    <Box width={width}>
+    <Box width={width} flexDirection="column">
       <Text wrap="truncate-end">
-        <Text dimColor>
-          {"  "}{agentLabel}
-          {" | "}{activeModel}
-          {" | "}
-        </Text>
-        {/* <Text color={contextColor(pct)}>{contextBar(pct)}</Text> */}
-        <Text dimColor>
-          {pct}%{" used | "}{cost}
-        </Text>
-        {activeAgents > 0 && <Text color="magenta">{" | "}{activeAgents} agent{activeAgents > 1 ? "s" : ""}</Text>}
+        <Text>{"  "}</Text>
+        <Text>{cwd}</Text>
+        {gitBranch && (
+          <>
+            <Text dimColor>{" | git "}</Text>
+            <Text color="cyan">{gitBranch}</Text>
+          </>
+        )}
+        <Text dimColor>{" | "}</Text>
+        <Text>{agentLabel}</Text>
+        <Text dimColor>{" | "}</Text>
+        <Text>{activeModel}</Text>
+      </Text>
+      <Text wrap="truncate-end">
+        <Text dimColor>{"  "}</Text>
+        <ModeIndicator props={props} />
+        <Text dimColor>{" | "}</Text>
+        <Text color={contextColor(pct)}>{pct}% used</Text>
+        <Text dimColor>{" | "}{cost}</Text>
+        {activeAgents > 0 && <Text dimColor>{" | "}{activeAgents} active agent{activeAgents > 1 ? "s" : ""}</Text>}
         <Text dimColor>{" | "}{verbosity}{showEventPane ? "+events" : ""}</Text>
         {runLabel && <Text dimColor>{" | run "}{runLabel}</Text>}
         {agentPath && <Text dimColor>{" | "}{agentPath}</Text>}
-        <Text dimColor>{"  "}</Text>
-        <ModeIndicator props={props} />
       </Text>
     </Box>
   );
