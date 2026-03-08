@@ -141,16 +141,25 @@ def _load_skill_from_dir(skill_dir: Path) -> Skill | None:
     return skill
 
 
-def resolve_skills_dir(config_skills_dir: str | None = None) -> Path | None:
+def resolve_skills_dir(
+    config_skills_dir: str | None = None,
+    base_dir: Path | None = None,
+) -> Path | None:
     """Resolve the global skills directory using waterfall lookup.
 
     Resolution order:
-    1. config.toml top-level skills_dir (if set and is a directory)
-    2. ./skills in current working directory
-    3. ~/.agents/skills
-    4. ~/.claude/skills
-    5. None (no skills directory found)
+    1. base_dir / "skills" (if base_dir is provided and directory exists)
+    2. config.toml top-level skills_dir (if set and is a directory)
+    3. ./skills in current working directory
+    4. ~/.agents/skills
+    5. ~/.claude/skills
+    6. None (no skills directory found)
     """
+    if base_dir is not None:
+        p = base_dir / "skills"
+        if p.is_dir():
+            return p
+
     if config_skills_dir is not None:
         expanded = os.path.expandvars(config_skills_dir)
         p = Path(expanded).expanduser()

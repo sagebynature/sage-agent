@@ -24,6 +24,7 @@ class MCPServerConfig(BaseModel):
     url: str | None = None
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
+    timeout: float = 10.0
 
 
 class SandboxConfig(BaseModel):

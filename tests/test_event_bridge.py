@@ -16,7 +16,8 @@ from sage.events import (
     ToolStarted,
 )
 from sage.models import Usage
-from sage.protocol.bridge import EventBridge
+from sage.protocol.bridge import EventBridge, JsonRpcEventSink
+from sage.telemetry import EventEnvelope
 
 EventHandler = Callable[[object], Awaitable[None]]
 
@@ -250,3 +251,31 @@ async def test_usage_update_sent_after_turn_completed() -> None:
             "agent_path": ["root"],
         },
     )
+
+
+@pytest.mark.asyncio
+async def test_jsonrpc_event_sink_emits_canonical_envelope() -> None:
+    mock_server = MagicMock()
+    mock_server.send_notification = AsyncMock()
+    sink = JsonRpcEventSink(mock_server)
+
+    envelope = EventEnvelope(
+        event_name="on_run_started",
+        category="run",
+        phase="start",
+        agent_name="root",
+        agent_path=["root"],
+        run_id="run-123",
+        payload={"tool_name": "shell"},
+    )
+
+    await sink.write(envelope)
+
+    mock_server.send_notification.assert_awaited_once()
+    call = mock_server.send_notification.await_args
+    assert call.args[0] == "event/emitted"
+    payload = call.args[1]
+    assert payload["eventName"] == "on_run_started"
+    assert payload["agentPath"] == ["root"]
+    assert payload["runId"] == "run-123"
+    assert payload["payload"] == {"toolName": "shell"}

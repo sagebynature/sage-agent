@@ -10,6 +10,11 @@ from sage.models import ToolSchema
 from sage.protocol.dispatcher import MethodDispatcher
 
 
+async def _default_stream(*_args: object, **_kwargs: object):
+    if False:
+        yield ""
+
+
 def _make_server() -> MagicMock:
     server = MagicMock()
     server._success_response.side_effect = lambda request_id, result: {
@@ -28,6 +33,7 @@ def _make_server() -> MagicMock:
 def _make_dispatcher() -> tuple[MethodDispatcher, MagicMock, MagicMock, MagicMock]:
     agent = MagicMock()
     agent.run = AsyncMock(return_value="hello")
+    agent.stream = MagicMock(side_effect=_default_stream)
     agent.model = "gpt-4o"
     agent.temperature = 0.2
     agent.tool_registry = MagicMock()
@@ -163,6 +169,40 @@ async def test_session_clear_returns_success() -> None:
 
     session_manager.destroy_session.assert_called_once_with("s1")
     assert response["result"] == {"cleared": True}
+
+
+@pytest.mark.asyncio
+async def test_session_clear_accepts_camel_case_session_id() -> None:
+    dispatcher, _agent, session_manager, _server = _make_dispatcher()
+
+    response = await dispatcher.dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 17,
+            "method": "session/clear",
+            "params": {"sessionId": "s1"},
+        }
+    )
+
+    session_manager.destroy_session.assert_called_once_with("s1")
+    assert response["result"] == {"cleared": True}
+
+
+@pytest.mark.asyncio
+async def test_session_clear_without_session_returns_false() -> None:
+    dispatcher, _agent, session_manager, _server = _make_dispatcher()
+
+    response = await dispatcher.dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 18,
+            "method": "session/clear",
+            "params": {},
+        }
+    )
+
+    session_manager.destroy_session.assert_not_called()
+    assert response["result"] == {"cleared": False}
 
 
 @pytest.mark.asyncio
@@ -326,7 +366,8 @@ async def test_agent_run_uses_stream_not_run() -> None:
     """agent/run should call agent.stream(), not agent.run()."""
     dispatcher, agent, _session_manager, server = _make_dispatcher()
 
-    async def fake_stream(message: str):
+    async def fake_stream(message: str, **kwargs: object):
+        assert "run_id" in kwargs
         yield "hello "
         yield "world"
 
@@ -339,7 +380,10 @@ async def test_agent_run_uses_stream_not_run() -> None:
 
     assert response["result"]["status"] == "started"
     await asyncio.sleep(0.1)
-    agent.stream.assert_called_once_with("hi")
+    agent.stream.assert_called_once()
+    call_args = agent.stream.call_args
+    assert call_args.args == ("hi",)
+    assert call_args.kwargs["run_id"] == response["result"]["runId"]
 
 
 @pytest.mark.asyncio
@@ -347,7 +391,8 @@ async def test_agent_run_sends_completed_notification() -> None:
     """When streaming finishes, dispatcher sends run/completed notification."""
     dispatcher, agent, _session_manager, server = _make_dispatcher()
 
-    async def fake_stream(message: str):
+    async def fake_stream(message: str, **kwargs: object):
+        assert kwargs["run_id"]
         yield "done"
 
     agent.stream = MagicMock(side_effect=fake_stream)
@@ -383,7 +428,8 @@ async def test_agent_run_sends_error_on_failure() -> None:
     """When streaming raises, dispatcher sends run/completed with error."""
     dispatcher, agent, _session_manager, server = _make_dispatcher()
 
-    async def failing_stream(message: str):
+    async def failing_stream(message: str, **kwargs: object):
+        assert kwargs["run_id"]
         raise RuntimeError("model error")
         yield  # make it a generator
 

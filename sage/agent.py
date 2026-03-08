@@ -81,6 +81,7 @@ def _build_mcp_clients(config: "AgentConfig", agent_config: "AgentConfig") -> li
                     url=mcp_cfg.url,
                     args=mcp_cfg.args,
                     env=mcp_cfg.env,
+                    initialize_timeout=mcp_cfg.timeout,
                 )
             )
     return mcp_clients
@@ -489,6 +490,12 @@ class Agent:
 
         # Auto-register skill tool when skills are present.
         if self.skills:
+            logger.info(
+                "Agent '%s' loaded %d skill(s): %s",
+                self.name,
+                len(self.skills),
+                ", ".join(s.name for s in self.skills),
+            )
             self._register_skill_tool()
 
     # ── Factory methods ───────────────────────────────────────────────
@@ -503,7 +510,10 @@ class Agent:
             central = load_main_config(resolve_main_config_path())
         resolve_and_apply_env(central)
         config = load_config(str(resolved), central=central)
-        resolved_dir = resolve_skills_dir(central.skills_dir if central else None)
+        resolved_dir = resolve_skills_dir(
+            config_skills_dir=central.skills_dir if central else None,
+            base_dir=resolved.parent,
+        )
         global_skills = load_skills_from_directory(resolved_dir) if resolved_dir else []
         agent = cls._from_agent_config(config, resolved.parent, global_skills=global_skills)
         agent._main_config = central
@@ -561,6 +571,7 @@ class Agent:
         response_model: type[T],
         session_id: str | None = None,
         originating_session_id: str | None = None,
+        run_id: str | None = None,
     ) -> T: ...
 
     async def run(
@@ -570,6 +581,7 @@ class Agent:
         response_model: type[T] | None = None,
         session_id: str | None = None,
         originating_session_id: str | None = None,
+        run_id: str | None = None,
     ) -> str | T:
         """Main execution loop: LLM call -> tool execution -> repeat until done.
 
@@ -588,6 +600,7 @@ class Agent:
             agent_name=self.name,
             session_id=session_id,
             originating_session_id=originating_session_id,
+            run_id=run_id,
         )
         with bind_execution_context(root_ctx):
             await self._emit(
@@ -659,6 +672,7 @@ class Agent:
         *,
         session_id: str | None = None,
         originating_session_id: str | None = None,
+        run_id: str | None = None,
     ) -> AsyncIterator[str]:
         """Streaming variant of :meth:`run` — yields text chunks as they arrive.
 
@@ -677,6 +691,7 @@ class Agent:
             agent_name=self.name,
             session_id=session_id,
             originating_session_id=originating_session_id,
+            run_id=run_id,
         )
         with bind_execution_context(root_ctx):
             await self._emit(
@@ -1976,9 +1991,10 @@ class Agent:
         # Parallelize initialization: connect all clients concurrently
         async def _initialize_client(client):
             """Initialize a single MCP client and register its tools."""
+            timeout = max(float(getattr(client, "initialize_timeout", 10.0)), 0.1)
             try:
-                await client.connect()
-                schemas = await client.discover_tools()
+                await asyncio.wait_for(client.connect(), timeout=timeout)
+                schemas = await asyncio.wait_for(client.discover_tools(), timeout=timeout)
                 logger.info(
                     "Discovered %d MCP tool(s): %s",
                     len(schemas),
@@ -1987,8 +2003,21 @@ class Agent:
                 for schema in schemas:
                     self.tool_registry.register_mcp_tool(schema, client)
                 return None  # Success
+            except asyncio.TimeoutError as exc:
+                logger.error(
+                    "Timed out initializing MCP server %s after %.1fs", client, timeout
+                )
+                try:
+                    await asyncio.wait_for(client.disconnect(), timeout=1.0)
+                except Exception:
+                    pass
+                return exc
             except Exception as exc:
                 logger.error("Failed to initialize MCP server %s: %s", client, exc)
+                try:
+                    await asyncio.wait_for(client.disconnect(), timeout=1.0)
+                except Exception:
+                    pass
                 return exc  # Return the exception
 
         # Run all initializations in parallel

@@ -257,11 +257,12 @@ def root_execution_context(
     agent_name: str,
     session_id: str | None = None,
     originating_session_id: str | None = None,
+    run_id: str | None = None,
 ) -> ExecutionContext:
     effective_session_id = session_id or uuid4().hex
     effective_origin = originating_session_id or effective_session_id
     return ExecutionContext(
-        run_id=uuid4().hex,
+        run_id=run_id or uuid4().hex,
         session_id=effective_session_id,
         originating_session_id=effective_origin,
         agent_path=[agent_name],
