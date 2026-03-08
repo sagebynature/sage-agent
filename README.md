@@ -135,11 +135,25 @@ Token-aware context window management. Automatic compaction when approaching the
 
 ### TUI
 
-A full interactive terminal UI built with [Textual](https://github.com/Textualize/textual). 80/20 split layout — chat panel on the left with markdown rendering, collapsible tool calls, and multiline input; status panel on the right with agent info and usage stats. Permission modals for interactive approval. Toggleable log panel (Ctrl+L).
+A full interactive terminal UI built with [Ink v6](https://github.com/vadimdemedes/ink) and React 19. Communicates with the Python backend via JSON-RPC over stdio. Block-based conversation display with live streaming, collapsible tool calls, markdown rendering, permission prompts, delegation hierarchy visualization, and an event timeline with inspector for real-time observability.
+
+**Prerequisites:** Node.js 22+, pnpm 10+
 
 ```bash
-sage tui --agent-config AGENTS.md
+# Install dependencies
+make tui-install
+
+# Build
+make tui-build
+
+# Install globally on PATH
+make tui-install-global
+
+# Development mode (hot reload)
+make tui-dev
 ```
+
+See [`tui/README.md`](tui/README.md) for slash commands, keyboard shortcuts, and architecture details.
 
 ### Planning Pipeline
 
@@ -456,6 +470,9 @@ sage/
   agent.py          # Core Agent class (run loop, delegation, hook emission)
   config.py         # Markdown frontmatter loading (Pydantic)
   models.py         # Message, ToolCall, ToolSchema, Usage, etc.
+  events.py         # Typed event dataclasses (ToolStarted, LLMTurnCompleted, …)
+  telemetry.py      # EventEnvelope, TelemetryRecorder, ExecutionContext, sanitization
+  tracing.py        # OpenTelemetry span() wrapper (real spans or no-op)
   exceptions.py     # SageError, ConfigError, ProviderError, ToolError
   frontmatter.py    # YAML frontmatter parser
   main_config.py    # TOML main config support (categories, per-agent overrides)
@@ -465,7 +482,7 @@ sage/
   skills/           # Skill loader (markdown-based reusable capabilities)
   orchestrator/     # Orchestrator (parallel, race) + Pipeline (>>)
   memory/           # MemoryProtocol, SQLiteMemory, FileMemory, compaction
-  hooks/            # HookRegistry, HookEvent, built-in hooks
+  hooks/            # HookRegistry, HookEvent (31 events), built-in hooks
                     #   builtin/notepad_injector.py  — injects notepad before LLM call
                     #   builtin/plan_analyzer.py     — ON_PLAN_CREATED analysis hook
   coordination/     # MessageBus, CancellationScope, SessionManager
@@ -479,13 +496,13 @@ sage/
                     #   overlays.py        — PromptOverlay protocol, OverlayRegistry, built-ins
                     #   dynamic_builder.py — build_delegation_table(), build_orchestrator_prompt()
   parsing/          # Multi-format tool call parser, JSON repair
+  protocol/         # JSON-RPC bridge to TUI (EventBridge, session, notifications)
   mcp/              # MCPClient + MCPServer
   permissions/      # PermissionProtocol, policy rules, interactive prompts
   context/          # Token-aware context budget, fallback table
   git/              # Git tools (status, diff, log, commit, undo, branch, worktree) + snapshot
-  cli/              # Click CLI commands + Textual TUI
-    main.py         # sage agent / exec / eval / tool / init / tui commands
-    tui.py          # Textual interactive TUI
+  cli/              # Click CLI commands
+    main.py         # sage agent / exec / eval / tool / init / serve commands
     exit_codes.py   # SageExitCode IntEnum (exit codes 0–7)
     output.py       # OutputWriter — TextWriter, JSONLWriter, QuietWriter
   eval/             # Built-in evaluation framework
@@ -494,6 +511,15 @@ sage/
     runner.py       # EvalRunner, CaseResult, EvalRunResult
     history.py      # EvalHistory — SQLite run history (~/.config/sage/eval_history.db)
     report.py       # Text/JSON/comparison formatters
+
+tui/                # TypeScript terminal UI (Ink v6 + React 19)
+  src/
+    components/     # ConversationView, ActiveStreamView, EventTimeline, EventInspector, …
+    integration/    # EventNormalizer, EventProjector, BlockEventRouter, LifecycleManager
+    state/          # BlockContext + blockReducer (block-based state management)
+    ipc/            # SageClient (JSON-RPC over stdio)
+    renderer/       # Markdown + syntax-highlighted code blocks
+    commands/       # Slash command registry (21 commands)
 ```
 
 ## Examples
