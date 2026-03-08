@@ -382,7 +382,7 @@ describe("blockReducer", () => {
     expect(state.agents[0]!.completedAt).toBeDefined();
   });
 
-  it("CLEAR_BLOCKS resets completedBlocks, activeStream, agents, and prunes permissions", () => {
+  it("CLEAR_BLOCKS resets completedBlocks, activeStream, agents, scrollOffset, and prunes permissions", () => {
     let state = blockReducer(INITIAL_BLOCK_STATE, {
       type: "SUBMIT_MESSAGE",
       content: "hello",
@@ -396,6 +396,7 @@ describe("blockReducer", () => {
       id: "p1",
       decision: "allow_once",
     });
+    state = blockReducer(state, { type: "SCROLL_UP", lines: 5 });
     state = blockReducer(state, { type: "CLEAR_BLOCKS" });
 
     expect(state.completedBlocks).toEqual([]);
@@ -403,6 +404,54 @@ describe("blockReducer", () => {
     expect(state.permissions).toEqual([]);
     expect(state.agents).toEqual([]);
     expect(state.error).toBeNull();
+    expect(state.scrollOffset).toBe(0);
+    expect(state.completedRunIds.size).toBe(0);
+  });
+
+  it("STREAM_START is ignored for an already-completed run (phantom stream guard)", () => {
+    // Simulate the race: events complete a run, then a late STREAM_START arrives
+    let state = blockReducer(INITIAL_BLOCK_STATE, {
+      type: "STREAM_START",
+      runId: "run-1",
+    });
+    state = blockReducer(state, {
+      type: "STREAM_DELTA",
+      delta: "Hello world",
+    });
+    state = blockReducer(state, {
+      type: "STREAM_END",
+      status: "success",
+    });
+
+    // Content should be in completedBlocks, activeStream is null
+    expect(state.activeStream).toBeNull();
+    expect(state.completedBlocks).toHaveLength(1);
+    expect(state.completedBlocks[0]!.content).toBe("Hello world");
+    expect(state.completedRunIds.has("run-1")).toBe(true);
+
+    // Late STREAM_START for the same runId — should be a no-op
+    const stateAfterLateStart = blockReducer(state, {
+      type: "STREAM_START",
+      runId: "run-1",
+    });
+    expect(stateAfterLateStart.activeStream).toBeNull();
+    expect(stateAfterLateStart.completedBlocks).toHaveLength(1);
+  });
+
+  it("STREAM_END records runId in completedRunIds", () => {
+    let state = blockReducer(INITIAL_BLOCK_STATE, {
+      type: "STREAM_START",
+      runId: "run-42",
+    });
+    state = blockReducer(state, {
+      type: "STREAM_DELTA",
+      delta: "test",
+    });
+    state = blockReducer(state, {
+      type: "STREAM_END",
+      status: "success",
+    });
+    expect(state.completedRunIds.has("run-42")).toBe(true);
   });
 
   it("STREAM_END prunes resolved permissions", () => {
