@@ -151,18 +151,24 @@ tui/src/
 │   ├── BottomBar.tsx      # Status bar (model, cost, context, agents)
 │   ├── PermissionPrompt.tsx # Tool permission approval UI
 │   ├── ToolDisplay.tsx    # Completed tool summary (ToolSummary-based)
+│   ├── EventTimeline.tsx  # Event timeline with verbosity/category filtering
+│   ├── EventInspector.tsx # Event detail viewer with correlation IDs
 │   ├── SlashCommands.tsx  # Fuzzy-filtered command overlay
 │   ├── SessionPicker.tsx  # Session resume/history
 │   ├── AgentTree.tsx      # Delegation hierarchy visualization
 │   └── blocks/            # StaticBlock, UserBlock, TextBlock
 ├── state/                 # BlockContext + blockReducer (block-based state)
 ├── ipc/                   # SageClient (JSON-RPC over stdio)
-├── integration/           # BlockEventRouter, LifecycleManager
+├── integration/           # Event processing pipeline
+│   ├── EventNormalizer.ts # Normalize raw RPC events to canonical EventRecord
+│   ├── EventProjector.ts  # Project EventRecords to block state mutations
+│   ├── BlockEventRouter.ts # Route events to block components
+│   └── LifecycleManager.ts # Component lifecycle coordination
 ├── renderer/              # Markdown + syntax-highlighted code blocks
-├── hooks/                 # useInputHistory, useResizeHandler
+├── hooks/                 # useInputHistory, useResizeHandler, useMessageQueue
 ├── commands/              # Slash command registry (21 commands)
 ├── utils/                 # Terminal detection, Unicode fallback, string width
-└── types/                 # Protocol, state, blocks
+└── types/                 # Protocol, state, blocks, events
 ```
 
-Communication is JSON-RPC only — zero Python imports in the TUI. The backend runs as a subprocess (`sage serve`) reading/writing newline-delimited JSON-RPC 2.0 on stdin/stdout.
+Communication is JSON-RPC only — zero Python imports in the TUI. The backend runs as a subprocess (`sage serve`) reading/writing newline-delimited JSON-RPC 2.0 on stdin/stdout. All agent lifecycle events are normalized into a canonical `EventRecord` format by the integration layer before reaching UI components.

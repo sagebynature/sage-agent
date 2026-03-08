@@ -1,6 +1,6 @@
 #!/usr/bin/make -f
 
-.PHONY: check-env check-deps sync install update lint format type-check test tests test-only run clean validate-examples run-examples demo-phase1 demo-orchestration run-examples-new
+.PHONY: check-env check-deps sync install update lint format type-check test tests test-only run clean validate-examples run-examples demo-phase1 demo-orchestration run-examples-new check-tui-deps tui-install tui-build tui-dev tui-test tui-lint tui-install-global tui-clean
 
 PACKAGE_NAME = sage
 SRC_DIR = $(PACKAGE_NAME)
@@ -123,3 +123,32 @@ demo-orchestration:
 
 # Run both new feature demos back-to-back.
 run-examples-new: demo-phase1 demo-orchestration
+
+# ── TUI (Node.js / Ink) ──────────────────────────────────────────────────────
+
+check-tui-deps:
+	@which node >/dev/null 2>&1 || (echo "ERROR: Node.js 22+ is required for the TUI. Install: https://nodejs.org" && exit 1)
+	@which pnpm >/dev/null 2>&1 || (echo "ERROR: pnpm 10+ is required for the TUI. Install: https://pnpm.io" && exit 1)
+	@echo "TUI dependencies found."
+
+tui-install: check-tui-deps
+	cd tui && pnpm install
+
+tui-build: tui-install
+	cd tui && pnpm run build
+
+tui-dev: tui-install
+	cd tui && pnpm run dev
+
+tui-test: tui-install
+	cd tui && pnpm run test
+
+tui-lint: tui-install
+	cd tui && pnpm run lint
+	cd tui && pnpm run typecheck
+
+tui-install-global: tui-build
+	cd tui && pnpm run install:global
+
+tui-clean:
+	rm -rf tui/dist tui/node_modules
