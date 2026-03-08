@@ -1411,6 +1411,33 @@ class TestAgentMCPWiring:
         assert result == "ok"
 
     @pytest.mark.asyncio
+    async def test_mcp_connection_timeout_is_logged_not_raised(self) -> None:
+        """A hung MCP connection times out and does not abort run()."""
+        from unittest.mock import AsyncMock
+
+        mock_client = AsyncMock()
+
+        async def slow_connect() -> None:
+            await asyncio.sleep(1)
+
+        mock_client.connect = AsyncMock(side_effect=slow_connect)
+        mock_client.initialize_timeout = 0.01
+        mock_client.disconnect = AsyncMock()
+
+        provider = MockProvider([_text_result("ok")])
+        agent = Agent(
+            name="mcp-agent",
+            model="test-model",
+            provider=provider,
+            mcp_clients=[mock_client],
+        )
+
+        result = await agent.run("hi")
+
+        assert result == "ok"
+        mock_client.disconnect.assert_awaited()
+
+    @pytest.mark.asyncio
     async def test_mcp_initialization_is_parallel(self) -> None:
         """Multiple MCP clients initialize in parallel via asyncio.gather()."""
         import time

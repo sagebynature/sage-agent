@@ -3,6 +3,7 @@ from __future__ import annotations
 import itertools
 import logging
 from contextvars import ContextVar
+from typing import Any
 from typing import TYPE_CHECKING
 
 from sage.events import (
@@ -15,6 +16,7 @@ from sage.events import (
     ToolCompleted,
     ToolStarted,
 )
+from sage.telemetry import EventEnvelope
 
 if TYPE_CHECKING:
     from sage.agent import Agent
@@ -22,6 +24,30 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 _agent_path_var: ContextVar[list[str]] = ContextVar("agent_path", default=[])
+
+
+def _to_camel_case(value: str) -> str:
+    parts = value.split("_")
+    return parts[0] + "".join(part[:1].upper() + part[1:] for part in parts[1:])
+
+
+def _camelize(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {_to_camel_case(str(key)): _camelize(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_camelize(item) for item in value]
+    return value
+
+
+class JsonRpcEventSink:
+    """Publishes canonical telemetry envelopes to JSON-RPC clients."""
+
+    def __init__(self, server: "JsonRpcServer") -> None:
+        self._server = server
+
+    async def write(self, envelope: EventEnvelope) -> None:
+        payload = _camelize(envelope.model_dump(mode="json"))
+        await self._server.send_notification("event/emitted", payload)
 
 
 class EventBridge:
@@ -37,6 +63,11 @@ class EventBridge:
         root_agent = getattr(self._agent, "name", "")
         _agent_path_var.set([root_agent])
         self._pending_calls: dict[str, list[str]] = {}
+        telemetry_recorder = getattr(self._agent, "_telemetry_recorder", None)
+        if telemetry_recorder is not None and hasattr(telemetry_recorder, "_sinks"):
+            sinks = telemetry_recorder._sinks
+            if not any(isinstance(sink, JsonRpcEventSink) for sink in sinks):
+                sinks.append(JsonRpcEventSink(self._server))
         self._agent.on(LLMStreamDelta, self._on_stream_delta)
         self._agent.on(ToolStarted, self._on_tool_started)
         self._agent.on(ToolCompleted, self._on_tool_completed)

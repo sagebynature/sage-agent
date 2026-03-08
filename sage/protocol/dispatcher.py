@@ -114,7 +114,7 @@ class MethodDispatcher:
         originating_session_id: str | None = None,
     ) -> None:
         try:
-            stream_kwargs: dict[str, Any] = {}
+            stream_kwargs: dict[str, Any] = {"run_id": run_id}
             if session_id is not None:
                 stream_kwargs["session_id"] = session_id
             if originating_session_id is not None:
@@ -162,7 +162,7 @@ class MethodDispatcher:
 
     async def _handle_session_resume(self, request: dict[str, Any]) -> dict[str, Any]:
         params = self._ensure_params_dict(request)
-        session_id = params.get("session_id")
+        session_id = params.get("session_id", params.get("sessionId"))
         if not isinstance(session_id, str) or not session_id:
             raise ValueError("'session_id' must be a non-empty string")
 
@@ -177,9 +177,9 @@ class MethodDispatcher:
 
     async def _handle_session_clear(self, request: dict[str, Any]) -> dict[str, Any]:
         params = self._ensure_params_dict(request)
-        session_id = params.get("session_id")
+        session_id = params.get("session_id", params.get("sessionId"))
         if not isinstance(session_id, str) or not session_id:
-            raise ValueError("'session_id' must be a non-empty string")
+            return {"cleared": False}
 
         destroyer = getattr(self.session_manager, "destroy_session", None)
         if destroyer is None:
