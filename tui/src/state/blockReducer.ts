@@ -95,7 +95,8 @@ export type BlockAction =
   | { type: "CLEAR_BLOCKS" }
   | { type: "SCROLL_UP"; lines?: number }
   | { type: "SCROLL_DOWN"; lines?: number }
-  | { type: "SCROLL_TO_BOTTOM" };
+  | { type: "SCROLL_TO_BOTTOM" }
+  | { type: "BATCH"; actions: BlockAction[] };
 
 export const INITIAL_BLOCK_STATE: BlockState = {
   completedBlocks: [],
@@ -689,6 +690,14 @@ export function blockReducer(
 
     case "SCROLL_TO_BOTTOM": {
       return { ...state, scrollOffset: 0 };
+    }
+
+    case "BATCH": {
+      let result = state;
+      for (const subAction of action.actions) {
+        result = blockReducer(result, subAction);
+      }
+      return result;
     }
 
     default:

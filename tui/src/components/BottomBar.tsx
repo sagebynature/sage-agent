@@ -1,5 +1,5 @@
 import { Box, Text } from "ink";
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import type { UsageState, PermissionState, AgentNode } from "../types/state.js";
 import type { ActiveStream } from "../types/blocks.js";
 import type { RunSummary, VerbosityMode, EventRecord } from "../types/events.js";
@@ -85,7 +85,7 @@ function ModeIndicator({ props }: { props: BottomBarProps }): ReactNode {
   }
 }
 
-export function BottomBar(props: BottomBarProps): ReactNode {
+export const BottomBar = memo(function BottomBar(props: BottomBarProps): ReactNode {
   const { usage, agents, sessionName, verbosity, showEventPane, activeRun, selectedEvent } = props;
   const cost = `$${usage.totalCost.toFixed(2)}`;
   const model = usage.model || "no model";
@@ -112,4 +112,4 @@ export function BottomBar(props: BottomBarProps): ReactNode {
       <ModeIndicator props={props} />
     </Box>
   );
-}
+});

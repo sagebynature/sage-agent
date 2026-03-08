@@ -1,5 +1,5 @@
 import { Box, Static } from "ink";
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import type { OutputBlock, ActiveStream } from "../types/blocks.js";
 import { StaticBlock } from "./blocks/StaticBlock.js";
 import { ActiveStreamView } from "./ActiveStreamView.js";
@@ -10,7 +10,7 @@ interface ConversationViewProps {
   width?: number;
 }
 
-export function ConversationView({
+export const ConversationView = memo(function ConversationView({
   completedBlocks,
   activeStream,
   width,
@@ -27,4 +27,4 @@ export function ConversationView({
       <ActiveStreamView stream={activeStream} />
     </Box>
   );
-}
+});

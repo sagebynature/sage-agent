@@ -1,18 +1,11 @@
 import { Box, Text } from "ink";
-import type { ReactNode } from "react";
-import {
-  eventMatchesFilters,
-  eventVisibleAtVerbosity,
-  type EventFilters,
-  type EventRecord,
-  type VerbosityMode,
-} from "../types/events.js";
+import { memo, type ReactNode } from "react";
+import type { EventRecord } from "../types/events.js";
 
 interface EventTimelineProps {
+  /** Pre-filtered events (already filtered by verbosity and user filters). */
   events: EventRecord[];
   selectedEventId: string | null;
-  verbosity: VerbosityMode;
-  filters: EventFilters;
   limit?: number;
   maxHeight?: number;
 }
@@ -44,24 +37,19 @@ function usageText(event: EventRecord): string {
   return "";
 }
 
-export function EventTimeline({
+export const EventTimeline = memo(function EventTimeline({
   events,
   selectedEventId,
-  verbosity,
-  filters,
   limit,
   maxHeight,
 }: EventTimelineProps): ReactNode {
   // Border (2) + header (1) = 3 rows of chrome; remaining rows are for events.
   const effectiveLimit = limit ?? (maxHeight ? Math.max(1, maxHeight - 3) : 18);
-  const visibleEvents = events
-    .filter((event) => eventVisibleAtVerbosity(event, verbosity))
-    .filter((event) => eventMatchesFilters(event, filters))
-    .slice(-effectiveLimit);
+  const displayEvents = events.slice(-effectiveLimit);
 
   return (
     <Box
-      width={70}
+      width={60}
       flexShrink={0}
       flexDirection="column"
       borderStyle="round"
@@ -70,10 +58,10 @@ export function EventTimeline({
       {...(maxHeight ? { height: maxHeight, overflowY: "hidden" as const } : {})}
     >
       <Text bold>Events</Text>
-      {visibleEvents.length === 0 ? (
+      {displayEvents.length === 0 ? (
         <Text dimColor>No events</Text>
       ) : (
-        visibleEvents.map((event) => {
+        displayEvents.map((event) => {
           const selected = event.id === selectedEventId;
           return (
             <Box key={event.id}>
@@ -87,4 +75,4 @@ export function EventTimeline({
       )}
     </Box>
   );
-}
+});
