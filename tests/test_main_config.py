@@ -54,7 +54,7 @@ class TestConfigOverrides:
         assert overrides.permission is None
         assert overrides.context is None
         assert overrides.extensions is None
-        assert overrides.mcp_servers is None
+        assert overrides.enabled_mcp_servers is None
         assert overrides.memory is None  # new line
 
     def test_model_dump_excludes_none(self) -> None:
@@ -94,6 +94,7 @@ class TestMainConfig:
         cfg = MainConfig()
         assert cfg.defaults.model is None
         assert cfg.agents == {}
+        assert cfg.mcp_servers == {}
 
     def test_with_defaults(self) -> None:
         cfg = MainConfig(defaults=ConfigOverrides(model="gpt-4o", max_turns=20))
@@ -110,6 +111,27 @@ class TestMainConfig:
         assert cfg.agents["researcher"].model == "gpt-4o"
         assert cfg.agents["researcher"].max_turns == 30
         assert cfg.agents["summarizer"].model == "gpt-4o-mini"
+
+    def test_with_top_level_mcp_servers(self) -> None:
+        cfg = MainConfig(
+            mcp_servers={
+                "filesystem": {
+                    "transport": "stdio",
+                    "command": "npx",
+                    "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+                }
+            }
+        )
+        assert "filesystem" in cfg.mcp_servers
+        assert cfg.mcp_servers["filesystem"].command == "npx"
+
+    def test_config_overrides_enabled_mcp_servers(self) -> None:
+        overrides = ConfigOverrides(enabled_mcp_servers=["context7"])
+        assert overrides.enabled_mcp_servers == ["context7"]
+
+    def test_agent_overrides_enabled_mcp_servers(self) -> None:
+        overrides = AgentOverrides(enabled_mcp_servers=["context7", "seqthink"])
+        assert overrides.enabled_mcp_servers == ["context7", "seqthink"]
 
     def test_env_field_defaults_empty(self) -> None:
         cfg = MainConfig()

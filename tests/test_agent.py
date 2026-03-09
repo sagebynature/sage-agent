@@ -12,7 +12,8 @@ from typing import Any
 import pytest
 
 from sage.agent import Agent
-from sage.exceptions import ToolError
+from sage.exceptions import ConfigError, ToolError
+from sage.main_config import load_main_config
 from sage.models import (
     CompletionResult,
     Message,
@@ -1487,24 +1488,44 @@ class TestAgentMCPWiring:
 
     @pytest.mark.asyncio
     async def test_from_config_creates_mcp_clients(self, tmp_path: Path) -> None:
-        """mcp_servers in frontmatter results in MCPClient instances on the agent."""
+        """enabled_mcp_servers resolves against main config and creates MCP clients."""
+        config_toml = textwrap.dedent("""\
+            [mcp_servers.echo-server]
+            transport = "stdio"
+            command = "echo"
+            args = ["hello"]
+        """)
+        (tmp_path / "config.toml").write_text(config_toml)
         config_md = textwrap.dedent("""\
             ---
             name: mcp-test
             model: gpt-4o
-            mcp_servers:
-              echo-server:
-                transport: stdio
-                command: echo
-                args: [hello]
+            enabled_mcp_servers: [echo-server]
             ---
         """)
         (tmp_path / "AGENTS.md").write_text(config_md)
-        agent = Agent.from_config(tmp_path / "AGENTS.md")
+        central = load_main_config(tmp_path / "config.toml")
+        agent = Agent.from_config(tmp_path / "AGENTS.md", central=central)
 
         assert len(agent.mcp_clients) == 1
         assert agent.mcp_clients[0]._command == "echo"
         assert agent.mcp_clients[0]._args == ["hello"]
+
+    def test_from_config_rejects_unknown_enabled_mcp_server(self, tmp_path: Path) -> None:
+        """Unknown enabled_mcp_servers entries fail config loading."""
+        (tmp_path / "config.toml").write_text("")
+        config_md = textwrap.dedent("""\
+            ---
+            name: mcp-test
+            model: gpt-4o
+            enabled_mcp_servers: [missing-server]
+            ---
+        """)
+        (tmp_path / "AGENTS.md").write_text(config_md)
+
+        with pytest.raises(ConfigError, match="missing-server"):
+            central = load_main_config(tmp_path / "config.toml")
+            Agent.from_config(tmp_path / "AGENTS.md", central=central)
 
 
 # ── Memory wiring tests ───────────────────────────────────────────────────────

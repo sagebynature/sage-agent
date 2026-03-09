@@ -50,7 +50,7 @@ class ConfigOverrides(BaseModel):
     shell_dangerous_patterns: list[str] | None = None
     context: ContextConfig | None = None
     extensions: list[str] | None = None
-    mcp_servers: dict[str, MCPServerConfig] | None = None
+    enabled_mcp_servers: list[str] | None = None
     planning: PlanningConfig | None = None
     memory: MemoryConfig | None = None
 
@@ -70,6 +70,7 @@ class MainConfig(BaseModel):
     agents_dir: str = "agents/"
     primary: str | None = None
     env: dict[str, str] = Field(default_factory=dict)
+    mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
     defaults: ConfigOverrides = Field(default_factory=ConfigOverrides)
     agents: dict[str, AgentOverrides] = Field(default_factory=dict)
     categories: dict[str, CategoryConfig] = Field(default_factory=dict)

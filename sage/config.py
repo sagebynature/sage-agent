@@ -267,12 +267,13 @@ class AgentConfig(BaseModel):
     model: str = ""
     description: str = ""  # display/discovery ONLY - NOT sent to model
     _body: str = PrivateAttr(default="")  # markdown body = system prompt
+    _mcp_server_catalog: dict[str, MCPServerConfig] = PrivateAttr(default_factory=dict)
     permission: Permission | None = None
     shell_dangerous_patterns: list[str] | None = None
     extensions: list[str] = Field(default_factory=list)
     memory: MemoryConfig | None = None
     subagents: list[AgentConfig] = Field(default_factory=list)
-    mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
+    enabled_mcp_servers: list[str] | None = None
     max_turns: int = 10
     max_depth: int = 3
     model_params: ModelParams = Field(default_factory=ModelParams)
@@ -369,6 +370,11 @@ def load_config(path: str | Path, central: MainConfig | None = None) -> AgentCon
         raise ConfigError(
             f"Config file must contain valid YAML frontmatter, got {type(metadata).__name__}"
         )
+    if "mcp_servers" in metadata:
+        raise ConfigError(
+            "'mcp_servers' is no longer allowed in agent frontmatter. "
+            "Define MCP servers in config.toml and use 'enabled_mcp_servers' in the agent."
+        )
 
     # Merge with main config (defaults → agent overrides → frontmatter)
     from sage.main_config import merge_agent_config
@@ -391,6 +397,11 @@ def load_config(path: str | Path, central: MainConfig | None = None) -> AgentCon
 
     # Store the markdown body as _body (system prompt)
     config._body = body
+    config._mcp_server_catalog = dict(central.mcp_servers) if central is not None else {}
+    if central is not None and config.enabled_mcp_servers:
+        missing = sorted(set(config.enabled_mcp_servers) - set(central.mcp_servers))
+        if missing:
+            raise ConfigError(f"Unknown MCP server(s): {', '.join(missing)}")
 
     base_dir = config_path.parent
     config = _resolve_subagent_refs(config, base_dir, central)
@@ -431,8 +442,8 @@ def load_config(path: str | Path, central: MainConfig | None = None) -> AgentCon
             config.memory.compaction_threshold,
             config.memory.vector_search,
         )
-    if config.mcp_servers:
-        logger.info("  mcp_servers: %d configured", len(config.mcp_servers))
+    if config.enabled_mcp_servers:
+        logger.info("  enabled_mcp_servers=%s", config.enabled_mcp_servers)
     if config.subagents:
         logger.info("  subagents: %s", [s.name for s in config.subagents])
     return config

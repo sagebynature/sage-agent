@@ -49,18 +49,24 @@ def _write_config_with_subagents(tmp_path: Path) -> Path:
 
 def _write_config_with_mcp(tmp_path: Path) -> Path:
     """Write a config with MCP servers and return its path."""
+    (tmp_path / "config.toml").write_text(
+        "[mcp_servers.my-stdio]\n"
+        'transport = "stdio"\n'
+        'command = "my-mcp-server"\n'
+        "\n"
+        "[mcp_servers.my-sse]\n"
+        'transport = "sse"\n'
+        'url = "http://localhost:3000"\n',
+        encoding="utf-8",
+    )
     config = tmp_path / "AGENTS.md"
     config.write_text(
         "---\n"
         "name: mcp-agent\n"
         "model: gpt-4o\n"
-        "mcp_servers:\n"
-        "  my-stdio:\n"
-        "    transport: stdio\n"
-        "    command: my-mcp-server\n"
-        "  my-sse:\n"
-        "    transport: sse\n"
-        "    url: http://localhost:3000\n"
+        "enabled_mcp_servers:\n"
+        "  - my-stdio\n"
+        "  - my-sse\n"
         "---\n\n"
         "An agent.\n"
     )
@@ -87,7 +93,11 @@ class TestAgentValidate:
     def test_valid_config_with_mcp(self, tmp_path: Path) -> None:
         config_path = _write_config_with_mcp(tmp_path)
         runner = CliRunner()
-        result = runner.invoke(cli, ["agent", "validate", str(config_path)])
+        result = runner.invoke(
+            cli,
+            ["agent", "validate", str(config_path)],
+            env={"SAGE_CONFIG_PATH": str(tmp_path / "config.toml")},
+        )
         assert result.exit_code == 0
         assert "MCP servers: 2" in result.output
 

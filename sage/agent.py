@@ -70,10 +70,11 @@ class _TurnExecutionResult:
 def _build_mcp_clients(config: "AgentConfig", agent_config: "AgentConfig") -> list["MCPClient"]:
     _ = config
     mcp_clients: list[MCPClient] = []
-    if agent_config.mcp_servers:
+    if agent_config.enabled_mcp_servers:
         from sage.mcp.client import MCPClient
 
-        for mcp_cfg in agent_config.mcp_servers.values():
+        for server_name in agent_config.enabled_mcp_servers:
+            mcp_cfg = agent_config._mcp_server_catalog[server_name]
             mcp_clients.append(
                 MCPClient(
                     transport=mcp_cfg.transport,
