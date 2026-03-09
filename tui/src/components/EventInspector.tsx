@@ -1,9 +1,11 @@
-import { Box, Text } from "ink";
+import { Text } from "ink";
 import { memo, type ReactNode } from "react";
 import type { EventRecord } from "../types/events.js";
+import { PaneFrame } from "./PaneFrame.js";
 
 interface EventInspectorProps {
   event: EventRecord | null;
+  width: number;
   maxHeight?: number;
 }
 
@@ -19,21 +21,13 @@ function formatObject(value: Record<string, unknown> | undefined, maxLines: numb
   return text.length > 600 ? `${text.slice(0, 597)}...` : text;
 }
 
-export const EventInspector = memo(function EventInspector({ event, maxHeight }: EventInspectorProps): ReactNode {
-  // Border (2) + header (1) + metadata lines (~5-7) = ~9 rows of chrome;
+export const EventInspector = memo(function EventInspector({ event, width, maxHeight }: EventInspectorProps): ReactNode {
+  // Top/bottom border (2) + metadata lines (~5-7) = ~8 rows of chrome;
   // remaining budget goes to the JSON payload.
-  const payloadMaxLines = maxHeight ? Math.max(2, maxHeight - 9) : 20;
+  const payloadMaxLines = maxHeight ? Math.max(2, maxHeight - 8) : 20;
 
   return (
-    <Box
-      flexGrow={1}
-      flexDirection="column"
-      borderStyle="round"
-      borderColor="gray"
-      paddingX={1}
-      {...(maxHeight ? { height: maxHeight, overflowY: "hidden" as const } : {})}
-    >
-      <Text bold>Inspector</Text>
+    <PaneFrame title="Inspector" width={width} height={maxHeight} flexGrow={1}>
       {!event ? (
         <Text dimColor>No event selected</Text>
       ) : (
@@ -52,6 +46,6 @@ export const EventInspector = memo(function EventInspector({ event, maxHeight }:
           <Text dimColor>{formatObject(event.payload, payloadMaxLines)}</Text>
         </>
       )}
-    </Box>
+    </PaneFrame>
   );
 });

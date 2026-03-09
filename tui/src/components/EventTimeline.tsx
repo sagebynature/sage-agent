@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import { memo, type ReactNode } from "react";
 import type { EventRecord } from "../types/events.js";
+import { PaneFrame } from "./PaneFrame.js";
 
 interface EventTimelineProps {
   /** Pre-filtered events (already filtered by verbosity and user filters). */
@@ -67,21 +68,17 @@ export const EventTimeline = memo(function EventTimeline({
   limit,
   maxHeight,
 }: EventTimelineProps): ReactNode {
-  // Border (2) + header (1) = 3 rows of chrome; remaining rows are for events.
-  const effectiveLimit = limit ?? (maxHeight ? Math.max(1, maxHeight - 3) : 18);
+  // Top/bottom border consume 2 rows; remaining rows are for events.
+  const effectiveLimit = limit ?? (maxHeight ? Math.max(1, maxHeight - 2) : 18);
   const displayEvents = visibleEventWindow(events, selectedEventId, effectiveLimit);
 
   return (
-    <Box
+    <PaneFrame
+      title="Events"
       width={80}
       flexShrink={0}
-      flexDirection="column"
-      borderStyle="round"
-      borderColor="gray"
-      paddingX={1}
-      {...(maxHeight ? { height: maxHeight, overflowY: "hidden" as const } : {})}
+      height={maxHeight}
     >
-      <Text bold>Events</Text>
       {displayEvents.length === 0 ? (
         <Text dimColor>No events</Text>
       ) : (
@@ -97,6 +94,6 @@ export const EventTimeline = memo(function EventTimeline({
           );
         })
       )}
-    </Box>
+    </PaneFrame>
   );
 });

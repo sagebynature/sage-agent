@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import { memo, type ReactNode } from "react";
 import type { EventRecord } from "../types/events.js";
+import { PaneFrame } from "./PaneFrame.js";
 
 interface ComplexityPanelProps {
   event: EventRecord | null;
@@ -107,16 +108,12 @@ export const ComplexityPanel = memo(function ComplexityPanel({
   const meta = complexity ? metadataLine(complexity) : null;
 
   return (
-    <Box
+    <PaneFrame
+      title="Complexity Score"
       width={34}
       flexShrink={0}
-      flexDirection="column"
-      borderStyle="round"
-      borderColor="gray"
-      paddingX={1}
-      {...(maxHeight ? { height: maxHeight, overflowY: "hidden" as const } : {})}
+      height={maxHeight}
     >
-      <Text bold>Complexity Score</Text>
       {!complexity || score === null || !level ? (
         <Text dimColor>No complexity data</Text>
       ) : (
@@ -138,6 +135,6 @@ export const ComplexityPanel = memo(function ComplexityPanel({
           )}
         </>
       )}
-    </Box>
+    </PaneFrame>
   );
 });

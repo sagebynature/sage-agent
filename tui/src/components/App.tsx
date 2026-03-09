@@ -571,6 +571,12 @@ function AppShell(): ReactNode {
   const eventPaneHeight = state.ui.showEventPane
     ? Math.max(8, Math.min(16, Math.floor(rows * 0.35)))
     : 0;
+  const EVENT_TIMELINE_WIDTH = 80;
+  const COMPLEXITY_PANEL_WIDTH = 34;
+  const eventInspectorWidth = Math.max(
+    24,
+    columns - EVENT_TIMELINE_WIDTH - (showComplexityPanel ? COMPLEXITY_PANEL_WIDTH : 0),
+  );
 
   return (
     <Box flexDirection="column" width={columns}>
@@ -637,7 +643,11 @@ function AppShell(): ReactNode {
           {showComplexityPanel ? (
             <ComplexityPanel event={selectedEvent} maxHeight={eventPaneHeight} />
           ) : null}
-          <EventInspector event={selectedEvent} maxHeight={eventPaneHeight} />
+          <EventInspector
+            event={selectedEvent}
+            width={eventInspectorWidth}
+            maxHeight={eventPaneHeight}
+          />
         </Box>
       )}
     </Box>
