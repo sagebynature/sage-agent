@@ -163,7 +163,7 @@ describe("blockReducer", () => {
     expect(tool.error).toBe("Permission denied");
   });
 
-  it("STREAM_END flattens to completedBlocks (tool + text)", () => {
+  it("STREAM_END removes the active task and moves its output into completedBlocks", () => {
     let state = blockReducer(INITIAL_BLOCK_STATE, {
       type: "STREAM_START",
       runId: "run-1",

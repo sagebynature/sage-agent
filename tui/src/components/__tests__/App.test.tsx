@@ -2,6 +2,10 @@ import { describe, it, expect, vi } from "vitest";
 import { App } from "../App.js";
 import { renderApp, waitForText } from "../../test-utils.js";
 
+vi.mock("../../hooks/useResizeHandler.js", () => ({
+  useResizeHandler: () => ({ width: 160, height: 40 }),
+}));
+
 const mockRequest = vi.hoisted(() =>
   vi.fn(async (method: string, params?: Record<string, unknown>) => {
     if (method === "config/get" && params?.key === "name") {

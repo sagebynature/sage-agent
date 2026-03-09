@@ -17,6 +17,7 @@ import { useResizeHandler } from "../hooks/useResizeHandler.js";
 import { EventTimeline } from "./EventTimeline.js";
 import { ComplexityPanel } from "./ComplexityPanel.js";
 import { EventInspector } from "./EventInspector.js";
+import { ActiveTaskDock } from "./ActiveTaskDock.js";
 
 
 const NOTIFICATION_METHODS = [
@@ -583,11 +584,14 @@ function AppShell(): ReactNode {
 
   return (
     <Box flexDirection="column" width={columns}>
-      {/* Conversation: <Static> items go to Ink's permanent area above;
-          ActiveStreamView stays in the dynamic area. */}
+      {/* Conversation stays purely historical in Ink's permanent area. */}
       <ConversationView
         completedBlocks={state.completedBlocks}
-        activeStream={state.activeStream}
+        width={columns}
+      />
+      {/* Active work is docked above the input so it stays pinned near the footer. */}
+      <ActiveTaskDock
+        streams={state.activeStream ? [state.activeStream] : []}
         width={columns}
       />
       {/* Event pane: compact horizontal strip in the dynamic area.

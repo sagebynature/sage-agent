@@ -1,18 +1,15 @@
 import { Box, Static } from "ink";
 import { memo, type ReactNode } from "react";
-import type { OutputBlock, ActiveStream } from "../types/blocks.js";
+import type { OutputBlock } from "../types/blocks.js";
 import { StaticBlock } from "./blocks/StaticBlock.js";
-import { ActiveStreamView } from "./ActiveStreamView.js";
 
 interface ConversationViewProps {
   completedBlocks: OutputBlock[];
-  activeStream: ActiveStream | null;
   width?: number;
 }
 
 export const ConversationView = memo(function ConversationView({
   completedBlocks,
-  activeStream,
   width,
 }: ConversationViewProps): ReactNode {
   return (
@@ -24,7 +21,6 @@ export const ConversationView = memo(function ConversationView({
           </Box>
         )}
       </Static>
-      <ActiveStreamView stream={activeStream} />
     </Box>
   );
 });

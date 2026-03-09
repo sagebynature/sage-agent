@@ -50,7 +50,7 @@ describe("ActiveStreamView", () => {
 
     expect(resolveActiveLabelStyles("Read", 1, false, 24)).toEqual([
       { char: "R", color: "#4dcfff", bold: true, dimColor: false, inverse: false },
-      { char: "e", color: "#7fe7ff", bold: true, dimColor: false, inverse: true },
+      { char: "e", color: "#7fe7ff", bold: true, dimColor: false, inverse: false },
       { char: "a", color: "#4dcfff", bold: true, dimColor: false, inverse: false },
       { char: "d", color: "#2f9bff", bold: false, dimColor: false, inverse: false },
     ]);
