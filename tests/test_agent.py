@@ -12,7 +12,8 @@ from typing import Any
 import pytest
 
 from sage.agent import Agent
-from sage.exceptions import ToolError
+from sage.exceptions import ConfigError, ToolError
+from sage.main_config import load_main_config
 from sage.models import (
     CompletionResult,
     Message,
@@ -1298,11 +1299,12 @@ class TestAgentMCPWiring:
         from sage.models import ToolSchema
 
         mcp_schema = ToolSchema(
-            name="mcp_hello",
+            name="hello",
             description="Say hello via MCP",
             parameters={},
         )
         mock_client = AsyncMock()
+        mock_client.server_name = "greetings"
         mock_client.connect = AsyncMock()
         mock_client.discover_tools = AsyncMock(return_value=[mcp_schema])
         mock_client.call_tool = AsyncMock(return_value="hello from MCP")
@@ -1321,7 +1323,7 @@ class TestAgentMCPWiring:
         mock_client.discover_tools.assert_awaited_once()
         # Schema should now be visible in the registry.
         names = {s.name for s in agent.tool_registry.get_schemas()}
-        assert "mcp_hello" in names
+        assert "mcp_greetings_hello" in names
 
     @pytest.mark.asyncio
     async def test_mcp_tools_only_connected_once(self) -> None:
@@ -1331,6 +1333,7 @@ class TestAgentMCPWiring:
         from sage.models import ToolSchema
 
         mock_client = AsyncMock()
+        mock_client.server_name = "default"
         mock_client.connect = AsyncMock()
         mock_client.discover_tools = AsyncMock(
             return_value=[
@@ -1365,11 +1368,16 @@ class TestAgentMCPWiring:
             parameters={},
         )
         mock_client = AsyncMock()
+        mock_client.server_name = "filesystem"
         mock_client.connect = AsyncMock()
         mock_client.discover_tools = AsyncMock(return_value=[mcp_schema])
         mock_client.call_tool = AsyncMock(return_value="a.txt\nb.txt")
 
-        tool_call = ToolCall(id="tc_mcp", name="list_files", arguments={"path": "/"})
+        tool_call = ToolCall(
+            id="tc_mcp",
+            name="mcp_filesystem_list_files",
+            arguments={"path": "/"},
+        )
         provider = MockProvider(
             [
                 _tool_call_result([tool_call]),
@@ -1396,6 +1404,7 @@ class TestAgentMCPWiring:
         from sage.exceptions import SageError
 
         mock_client = AsyncMock()
+        mock_client.server_name = "default"
         mock_client.connect = AsyncMock(side_effect=SageError("server not found"))
 
         provider = MockProvider([_text_result("ok")])
@@ -1487,24 +1496,44 @@ class TestAgentMCPWiring:
 
     @pytest.mark.asyncio
     async def test_from_config_creates_mcp_clients(self, tmp_path: Path) -> None:
-        """mcp_servers in frontmatter results in MCPClient instances on the agent."""
+        """enabled_mcp_servers resolves against main config and creates MCP clients."""
+        config_toml = textwrap.dedent("""\
+            [mcp_servers.echo-server]
+            transport = "stdio"
+            command = "echo"
+            args = ["hello"]
+        """)
+        (tmp_path / "config.toml").write_text(config_toml)
         config_md = textwrap.dedent("""\
             ---
             name: mcp-test
             model: gpt-4o
-            mcp_servers:
-              echo-server:
-                transport: stdio
-                command: echo
-                args: [hello]
+            enabled_mcp_servers: [echo-server]
             ---
         """)
         (tmp_path / "AGENTS.md").write_text(config_md)
-        agent = Agent.from_config(tmp_path / "AGENTS.md")
+        central = load_main_config(tmp_path / "config.toml")
+        agent = Agent.from_config(tmp_path / "AGENTS.md", central=central)
 
         assert len(agent.mcp_clients) == 1
         assert agent.mcp_clients[0]._command == "echo"
         assert agent.mcp_clients[0]._args == ["hello"]
+
+    def test_from_config_rejects_unknown_enabled_mcp_server(self, tmp_path: Path) -> None:
+        """Unknown enabled_mcp_servers entries fail config loading."""
+        (tmp_path / "config.toml").write_text("")
+        config_md = textwrap.dedent("""\
+            ---
+            name: mcp-test
+            model: gpt-4o
+            enabled_mcp_servers: [missing-server]
+            ---
+        """)
+        (tmp_path / "AGENTS.md").write_text(config_md)
+
+        with pytest.raises(ConfigError, match="missing-server"):
+            central = load_main_config(tmp_path / "config.toml")
+            Agent.from_config(tmp_path / "AGENTS.md", central=central)
 
 
 # ── Memory wiring tests ───────────────────────────────────────────────────────

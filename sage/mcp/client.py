@@ -62,6 +62,7 @@ class MCPClient:
 
     def __init__(
         self,
+        server_name: str = "default",
         transport: str = "stdio",
         command: str | None = None,
         url: str | None = None,
@@ -69,6 +70,7 @@ class MCPClient:
         env: dict[str, str] | None = None,
         initialize_timeout: float = 10.0,
     ) -> None:
+        self._server_name = server_name
         self._transport = transport
         self._command = command
         self._url = url
@@ -178,3 +180,8 @@ class MCPClient:
     def initialize_timeout(self) -> float:
         """Maximum time allowed for connect/discovery during agent startup."""
         return self._initialize_timeout
+
+    @property
+    def server_name(self) -> str:
+        """Stable configuration name for this MCP server."""
+        return self._server_name

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from sage.hooks.base import HookEvent
-from sage.models import ToolSchema
+from sage.models import ToolMetadata, ToolSchema
 from sage.planning.notepad import Notepad
 from sage.planning.state import PlanState, PlanStateManager, PlanTask
 
@@ -53,6 +53,13 @@ def register_planning_tools(agent: Agent, config: Any) -> None:
             },
             "required": ["name", "description", "tasks"],
         },
+        metadata=ToolMetadata(
+            risk_level="low",
+            stateful=True,
+            resource_kind="none",
+            approval_hint="Creates or revises an internal work plan.",
+            idempotent=False,
+        ),
     )
     plan_create.__tool_schema__ = create_schema  # type: ignore[attr-defined]
     agent.tool_registry.register(plan_create)
@@ -86,6 +93,13 @@ def register_planning_tools(agent: Agent, config: Any) -> None:
             },
             "required": [],
         },
+        metadata=ToolMetadata(
+            risk_level="low",
+            stateful=True,
+            resource_kind="none",
+            approval_hint="Reads internal plan state.",
+            idempotent=True,
+        ),
     )
     plan_status.__tool_schema__ = status_schema  # type: ignore[attr-defined]
     agent.tool_registry.register(plan_status)
@@ -128,6 +142,13 @@ def register_planning_tools(agent: Agent, config: Any) -> None:
             },
             "required": ["plan_name", "task_index", "status"],
         },
+        metadata=ToolMetadata(
+            risk_level="low",
+            stateful=True,
+            resource_kind="none",
+            approval_hint="Updates internal plan progress.",
+            idempotent=False,
+        ),
     )
     plan_update.__tool_schema__ = update_schema  # type: ignore[attr-defined]
     agent.tool_registry.register(plan_update)
@@ -191,6 +212,13 @@ def register_planning_tools(agent: Agent, config: Any) -> None:
                 },
                 "required": ["plan_name"],
             },
+            metadata=ToolMetadata(
+                risk_level="low",
+                stateful=True,
+                resource_kind="none",
+                approval_hint="Reviews and potentially revises an internal plan.",
+                idempotent=False,
+            ),
         )
         plan_review.__tool_schema__ = review_schema  # type: ignore[attr-defined]
         agent.tool_registry.register(plan_review)
@@ -222,6 +250,13 @@ def register_planning_tools(agent: Agent, config: Any) -> None:
             },
             "required": ["section", "content"],
         },
+        metadata=ToolMetadata(
+            risk_level="low",
+            stateful=True,
+            resource_kind="none",
+            approval_hint="Writes to the agent's planning notepad.",
+            idempotent=False,
+        ),
     )
     notepad_write.__tool_schema__ = write_schema  # type: ignore[attr-defined]
     agent.tool_registry.register(notepad_write)
@@ -246,6 +281,13 @@ def register_planning_tools(agent: Agent, config: Any) -> None:
             },
             "required": [],
         },
+        metadata=ToolMetadata(
+            risk_level="low",
+            stateful=True,
+            resource_kind="none",
+            approval_hint="Reads the agent's planning notepad.",
+            idempotent=True,
+        ),
     )
     notepad_read.__tool_schema__ = read_schema  # type: ignore[attr-defined]
     agent.tool_registry.register(notepad_read)

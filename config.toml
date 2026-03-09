@@ -40,6 +40,9 @@ max_turns = 10
 # Maximum delegation depth (prevents infinite recursion)
 max_depth = 3
 
+# Enable selected MCP servers by name from the global catalog below.
+enabled_mcp_servers = ["context7", "sequentialthinking"]
+
 # Custom tool extensions (list of Python module paths)
 # extensions = ["myapp.tools"]
 
@@ -61,7 +64,7 @@ max_tokens = 4096
 # Controls what actions agents can take without asking.
 [permission]
 shell = "ask"
-memory_store = "allow"
+memory = "allow"
 
 # ── Context Management ────────────────────────────────────────────────────────
 # Token-aware context window management.

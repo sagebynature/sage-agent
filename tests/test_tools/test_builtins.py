@@ -15,6 +15,7 @@ from sage.tools.builtins import (
     http_request,
     shell,
 )
+from sage.tools.web_tools import web_fetch
 
 
 class TestShellTool:
@@ -222,6 +223,21 @@ class TestBuiltinsLogging:
         assert "file_read" in all_messages or str(test_file) in all_messages, (
             f"Expected file_read invocation in logs, got: {all_messages}"
         )
+
+
+class TestToolMetadata:
+    def test_shell_schema_metadata(self) -> None:
+        assert shell.__tool_schema__.metadata is not None
+        assert shell.__tool_schema__.metadata.risk_level == "high"
+        assert shell.__tool_schema__.metadata.idempotent is False
+
+    def test_http_request_schema_metadata(self) -> None:
+        assert http_request.__tool_schema__.metadata is not None
+        assert http_request.__tool_schema__.metadata.risk_level == "medium"
+
+    def test_web_fetch_schema_metadata(self) -> None:
+        assert web_fetch.__tool_schema__.metadata is not None
+        assert web_fetch.__tool_schema__.metadata.risk_level == "medium"
 
 
 class TestFileReadPathTraversal:

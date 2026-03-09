@@ -310,8 +310,8 @@ def agent_validate(ctx: click.Context, config_path: str) -> None:
             click.echo(f"  Permission: {config.permission.model_dump(exclude_none=True)}")
         if config.subagents:
             click.echo(f"  Subagents: {', '.join(s.name for s in config.subagents)}")
-        if config.mcp_servers:
-            click.echo(f"  MCP servers: {len(config.mcp_servers)}")
+        if config.enabled_mcp_servers:
+            click.echo(f"  MCP servers: {len(config.enabled_mcp_servers)}")
     except ConfigError as e:
         click.echo(f"Invalid config: {e}", err=True)
         sys.exit(1)

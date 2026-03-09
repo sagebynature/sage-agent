@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from sage.exceptions import ToolError
-from sage.models import ToolSchema
+from sage.models import ToolMetadata, ToolSchema
 
 if TYPE_CHECKING:
     from sage.agent import Agent
@@ -45,6 +45,13 @@ def register_background_tools(agent: "Agent") -> None:
             },
             "required": ["agent_name", "task"],
         },
+        metadata=ToolMetadata(
+            risk_level="medium",
+            stateful=True,
+            resource_kind="none",
+            approval_hint="Launches a long-running background subagent task.",
+            idempotent=False,
+        ),
     )
     delegate_background.__tool_schema__ = delegate_bg_schema  # type: ignore[attr-defined]
     agent.tool_registry.register(delegate_background)
@@ -75,6 +82,13 @@ def register_background_tools(agent: "Agent") -> None:
             },
             "required": ["task_id"],
         },
+        metadata=ToolMetadata(
+            risk_level="low",
+            stateful=True,
+            resource_kind="none",
+            approval_hint="Reads the status or result of a background task.",
+            idempotent=True,
+        ),
     )
     collect_result.__tool_schema__ = collect_schema  # type: ignore[attr-defined]
     agent.tool_registry.register(collect_result)
@@ -98,6 +112,13 @@ def register_background_tools(agent: "Agent") -> None:
             },
             "required": ["task_id"],
         },
+        metadata=ToolMetadata(
+            risk_level="medium",
+            stateful=True,
+            resource_kind="none",
+            approval_hint="Cancels a running background task.",
+            idempotent=False,
+        ),
     )
     cancel_background_task.__tool_schema__ = cancel_schema  # type: ignore[attr-defined]
     agent.tool_registry.register(cancel_background_task)

@@ -78,7 +78,7 @@ class TestLoadConfig:
         assert config.max_turns == 10
         assert config.memory is None
         assert config.subagents == []
-        assert config.mcp_servers == {}
+        assert config.enabled_mcp_servers is None
 
     def test_body_becomes_system_prompt(self, tmp_path: Path) -> None:
         body_text = "You are an expert analyst. Always cite your sources."
@@ -151,7 +151,19 @@ class TestLoadConfig:
         assert config.subagents[1].name == "researcher"
         assert config.subagents[1].max_turns == 20
 
-    def test_mcp_server_config_stdio(self, tmp_path: Path) -> None:
+    def test_enabled_mcp_servers_field_parsed(self, tmp_path: Path) -> None:
+        cfg_path = _write_md(
+            tmp_path / "AGENTS.md",
+            {
+                "name": "agent",
+                "model": "gpt-4o",
+                "enabled_mcp_servers": ["filesystem"],
+            },
+        )
+        config = load_config(cfg_path)
+        assert config.enabled_mcp_servers == ["filesystem"]
+
+    def test_agent_frontmatter_mcp_servers_rejected(self, tmp_path: Path) -> None:
         cfg_path = _write_md(
             tmp_path / "AGENTS.md",
             {
@@ -161,37 +173,12 @@ class TestLoadConfig:
                     "filesystem": {
                         "transport": "stdio",
                         "command": "npx",
-                        "args": ["-y", "@modelcontextprotocol/server-filesystem"],
-                        "env": {"HOME": "/tmp"},
                     }
                 },
             },
         )
-        config = load_config(cfg_path)
-
-        assert len(config.mcp_servers) == 1
-        mcp = config.mcp_servers["filesystem"]
-        assert mcp.transport == "stdio"
-        assert mcp.command == "npx"
-        assert mcp.args == ["-y", "@modelcontextprotocol/server-filesystem"]
-        assert mcp.env == {"HOME": "/tmp"}
-        assert mcp.url is None
-
-    def test_mcp_server_config_sse(self, tmp_path: Path) -> None:
-        cfg_path = _write_md(
-            tmp_path / "AGENTS.md",
-            {
-                "name": "agent",
-                "model": "gpt-4o",
-                "mcp_servers": {"my-sse": {"transport": "sse", "url": "http://localhost:8080/sse"}},
-            },
-        )
-        config = load_config(cfg_path)
-
-        mcp = config.mcp_servers["my-sse"]
-        assert mcp.transport == "sse"
-        assert mcp.url == "http://localhost:8080/sse"
-        assert mcp.command is None
+        with pytest.raises(ConfigError, match="mcp_servers"):
+            load_config(cfg_path)
 
     def test_extensions_field_parsed(self, tmp_path: Path) -> None:
         cfg_path = _write_md(
@@ -251,13 +238,7 @@ class TestLoadConfig:
                     "compaction_threshold": 100,
                 },
                 "max_turns": 15,
-                "mcp_servers": {
-                    "filesystem": {
-                        "transport": "stdio",
-                        "command": "npx",
-                        "args": ["-y", "@modelcontextprotocol/server-filesystem"],
-                    }
-                },
+                "enabled_mcp_servers": ["filesystem"],
                 "subagents": [
                     {"name": "summarizer", "model": "azure/gpt-4o-mini"},
                 ],
@@ -275,7 +256,7 @@ class TestLoadConfig:
         assert config.memory is not None
         assert config.memory.compaction_threshold == 100
         assert config.max_turns == 15
-        assert len(config.mcp_servers) == 1
+        assert config.enabled_mcp_servers == ["filesystem"]
         assert len(config.subagents) == 1
         assert config.subagents[0].name == "summarizer"
 

@@ -14,28 +14,30 @@ from sage.mcp.client import MCPClient
 
 @pytest.fixture
 def stdio_client_instance() -> MCPClient:
-    return MCPClient(transport="stdio", command="echo", args=["hello"])
+    return MCPClient(server_name="stdio-test", transport="stdio", command="echo", args=["hello"])
 
 
 @pytest.fixture
 def sse_client_instance() -> MCPClient:
-    return MCPClient(transport="sse", url="http://localhost:8080/sse")
+    return MCPClient(server_name="sse-test", transport="sse", url="http://localhost:8080/sse")
 
 
 class TestMCPClientInit:
     def test_stdio_params(self, stdio_client_instance: MCPClient) -> None:
+        assert stdio_client_instance.server_name == "stdio-test"
         assert stdio_client_instance._transport == "stdio"
         assert stdio_client_instance._command == "echo"
         assert stdio_client_instance._args == ["hello"]
         assert not stdio_client_instance.is_connected
 
     def test_sse_params(self, sse_client_instance: MCPClient) -> None:
+        assert sse_client_instance.server_name == "sse-test"
         assert sse_client_instance._transport == "sse"
         assert sse_client_instance._url == "http://localhost:8080/sse"
         assert not sse_client_instance.is_connected
 
     def test_default_transport(self) -> None:
-        client = MCPClient()
+        client = MCPClient(server_name="default")
         assert client._transport == "stdio"
 
 

@@ -6,11 +6,12 @@ import asyncio
 import importlib
 import inspect
 import logging
+from dataclasses import dataclass
 from collections.abc import Awaitable
 from typing import TYPE_CHECKING, Any, Callable, Literal
 
 from sage.exceptions import PermissionError as SagePermissionError, ToolError
-from sage.models import ToolSchema
+from sage.models import ToolMetadata, ToolResult, ToolSchema
 from sage.tools.base import ToolBase
 from sage.tracing import span
 
@@ -20,12 +21,29 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
+@dataclass(slots=True)
+class _MCPToolBinding:
+    """Registry entry for a namespaced MCP tool."""
+
+    client: MCPClient
+    upstream_name: str
+    server_name: str
+
 CATEGORY_TOOLS: dict[str, list[str]] = {
     "read": ["file_read"],
     "edit": ["file_write", "file_edit"],
     "shell": ["shell"],
     "web": ["web_fetch", "web_search", "http_request"],
     "memory": ["memory_store", "memory_recall"],
+    "process": [
+        "process_start",
+        "process_send",
+        "process_read",
+        "process_wait",
+        "process_kill",
+        "process_list",
+    ],
     "task": [],
     "git": [
         "git_status",
@@ -48,6 +66,7 @@ CATEGORY_ARG_MAP: dict[str, str | None] = {
     "shell": "command",
     "web": "url",
     "memory": None,
+    "process": "command",
     "task": None,
     "git": None,
 }
@@ -70,7 +89,7 @@ class ToolRegistry:
         self._tools: dict[str, Callable[..., Any]] = {}
         self._schemas: dict[str, ToolSchema] = {}
         self._instances: list[ToolBase] = []
-        self._mcp_tools: dict[str, MCPClient] = {}
+        self._mcp_tools: dict[str, _MCPToolBinding] = {}
         self._permission_handler: Any | None = None
         self._default_timeout: float | None = default_timeout
         self._ask_policy: Literal["allow", "deny", "error"] = "error"
@@ -100,15 +119,32 @@ class ToolRegistry:
         self._schemas[schema.name] = schema
         logger.debug("Registered tool: %s", schema.name)
 
-    def register_mcp_tool(self, schema: ToolSchema, client: MCPClient) -> None:
+    def register_mcp_tool(self, server_name: str, schema: ToolSchema, client: MCPClient) -> None:
         """Register an MCP-backed tool from a discovered schema.
 
         The schema is stored for advertisement to the LLM.  Calls to
         :meth:`execute` for this tool name will be routed through *client*.
         """
-        self._schemas[schema.name] = schema
-        self._mcp_tools[schema.name] = client
-        logger.debug("Registered MCP tool: %s", schema.name)
+        runtime_name = f"mcp_{server_name}_{schema.name}"
+        metadata = schema.metadata or ToolMetadata()
+        runtime_schema = schema.model_copy(
+            update={
+                "name": runtime_name,
+                "metadata": metadata.model_copy(
+                    update={
+                        "resource_kind": "mcp",
+                        "visible_name": schema.name,
+                    }
+                ),
+            }
+        )
+        self._schemas[runtime_name] = runtime_schema
+        self._mcp_tools[runtime_name] = _MCPToolBinding(
+            client=client,
+            upstream_name=schema.name,
+            server_name=server_name,
+        )
+        logger.debug("Registered MCP tool: %s -> %s", runtime_name, schema.name)
 
     def set_permission_handler(self, handler: Any) -> None:
         """Set a permission handler for pre-dispatch checks."""
@@ -155,15 +191,28 @@ class ToolRegistry:
         return schemas
 
     async def execute(self, name: str, arguments: dict[str, Any]) -> str:
-        """Dispatch a tool call by name and return the stringified result.
+        """Dispatch a tool call and return a backward-compatible text result."""
+        result = await self.execute_result(name, arguments)
+        return result.render_text()
+
+    def _normalize_tool_result(self, result: Any) -> ToolResult:
+        """Normalize raw tool output into a structured ToolResult."""
+        if isinstance(result, ToolResult):
+            return result
+        if isinstance(result, str):
+            return ToolResult(text=result)
+        return ToolResult(text=str(result))
+
+    async def execute_result(self, name: str, arguments: dict[str, Any]) -> ToolResult:
+        """Dispatch a tool call by name and return a structured result.
 
         If a permission handler is set, the tool call is checked first.
         Raises ``PermissionError`` if denied, ``ToolError`` if tool not found
         or execution fails.
         """
         fn = self._tools.get(name)
-        mcp_client = self._mcp_tools.get(name)
-        if fn is None and mcp_client is None:
+        mcp_binding = self._mcp_tools.get(name)
+        if fn is None and mcp_binding is None:
             raise ToolError(f"Unknown tool: {name!r}")
 
         # Tool restriction check (allowlist/blocklist).
@@ -223,8 +272,10 @@ class ToolRegistry:
         async with span("tool.execute", {"tool.name": name}) as tool_span:
             tool_span.set_attribute("tool.args", str(list(arguments.keys())))
             try:
-                if mcp_client is not None:
-                    return await mcp_client.call_tool(name, arguments)
+                if mcp_binding is not None:
+                    return self._normalize_tool_result(
+                        await mcp_binding.client.call_tool(mcp_binding.upstream_name, arguments)
+                    )
                 assert fn is not None
                 if inspect.iscoroutinefunction(fn):
                     coro = fn(**arguments)
@@ -247,7 +298,7 @@ class ToolRegistry:
             except Exception as exc:
                 raise ToolError(f"Tool {name!r} failed: {exc}") from exc
 
-        return str(result)
+        return self._normalize_tool_result(result)
 
     _BUILTIN_PREFIX = "builtin"
     _BUILTIN_MODULE = "sage.tools.builtins"
@@ -271,6 +322,12 @@ class ToolRegistry:
         "file_edit": "sage.tools.file_tools",
         "web_search": "sage.tools.web_tools",
         "web_fetch": "sage.tools.web_tools",
+        "process_start": "sage.tools.process_tools",
+        "process_send": "sage.tools.process_tools",
+        "process_read": "sage.tools.process_tools",
+        "process_wait": "sage.tools.process_tools",
+        "process_kill": "sage.tools.process_tools",
+        "process_list": "sage.tools.process_tools",
     }
 
     def register_from_permissions(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -79,9 +80,48 @@ class StreamChunk(BaseModel):
     usage: Usage | None = None
 
 
+class ToolMetadata(BaseModel):
+    """Supplemental runtime metadata for a tool."""
+
+    risk_level: Literal["low", "medium", "high"] = "low"
+    stateful: bool = False
+    resource_kind: Literal["none", "mcp", "memory", "process", "git"] = "none"
+    approval_hint: str | None = None
+    idempotent: bool = True
+    visible_name: str | None = None
+
+
+class ToolResourceRef(BaseModel):
+    """Reference to a stateful resource created or used by a tool."""
+
+    kind: str
+    resource_id: str
+
+
+class ToolResult(BaseModel):
+    """Structured tool execution result."""
+
+    text: str | None = None
+    data: dict[str, Any] | list[Any] | None = None
+    artifacts: list[dict[str, Any]] = Field(default_factory=list)
+    resource: ToolResourceRef | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    def render_text(self) -> str:
+        """Render a backwards-compatible text representation."""
+        if self.text is not None:
+            return self.text
+        if self.data is not None:
+            return json.dumps(self.data)
+        if self.resource is not None:
+            return self.resource.resource_id
+        return ""
+
+
 class ToolSchema(BaseModel):
     """Schema definition for a tool that can be passed to the model."""
 
     name: str
     description: str = ""
     parameters: dict[str, Any] = Field(default_factory=dict)
+    metadata: ToolMetadata | None = None

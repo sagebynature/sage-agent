@@ -138,3 +138,10 @@ class TestPolicyPermissionHandler:
         )
         decision = await handler.check("snapshot_create", {})
         assert decision.action == PermissionAction.DENY
+
+    async def test_process_category_tool_resolved(self) -> None:
+        handler = self._handler(
+            rules=[CategoryPermissionRule(category="process", action=PermissionAction.DENY)]
+        )
+        decision = await handler.check("process_start", {"command": "python"})
+        assert decision.action == PermissionAction.DENY

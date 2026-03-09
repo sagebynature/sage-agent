@@ -13,7 +13,7 @@ import pytest
 
 from sage.config import Permission
 from sage.exceptions import ToolError
-from sage.models import ToolSchema
+from sage.models import ToolMetadata, ToolResourceRef, ToolResult, ToolSchema
 from sage.tools.base import ToolBase
 from sage.tools.decorator import tool
 from sage.tools.registry import ToolRegistry
@@ -59,6 +59,54 @@ class TestToolRegistry:
         registry.register(async_greet)
         result = await registry.execute("async_greet", {"name": "World"})
         assert result == "Hello, World!"
+
+    async def test_execute_result_wraps_plain_string(self) -> None:
+        registry = ToolRegistry()
+        registry.register(add)
+        result = await registry.execute_result("add", {"a": 2, "b": 3})
+        assert result.text == "5"
+        assert result.data is None
+        assert result.resource is None
+
+    async def test_execute_result_preserves_structured_tool_result(self) -> None:
+        @tool
+        def structured() -> ToolResult:
+            """Return a structured result."""
+            return ToolResult(
+                text="created",
+                data={"ok": True},
+                resource=ToolResourceRef(kind="memory", resource_id="mem-1"),
+            )
+
+        registry = ToolRegistry()
+        registry.register(structured)
+        result = await registry.execute_result("structured", {})
+        assert result.text == "created"
+        assert result.data == {"ok": True}
+        assert result.resource == ToolResourceRef(kind="memory", resource_id="mem-1")
+
+    async def test_execute_renders_text_from_structured_tool_result(self) -> None:
+        @tool
+        def structured() -> ToolResult:
+            """Return a structured result."""
+            return ToolResult(text="hello", data={"ok": True})
+
+        registry = ToolRegistry()
+        registry.register(structured)
+        result = await registry.execute("structured", {})
+        assert result == "hello"
+
+    def test_toolschema_accepts_metadata(self) -> None:
+        schema = ToolSchema(
+            name="process_start",
+            description="Start a process",
+            parameters={},
+            metadata=ToolMetadata(risk_level="medium", stateful=True, resource_kind="process"),
+        )
+        assert schema.metadata is not None
+        assert schema.metadata.risk_level == "medium"
+        assert schema.metadata.stateful is True
+        assert schema.metadata.resource_kind == "process"
 
     async def test_execute_unknown_tool_raises(self) -> None:
         registry = ToolRegistry()
@@ -230,18 +278,18 @@ class TestMCPToolRegistration:
 
         registry = ToolRegistry()
         schema = ToolSchema(
-            name="mcp_read",
+            name="read",
             description="Read a file via MCP",
             parameters={"type": "object", "properties": {"path": {"type": "string"}}},
         )
         client = AsyncMock()
-        registry.register_mcp_tool(schema, client)
+        registry.register_mcp_tool("context7", schema, client)
 
         schemas = registry.get_schemas()
-        assert any(s.name == "mcp_read" for s in schemas)
+        assert any(s.name == "mcp_context7_read" for s in schemas)
 
     async def test_execute_routes_to_mcp_client(self) -> None:
-        """execute() for an MCP tool calls client.call_tool with name and args."""
+        """execute() for an MCP tool calls client.call_tool with upstream name and args."""
         from unittest.mock import AsyncMock
 
         registry = ToolRegistry()
@@ -252,12 +300,30 @@ class TestMCPToolRegistration:
         )
         client = AsyncMock()
         client.call_tool = AsyncMock(return_value="file1.txt\nfile2.txt")
-        registry.register_mcp_tool(schema, client)
+        registry.register_mcp_tool("filesystem", schema, client)
 
-        result = await registry.execute("list_files", {"path": "/tmp"})
+        result = await registry.execute("mcp_filesystem_list_files", {"path": "/tmp"})
 
         client.call_tool.assert_awaited_once_with("list_files", {"path": "/tmp"})
         assert result == "file1.txt\nfile2.txt"
+
+    async def test_register_mcp_tools_namespace_prevents_collisions(self) -> None:
+        """Two servers can expose the same upstream tool name without collisions."""
+        from unittest.mock import AsyncMock
+
+        registry = ToolRegistry()
+        schema = ToolSchema(
+            name="search",
+            description="Search documents",
+            parameters={"type": "object"},
+        )
+
+        registry.register_mcp_tool("context7", schema, AsyncMock())
+        registry.register_mcp_tool("seqthink", schema, AsyncMock())
+
+        names = {tool_schema.name for tool_schema in registry.get_schemas()}
+        assert "mcp_context7_search" in names
+        assert "mcp_seqthink_search" in names
 
     async def test_local_tool_not_overshadowed_by_mcp(self) -> None:
         """A local @tool is still callable when MCP tools are also registered."""
@@ -269,14 +335,14 @@ class TestMCPToolRegistration:
         mcp_schema = ToolSchema(name="other_tool", description="MCP tool", parameters={})
         client = AsyncMock()
         client.call_tool = AsyncMock(return_value="mcp_result")
-        registry.register_mcp_tool(mcp_schema, client)
+        registry.register_mcp_tool("context7", mcp_schema, client)
 
         # Local tool still dispatches normally.
         local_result = await registry.execute("add", {"a": 10, "b": 5})
         assert local_result == "15"
 
         # MCP tool dispatches through client.
-        mcp_result = await registry.execute("other_tool", {})
+        mcp_result = await registry.execute("mcp_context7_other_tool", {})
         assert mcp_result == "mcp_result"
 
 
