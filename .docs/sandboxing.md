@@ -268,10 +268,11 @@ sandbox:
 ### Config Sources and Priority
 
 ```
-[defaults]               (lowest)  — main config defaults
-[agents.<name>.sandbox]  (medium)  — config.toml per-agent
-Agent .md frontmatter    (highest) — YAML frontmatter in the agent file
+Agent .md frontmatter    — YAML frontmatter in the agent file
 ```
+
+Sandbox settings are currently agent-local only. They are defined in the
+agent's Markdown frontmatter rather than in `config.toml`.
 
 ---
 

@@ -47,7 +47,8 @@ Built-in tools included — or load them all at once with `sage.tools.builtins`:
 | Category | Tools |
 |----------|-------|
 | Core | `shell`, `file_read`, `file_write`, `file_edit`, `http_request` |
-| Memory | `memory_store`, `memory_recall` |
+| Memory | `memory_store`, `memory_recall`, `memory_forget`, `memory_add`, `memory_search`, `memory_get`, `memory_list`, `memory_delete`, `memory_stats` |
+| Process | `process_start`, `process_send`, `process_read`, `process_wait`, `process_kill`, `process_list` |
 | Web | `web_fetch`, `web_search` |
 | Git | `git_status`, `git_diff`, `git_log`, `git_commit`, `git_undo`, `git_branch` |
 
@@ -86,7 +87,7 @@ Powered by [litellm](https://github.com/BerriAI/litellm). OpenAI, Azure, Anthrop
 
 ### MCP Support
 
-Connect to MCP servers (stdio or SSE) or expose your tools *as* an MCP server. Both directions work.
+Connect to MCP servers (stdio or SSE) or expose your tools *as* an MCP server. Server definitions live in `config.toml` under `[mcp_servers.<name>]`; agents opt into them with `enabled_mcp_servers` in frontmatter or per-agent TOML overrides. MCP tools are registered with server-aware runtime names like `mcp_context7_resolve-library-id`.
 
 ### Semantic Memory
 
@@ -94,7 +95,7 @@ SQLite-backed with litellm embeddings. Zero-config persistent recall across sess
 
 ### Permissions
 
-Control what tools can do via a single `permission:` block in YAML frontmatter. Each permission category (`read`, `edit`, `shell`, `web`, `memory`) maps to a set of built-in tools. Set a category to `allow`, `deny`, or `ask`, or use pattern matching for fine-grained shell control. When set to `deny`, tools are invisible to the LLM. Interactive prompts in the TUI when policy is `ask`.
+Control what tools can do via a single `permission:` block in YAML frontmatter. Each permission category (`read`, `edit`, `shell`, `web`, `memory`, `process`, `task`, `git`) maps to a set of built-in tools. Set a category to `allow`, `deny`, or `ask`, or use pattern matching for fine-grained shell control. When set to `deny`, tools are invisible to the LLM. Interactive prompts in the TUI when policy is `ask`.
 
 For trusted local runs, the CLI also supports `--yolo` / `-y` to bypass all permission checks entirely. This overrides both `ask` and explicit `deny` decisions for the current process, including `sage exec`, `sage agent run`, `sage agent orchestrate`, `sage serve`, and `sage-tui`.
 
@@ -139,7 +140,7 @@ Token-aware context window management. Automatic compaction when approaching the
 
 ### TUI
 
-A full interactive terminal UI built with [Ink v6](https://github.com/vadimdemedes/ink) and React 19. Communicates with the Python backend via JSON-RPC over stdio. Block-based conversation display with live streaming, collapsible tool calls, markdown rendering, permission prompts, delegation hierarchy visualization, and an event timeline with inspector for real-time observability.
+A full interactive terminal UI built with [Ink v6](https://github.com/vadimdemedes/ink) and React 19. Communicates with the Python backend via JSON-RPC over stdio. Block-based conversation display with live streaming, collapsible tool calls, markdown rendering, permission prompts, delegation hierarchy visualization, an active task dock, live turn complexity display, and an event timeline with inspector for real-time observability.
 
 **Prerequisites:** Node.js 22+, pnpm 10+
 
@@ -344,7 +345,7 @@ git:
   auto_snapshot: true              # Auto-snapshot before edits (default: true)
 
 # Tool access: permission categories drive tool registration
-# Categories: read, edit, shell, web, memory, task, git
+# Categories: read, edit, shell, web, memory, process, task, git
 # Values: "allow" | "deny" | "ask" | {pattern: action, ...}
 permission:
   read: allow
@@ -373,14 +374,7 @@ subagents:
   - name: inline-helper              # Or define inline
     model: gpt-4o-mini
 
-mcp_servers:
-  filesystem:
-    transport: stdio
-    command: npx
-    args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
-  remote:
-    transport: sse
-    url: http://localhost:8080/sse
+enabled_mcp_servers: [filesystem, remote]
 
 
 context:
@@ -444,7 +438,7 @@ You are a helpful AI assistant.
 
 ### Main Config (TOML)
 
-Sage supports a global TOML config file for defaults and per-agent overrides. It's auto-discovered at `./config.toml` or `~/.config/sage/config.toml`, or set via `SAGE_CONFIG_PATH`.
+Sage supports a global TOML config file for top-level defaults and per-agent overrides. It's auto-discovered at `./config.toml` or `~/.config/sage/config.toml`, or set via `SAGE_CONFIG_PATH`.
 
 ```toml
 # Optional: global skills directory (waterfall: $cwd/skills → ~/.agents/skills → ~/.claude/skills)
@@ -453,13 +447,24 @@ Sage supports a global TOML config file for defaults and per-agent overrides. It
 # agents_dir = "agents/"   # default directory for agent discovery
 # primary = "my-agent"     # default agent to run when none specified
 
-[defaults]
 model = "gpt-4o"
 max_turns = 15
+enabled_mcp_servers = ["context7"]
+
+[complexity]
+enabled = true
+simple_threshold = 100
+complex_threshold = 500
+
+[mcp_servers.context7]
+transport = "stdio"
+command = "npx"
+args = ["-y", "@upstash/context7-mcp@latest"]
 
 [agents.my-agent]
 model = "gpt-4o-mini"
 max_turns = 5
+enabled_mcp_servers = ["context7"]
 # Optional: limit this agent to a subset of the global skill pool
 # skills = ["git-master", "terraform"]
 
@@ -474,7 +479,7 @@ model = "anthropic/claude-sonnet-4-20250514"
 temperature = 0.2
 ```
 
-Override priority: **main config defaults < per-agent overrides < frontmatter**.
+Override priority: **top-level main config < per-agent overrides < frontmatter**.
 
 ## Architecture
 
@@ -532,22 +537,21 @@ tui/                # TypeScript terminal UI (Ink v6 + React 19)
     state/          # BlockContext + blockReducer (block-based state management)
     ipc/            # SageClient (JSON-RPC over stdio)
     renderer/       # Markdown + syntax-highlighted code blocks
-    commands/       # Slash command registry (21 commands)
+    commands/       # Slash command registry (24 commands)
 ```
 
 ## Examples
 
-- [`examples/simple_agent/`](examples/simple_agent/) — Minimal agent with markdown config
+- [`examples/simple-assistant.md`](examples/simple-assistant.md) — Minimal single-agent config
 - [`examples/custom_tools/`](examples/custom_tools/) — Agent with `@tool`-decorated functions
 - [`examples/parallel_agents/`](examples/parallel_agents/) — Orchestrator with subagents
-- [`examples/mcp_agent/`](examples/mcp_agent/) — Agent with MCP filesystem server
+- [`examples/mcp-assistant.md`](examples/mcp-assistant.md) — Agent that opts into centrally configured MCP servers
 - [`examples/memory_agent/`](examples/memory_agent/) — Semantic memory backend usage
 - [`examples/skills_agent/`](examples/skills_agent/) — Skills in action
-- [`examples/skills_demo/`](examples/skills_demo/) — Complex skills demo
-- [`examples/permissions_agent/`](examples/permissions_agent/) — Permission policies
+- [`examples/skills_demo/`](examples/skills_demo/) — Demo-local skills bundle
+- [`examples/category_routing_with_tool_restrictions/`](examples/category_routing_with_tool_restrictions/) — Category routing plus permission/tool controls
 - [`examples/safe_coder/`](examples/safe_coder/) — Code generation with safety
-- [`examples/devtools_agent/`](examples/devtools_agent/) — Developer tools
-- [`examples/phase1_foundation/`](examples/phase1_foundation/) — Tool restrictions, session continuity, category routing (`orchestrator.md` → `researcher.md` + `safe-coder`)
+- [`examples/devtools.md`](examples/devtools.md) — Developer tools agent
 - [`examples/orchestrated_agents/`](examples/orchestrated_agents/) — Conductor/planner/executor pattern with planning pipeline
 
 ## Requirements

@@ -3,6 +3,8 @@
 ## Status
 Accepted
 
+Updated March 9, 2026: configuration is centralized in `config.toml`, and runtime tool names are namespaced by server.
+
 ## Context
 The Model Context Protocol (MCP) is an emerging standard for connecting LLM applications to external tools and data sources. Supporting MCP enables Sage agents to use a growing ecosystem of MCP servers (filesystem, databases, web APIs) and expose Sage tools as MCP servers for other clients.
 
@@ -12,14 +14,22 @@ Support MCP via the official `mcp` Python package with both client and server ca
 - **MCPClient:** Connects to MCP servers via stdio or SSE transport, discovers tools, and executes them. MCP tools are merged into the agent's tool registry at startup.
 - **MCPServer:** Exposes a `ToolRegistry` as an MCP server over stdio, allowing external MCP clients to use Sage-defined tools.
 
-Configuration is declarative in Markdown frontmatter:
+Server configuration is centralized in the main `config.toml`:
+
+```toml
+[mcp_servers.filesystem]
+transport = "stdio"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+```
+
+Agents opt into named servers declaratively in Markdown frontmatter:
 
 ```yaml
-mcp_servers:
-  - transport: stdio
-    command: npx
-    args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+enabled_mcp_servers: [filesystem]
 ```
+
+Discovered MCP tools are registered under server-aware runtime names such as `mcp_filesystem_read_file` so tools from different servers cannot collide.
 
 ## Consequences
 **Positive:**
@@ -27,9 +37,12 @@ mcp_servers:
 - Agents can use any MCP-compatible server without custom integration code
 - Sage tools can be consumed by any MCP client (Claude Desktop, etc.)
 - Both stdio and SSE transports cover local and remote server scenarios
+- Centralized server definitions make credential handling and operational review simpler
+- Server-aware runtime tool names avoid collisions across MCP servers
 
 **Negative:**
 - The MCP specification is still evolving; breaking changes may occur
 - `mcp` package adds a dependency with its own transitive requirements
 - stdio transport requires subprocess management and lifecycle handling
 - MCP tool schemas may not align perfectly with Sage's `ToolSchema` format
+- Agents can no longer define ad hoc MCP server connections inline; they must reference the shared catalog

@@ -15,3 +15,12 @@ memory:
 ---
 
 You are an assistant that can interact with the filesystem via MCP.
+
+This example expects a matching `config.toml` entry such as:
+
+```toml
+[mcp_servers.filesystem]
+transport = "stdio"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "."]
+```

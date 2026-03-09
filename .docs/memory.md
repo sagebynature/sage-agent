@@ -106,12 +106,12 @@ INFO  Opening memory database at memory.db
 Memory can be configured in two places. Higher priority wins:
 
 ```
-[defaults]          (lowest)  - memory is NOT available in defaults
-[agents.<name>]     (medium)  - config.toml per-agent section
+Top-level [memory]   (lowest)  - global default memory config
+[agents.<name>]      (medium)  - config.toml per-agent section
 Agent .md frontmatter (highest) - YAML frontmatter in the agent file
 ```
 
-> **Note**: Memory is an agent-only field. It cannot be set in the `[defaults]` section because memory configuration is inherently per-agent (different agents may need different databases or embedding models).
+> **Note**: Memory can now be configured globally with a top-level `[memory]` section and selectively overridden per agent. Per-agent settings deep-merge on top of the global memory config.
 
 ### Config Resolution Flow
 

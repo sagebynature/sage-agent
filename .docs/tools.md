@@ -399,7 +399,8 @@ permission:
   edit: allow      # registers file_write, file_edit
   shell: allow     # registers shell
   web: allow       # registers web_fetch, web_search, http_request
-  memory: allow    # registers memory_store, memory_recall
+  memory: allow    # registers memory_store, memory_recall, memory_forget, memory_add, memory_search, memory_get, memory_list, memory_delete, memory_stats
+  process: ask     # registers process_start, process_send, process_read, process_wait, process_kill, process_list
 ---
 ```
 
@@ -416,15 +417,15 @@ extensions:
 
 ### In config.toml
 
-Set default permissions and extensions for all agents in the `[defaults]`
-section of `config.toml`. Individual agents can override this in their
+Set default permissions and extensions with top-level keys in `config.toml`.
+Individual agents can override this in their
 frontmatter or in `[agents.<name>]` sections.
 
 ```toml
-[defaults]
-permission.read = "allow"
-permission.edit = "allow"
-permission.shell = "ask"
+[permission]
+read = "allow"
+edit = "allow"
+shell = "ask"
 
 [agents.researcher]
 permission.web = "allow"
@@ -617,35 +618,33 @@ sees a unified tool list.
 
 ### Configuring MCP Servers
 
-Add `mcp_servers:` to your agent frontmatter:
+Define MCP servers in `config.toml`, then opt into them from agent frontmatter:
 
 ```yaml
 ---
 name: mcp-assistant
 model: azure_ai/claude-sonnet-4-6
-mcp_servers:
-  filesystem:
-    transport: stdio
-    command: npx
-    args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+enabled_mcp_servers: [filesystem]
 permission:
   read: allow
   shell: allow
 ---
 ```
 
-Or in `config.toml`:
+In `config.toml`:
 
 ```toml
-[defaults.mcp_servers.filesystem]
+[mcp_servers.filesystem]
 transport = "stdio"
 command = "npx"
 args = ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]
 
-[defaults.mcp_servers.remote]
+[mcp_servers.remote]
 transport = "sse"
 url = "http://localhost:8080/sse"
 ```
+
+At runtime, MCP tools are namespaced by server, for example `mcp_filesystem_read_file`.
 
 ### MCP Server Config Fields
 

@@ -87,7 +87,7 @@ pnpm --filter tui typecheck
 
 ## Slash Commands
 
-Type `/` in the input area to open the command palette. 21 commands available:
+Type `/` in the input area to open the command palette. 24 commands available:
 
 | Command | Aliases | Description |
 |---------|---------|-------------|
@@ -102,15 +102,18 @@ Type `/` in the input area to open the command palette. 21 commands available:
 | `/usage` | | Show token usage statistics |
 | `/tools` | | List available tools |
 | `/permissions` | `/perms` | Show permission grants |
+| `/verbosity` | `/verb` | Set event verbosity level |
+| `/events` | | Show or navigate lifecycle events |
+| `/filters` | | Filter lifecycle event feed |
 | `/agent` | | Show active agents |
 | `/agents` | | List all agents |
 | `/export` | | Export session transcript |
-| `/theme` | | Change UI theme (planned) |
-| `/split` | | Split view (planned) |
-| `/plan` | | Show plan (planned) |
-| `/notepad` | `/note` | Open scratchpad (planned) |
-| `/bg` | `/background` | Background tasks (planned) |
-| `/diff` | | Show diff (planned) |
+| `/theme` | | Change UI theme |
+| `/split` | | Split view controls |
+| `/plan` | | Show or edit current plan |
+| `/notepad` | `/note` | Open scratchpad |
+| `/bg` | `/background` | Manage background tasks |
+| `/diff` | | Show diff of last changes |
 | `/quit` | `/exit`, `/q` | Exit the application |
 
 ## Keyboard Shortcuts
@@ -160,11 +163,14 @@ tui/src/
 │   ├── ConversationView.tsx # Block-based conversation display
 │   ├── InputPrompt.tsx    # Text input with slash command support
 │   ├── ActiveStreamView.tsx # Live streaming content + tool indicators
-│   ├── BottomBar.tsx      # Status bar (model, cost, context, agents)
+│   ├── BottomBar.tsx      # Status bar (model, cost, cwd, branch, context)
+│   ├── ActiveTaskDock.tsx # Persistent active task and streaming indicator dock
+│   ├── ComplexityPanel.tsx # Current turn complexity score and contributing factors
 │   ├── PermissionPrompt.tsx # Tool permission approval UI
 │   ├── ToolDisplay.tsx    # Completed tool summary (ToolSummary-based)
 │   ├── EventTimeline.tsx  # Event timeline with verbosity/category filtering
 │   ├── EventInspector.tsx # Event detail viewer with correlation IDs
+│   ├── PaneFrame.tsx      # Shared bordered container chrome
 │   ├── SlashCommands.tsx  # Fuzzy-filtered command overlay
 │   ├── SessionPicker.tsx  # Session resume/history
 │   ├── AgentTree.tsx      # Delegation hierarchy visualization
@@ -178,9 +184,9 @@ tui/src/
 │   └── LifecycleManager.ts # Component lifecycle coordination
 ├── renderer/              # Markdown + syntax-highlighted code blocks
 ├── hooks/                 # useInputHistory, useResizeHandler, useMessageQueue
-├── commands/              # Slash command registry (21 commands)
+├── commands/              # Slash command registry (24 commands)
 ├── utils/                 # Terminal detection, Unicode fallback, string width
 └── types/                 # Protocol, state, blocks, events
 ```
 
-Communication is JSON-RPC only — zero Python imports in the TUI. The backend runs as a subprocess (`sage serve`) reading/writing newline-delimited JSON-RPC 2.0 on stdin/stdout. All agent lifecycle events are normalized into a canonical `EventRecord` format by the integration layer before reaching UI components.
+Communication is JSON-RPC only — zero Python imports in the TUI. The backend runs as a subprocess (`sage serve`) reading/writing newline-delimited JSON-RPC 2.0 on stdin/stdout. All agent lifecycle events are normalized into a canonical `EventRecord` format by the integration layer before reaching UI components, including turn complexity metadata used by `ComplexityPanel` and the active stream UI.

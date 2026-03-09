@@ -170,7 +170,7 @@ permission: {...}         # Optional: tool access control by category
 extensions: [...]         # Optional: custom tool module paths
 memory: {...}             # Optional: persistent memory config
 subagents: [...]          # Optional: child agents for delegation
-mcp_servers: {...}        # Optional: MCP server connections (named dict)
+enabled_mcp_servers: [...] # Optional: opt into named MCP servers from config.toml
 model_params: {...}       # Optional: LLM parameters
 context: {...}            # Optional: token budget management
 ---
@@ -208,7 +208,7 @@ The parser splits on `---` delimiters, extracts the YAML block via `yaml.safe_lo
 | `extensions` | `list[str]` | `[]` | Custom tool module paths |
 | `memory` | `MemoryConfig` | `None` | Persistent memory configuration |
 | `subagents` | `list` | `[]` | Child agent references |
-| `mcp_servers` | `dict[str, MCPServerConfig]` | `{}` | MCP server connections |
+| `enabled_mcp_servers` | `list[str]` | `[]` | Names of MCP servers to enable from the main config catalog |
 | `model_params` | `ModelParams` | `{}` | LLM generation parameters |
 | `context` | `ContextConfig` | `None` | Token budget management |
 | `sandbox` | `SandboxConfig` | `None` | Shell sandbox: `backend` (`auto`/`native`/`bubblewrap`/`seatbelt`/`docker`/`none`), `mode` (`read-only`/`workspace-write`/`full-access`), `enabled` (default `false`), `network` (default `true`) |
@@ -233,7 +233,8 @@ permission:
   edit: allow              # Controls file_write, file_edit
   shell: allow             # Controls shell
   web: allow               # Controls web_fetch, web_search, http_request
-  memory: allow            # Controls memory_store, memory_recall
+  memory: allow            # Controls memory_store, memory_recall, memory_forget, memory_add, memory_search, memory_get, memory_list, memory_delete, memory_stats
+  process: ask             # Controls process_start, process_send, process_read, process_wait, process_kill, process_list
   task: allow              # Reserved for future task management
   git: allow               # Controls git_status, git_diff, git_log, git_commit, etc.
 ```
@@ -245,7 +246,8 @@ Values for each category: `"allow"` | `"deny"` | `"ask"` | `{pattern: action, ..
 - `edit: allow` -> registers `file_write`, `file_edit`
 - `shell: allow` -> registers `shell`
 - `web: allow` -> registers `web_fetch`, `web_search`, `http_request`
-- `memory: allow` -> registers `memory_store`, `memory_recall`
+- `memory: allow` -> registers `memory_store`, `memory_recall`, `memory_forget`, `memory_add`, `memory_search`, `memory_get`, `memory_list`, `memory_delete`, `memory_stats`
+- `process: allow` -> registers `process_start`, `process_send`, `process_read`, `process_wait`, `process_kill`, `process_list`
 - `task: allow` -> (reserved, no tools currently)
 - `git: allow` -> registers `git_status`, `git_diff`, `git_log`, `git_commit`, `git_undo`, `git_branch`, `git_worktree_create`, `git_worktree_remove`, `snapshot_create`, `snapshot_restore`, `snapshot_list`
 
@@ -319,18 +321,20 @@ memory:
 ### MCP Server Configuration
 
 ```yaml
-mcp_servers:
-  # stdio transport (subprocess)
-  filesystem:
-    transport: stdio
-    command: npx
-    args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
-    env: { KEY: value }
+enabled_mcp_servers: [filesystem, remote-tools]
+```
 
-  # SSE transport (HTTP)
-  remote-tools:
-    transport: sse
-    url: http://localhost:8080/sse
+Server definitions live in the main `config.toml`, not in agent frontmatter:
+
+```toml
+[mcp_servers.filesystem]
+transport = "stdio"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+
+[mcp_servers.remote-tools]
+transport = "sse"
+url = "http://localhost:8080/sse"
 ```
 
 ### Model Parameters
@@ -1178,7 +1182,7 @@ When a category is `"deny"`, its tools become invisible to the LLM (not register
 ```
 Agent .md frontmatter     <- highest priority
 [agents.<name>] in TOML   <- per-agent overrides
-[defaults] in TOML         <- global defaults (lowest)
+Top-level keys in TOML    <- global defaults (lowest)
 ```
 
 ### Main Config (TOML) -- `config.toml`
@@ -1187,19 +1191,18 @@ Agent .md frontmatter     <- highest priority
 # Optional: global skills directory
 # skills_dir = "/path/to/skills"
 
-[defaults]
 model = "azure_ai/gpt-4o"
 max_turns = 10
 
-[defaults.model_params]
+[model_params]
 temperature = 0.7
 max_tokens = 4096
 
-[defaults.permission]
+[permission]
 read = "allow"
 shell = "ask"
 
-[defaults.context]
+[context]
 compaction_threshold = 0.75
 reserve_tokens = 4096
 
@@ -1501,11 +1504,7 @@ model_params:
   temperature: 0.0
   max_tokens: 4096
   timeout: 45.0
-mcp_servers:
-  filesystem:
-    transport: stdio
-    command: npx
-    args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+enabled_mcp_servers: [filesystem]
 memory:
   backend: sqlite
   path: mcp_agent_memory.db
@@ -1514,6 +1513,15 @@ max_turns: 10
 ---
 
 You are an assistant that can interact with the filesystem via MCP.
+```
+
+With a matching main config entry:
+
+```toml
+[mcp_servers.filesystem]
+transport = "stdio"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
 ```
 
 ### Agent with Permissions
