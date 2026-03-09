@@ -37,21 +37,6 @@ function usageText(event: EventRecord): string {
   return "";
 }
 
-function complexityText(event: EventRecord): string {
-  const complexity = typeof event.payload.complexity === "object" && event.payload.complexity !== null
-    ? event.payload.complexity as Record<string, unknown>
-    : null;
-  if (!complexity) {
-    return "";
-  }
-  const score = typeof complexity.score === "number" ? complexity.score : undefined;
-  const level = typeof complexity.level === "string" ? complexity.level : undefined;
-  if (score === undefined || !level) {
-    return "";
-  }
-  return ` C${score} ${level}`;
-}
-
 export const EventTimeline = memo(function EventTimeline({
   events,
   selectedEventId,
@@ -64,7 +49,7 @@ export const EventTimeline = memo(function EventTimeline({
 
   return (
     <Box
-      width={60}
+      width={80}
       flexShrink={0}
       flexDirection="column"
       borderStyle="round"
@@ -83,7 +68,7 @@ export const EventTimeline = memo(function EventTimeline({
               <Text color={selected ? "magenta" : "gray"}>{selected ? ">" : " "}</Text>
               <Text color={statusColor(event)}>{event.category.padEnd(11, " ")}</Text>
               <Text>{event.summary}</Text>
-              <Text dimColor>{complexityText(event)}{durationText(event)}{usageText(event)}</Text>
+              <Text dimColor>{durationText(event)}{usageText(event)}</Text>
             </Box>
           );
         })
