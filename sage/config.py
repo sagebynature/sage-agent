@@ -133,6 +133,42 @@ class MemoryConfig(BaseModel):
     relevance_threshold: float = 0.5
 
 
+class ComplexityWeightsConfig(BaseModel):
+    """Factor weights for turn complexity scoring."""
+
+    message_chars_divisor: int = 4
+    tool_count: int = 20
+    code_marker: int = 30
+    history_message_overage: int = 15
+    system_prompt_overage_divisor: int = 10
+
+
+class ComplexityFeaturesConfig(BaseModel):
+    """Feature toggles for turn complexity scoring."""
+
+    message_length: bool = True
+    tool_count: bool = True
+    code_markers: bool = True
+    conversation_depth: bool = True
+    system_prompt_length: bool = True
+
+
+class ComplexityConfig(BaseModel):
+    """Configuration for OpenFang-inspired turn complexity scoring."""
+
+    enabled: bool = True
+    version: str = "openfang-v1"
+    simple_threshold: int = 100
+    complex_threshold: int = 500
+    weights: ComplexityWeightsConfig = Field(default_factory=ComplexityWeightsConfig)
+    features: ComplexityFeaturesConfig = Field(default_factory=ComplexityFeaturesConfig)
+    code_markers: list[str] = Field(
+        default_factory=lambda: ["def ", "class ", "async ", "```", "SELECT ", "function "]
+    )
+    history_baseline_messages: int = 10
+    system_prompt_baseline_chars: int = 500
+
+
 class ModelParams(BaseModel):
     """Optional model-level parameters passed to the LLM provider.
 
@@ -283,6 +319,7 @@ class AgentConfig(BaseModel):
     git: GitConfig | None = None
     sandbox: SandboxConfig | None = None
     tracing: TracingConfig | None = None
+    complexity: ComplexityConfig | None = None
     parallel_tool_execution: bool = True
     tool_timeout: float | None = None
     credential_scrubbing: CredentialScrubConfig | None = None

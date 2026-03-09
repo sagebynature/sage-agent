@@ -8,6 +8,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
+ComplexityLevel = Literal["simple", "medium", "complex"]
+
+
 class ToolCall(BaseModel):
     """Represents a tool/function call made by the model."""
 
@@ -78,6 +81,25 @@ class StreamChunk(BaseModel):
     finish_reason: str | None = None
     tool_calls: list[ToolCall] | None = None
     usage: Usage | None = None
+
+
+class ComplexityFactor(BaseModel):
+    """A single contribution to an LLM turn complexity score."""
+
+    kind: str
+    contribution: int
+    value: int | float | str | bool | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class ComplexityScore(BaseModel):
+    """Structured complexity assessment for a single LLM turn."""
+
+    score: int
+    level: ComplexityLevel
+    version: str
+    factors: list[ComplexityFactor] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ToolMetadata(BaseModel):

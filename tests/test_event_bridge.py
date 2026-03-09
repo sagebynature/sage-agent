@@ -15,7 +15,7 @@ from sage.events import (
     ToolCompleted,
     ToolStarted,
 )
-from sage.models import Usage
+from sage.models import ComplexityScore, Usage
 from sage.protocol.bridge import EventBridge, JsonRpcEventSink
 from sage.telemetry import EventEnvelope
 
@@ -99,12 +99,28 @@ async def test_tool_completed_sends_notification() -> None:
 async def test_turn_started_sends_notification() -> None:
     _, mock_server, _, handlers = _setup_bridge()
 
-    event = LLMTurnStarted(turn=3, model="gpt-4o", n_messages=4)
+    event = LLMTurnStarted(
+        turn=3,
+        model="gpt-4o",
+        n_messages=4,
+        complexity=ComplexityScore(score=42, level="medium", version="openfang-v1"),
+    )
     await handlers[LLMTurnStarted](event)
 
     mock_server.send_notification.assert_awaited_once_with(
         "turn/started",
-        {"turn": 3, "model": "gpt-4o", "agent_path": ["root"]},
+        {
+            "turn": 3,
+            "model": "gpt-4o",
+            "complexity": {
+                "score": 42,
+                "level": "medium",
+                "version": "openfang-v1",
+                "factors": [],
+                "metadata": {},
+            },
+            "agent_path": ["root"],
+        },
     )
 
 
@@ -113,7 +129,12 @@ async def test_turn_completed_sends_notification_with_usage() -> None:
     _, mock_server, _, handlers = _setup_bridge()
 
     usage = Usage(prompt_tokens=10, completion_tokens=5, cost=0.15)
-    event = LLMTurnCompleted(turn=1, usage=usage, n_tool_calls=0)
+    event = LLMTurnCompleted(
+        turn=1,
+        usage=usage,
+        n_tool_calls=0,
+        complexity=ComplexityScore(score=18, level="simple", version="openfang-v1"),
+    )
     await handlers[LLMTurnCompleted](event)
 
     first_call = mock_server.send_notification.await_args_list[0]
@@ -122,6 +143,13 @@ async def test_turn_completed_sends_notification_with_usage() -> None:
         {
             "turn": 1,
             "usage": {"input": 10, "output": 5, "cost": 0.15},
+            "complexity": {
+                "score": 18,
+                "level": "simple",
+                "version": "openfang-v1",
+                "factors": [],
+                "metadata": {},
+            },
             "agent_path": ["root"],
         },
     )

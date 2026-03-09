@@ -2,6 +2,7 @@ import type { BlockAction } from "../state/blockReducer.js";
 import type { EventRecord } from "../types/events.js";
 import type { PermissionState } from "../types/state.js";
 import { makeId } from "../state/blockReducer.js";
+import type { ComplexitySummary } from "../types/blocks.js";
 
 function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
@@ -11,6 +12,23 @@ function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function asComplexity(value: unknown): ComplexitySummary | null {
+  const record = asRecord(value);
+  const score = typeof record.score === "number" ? record.score : undefined;
+  const level = record.level;
+  if (
+    score === undefined
+    || (level !== "simple" && level !== "medium" && level !== "complex")
+  ) {
+    return null;
+  }
+  return {
+    score,
+    level,
+    version: typeof record.version === "string" ? record.version : undefined,
+  };
 }
 
 function agentParentName(agentPath: string[]): string | undefined {
@@ -29,6 +47,11 @@ export class EventProjector {
       case "on_llm_stream_delta": {
         const delta = asString(payload.delta);
         return delta ? [{ type: "STREAM_DELTA", delta }] : [];
+      }
+
+      case "pre_llm_call": {
+        const complexity = asComplexity(payload.complexity);
+        return complexity ? [{ type: "SET_ACTIVE_COMPLEXITY", complexity }] : [];
       }
 
       case "pre_tool_execute": {

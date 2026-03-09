@@ -25,6 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sage._compat import tomllib
 from sage.config import (
     CategoryConfig,
+    ComplexityConfig,
     ContextConfig,
     MCPServerConfig,
     MemoryConfig,
@@ -53,6 +54,7 @@ class ConfigOverrides(BaseModel):
     enabled_mcp_servers: list[str] | None = None
     planning: PlanningConfig | None = None
     memory: MemoryConfig | None = None
+    complexity: ComplexityConfig | None = None
 
 
 class AgentOverrides(ConfigOverrides):

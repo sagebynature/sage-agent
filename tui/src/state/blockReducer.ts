@@ -1,6 +1,7 @@
 import type {
   OutputBlock,
   ActiveStream,
+  ComplexitySummary,
   ToolSummary,
 } from "../types/blocks.js";
 import type {
@@ -50,6 +51,7 @@ export type BlockAction =
   | { type: "SUBMIT_MESSAGE"; content: string }
   | { type: "STREAM_START"; runId: string }
   | { type: "STREAM_DELTA"; delta: string }
+  | { type: "SET_ACTIVE_COMPLEXITY"; complexity: ComplexitySummary | null }
   | {
       type: "TOOL_STARTED";
       name: string;
@@ -367,6 +369,7 @@ export function blockReducer(
           tools: state.activeStream?.tools ?? [],
           isThinking: true,
           startedAt: state.activeStream?.startedAt ?? Date.now(),
+          complexity: state.activeStream?.complexity,
         },
       };
     }
@@ -387,6 +390,19 @@ export function blockReducer(
           isThinking: false,
         },
         scrollOffset: 0,
+      };
+    }
+
+    case "SET_ACTIVE_COMPLEXITY": {
+      if (!state.activeStream) {
+        return state;
+      }
+      return {
+        ...state,
+        activeStream: {
+          ...state.activeStream,
+          complexity: action.complexity ?? undefined,
+        },
       };
     }
 

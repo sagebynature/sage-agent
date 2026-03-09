@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Any, TypeVar
 
 from sage.hooks.base import HookEvent
+from sage.models import ComplexityScore
 
 E = TypeVar("E")
 
@@ -68,6 +69,7 @@ class LLMTurnStarted:
     turn: int
     model: str
     n_messages: int
+    complexity: ComplexityScore | None = None
     run_id: str | None = None
     session_id: str | None = None
     originating_session_id: str | None = None
@@ -83,6 +85,7 @@ class LLMTurnCompleted:
     usage: Any  # sage.models.Usage
     n_tool_calls: int
     model: str = ""
+    complexity: ComplexityScore | None = None
     run_id: str | None = None
     session_id: str | None = None
     originating_session_id: str | None = None
@@ -197,6 +200,13 @@ _FACTORIES: dict[type, Any] = {
         turn=d.get("turn", 0),
         model=d.get("model", ""),
         n_messages=len(d.get("messages", [])),
+        complexity=(
+            d.get("complexity")
+            if isinstance(d.get("complexity"), ComplexityScore)
+            else ComplexityScore.model_validate(d["complexity"])
+            if d.get("complexity") is not None
+            else None
+        ),
         run_id=d.get("run_id"),
         session_id=d.get("session_id"),
         originating_session_id=d.get("originating_session_id"),
@@ -208,6 +218,13 @@ _FACTORIES: dict[type, Any] = {
         usage=d.get("usage"),
         n_tool_calls=d.get("n_tool_calls", 0),
         model=d.get("model", ""),
+        complexity=(
+            d.get("complexity")
+            if isinstance(d.get("complexity"), ComplexityScore)
+            else ComplexityScore.model_validate(d["complexity"])
+            if d.get("complexity") is not None
+            else None
+        ),
         run_id=d.get("run_id"),
         session_id=d.get("session_id"),
         originating_session_id=d.get("originating_session_id"),

@@ -19,6 +19,22 @@ function formatObject(value: Record<string, unknown> | undefined, maxLines: numb
   return text.length > 600 ? `${text.slice(0, 597)}...` : text;
 }
 
+function complexitySummary(payload: Record<string, unknown>): string | null {
+  const complexity = typeof payload.complexity === "object" && payload.complexity !== null
+    ? payload.complexity as Record<string, unknown>
+    : null;
+  if (!complexity) {
+    return null;
+  }
+  const score = typeof complexity.score === "number" ? complexity.score : undefined;
+  const level = typeof complexity.level === "string" ? complexity.level : undefined;
+  const version = typeof complexity.version === "string" ? complexity.version : undefined;
+  if (score === undefined || !level) {
+    return null;
+  }
+  return `complexity=C${score} ${level}${version ? ` (${version})` : ""}`;
+}
+
 export const EventInspector = memo(function EventInspector({ event, maxHeight }: EventInspectorProps): ReactNode {
   // Border (2) + header (1) + metadata lines (~5-7) = ~9 rows of chrome;
   // remaining budget goes to the JSON payload.
@@ -38,6 +54,9 @@ export const EventInspector = memo(function EventInspector({ event, maxHeight }:
         <Text dimColor>No event selected</Text>
       ) : (
         <>
+          {complexitySummary(event.payload) && (
+            <Text dimColor>{complexitySummary(event.payload)}</Text>
+          )}
           <Text>{event.summary}</Text>
           <Text dimColor>{event.eventName}</Text>
           <Text dimColor>{`run=${event.runId ?? "n/a"}`}</Text>

@@ -74,6 +74,24 @@ describe("ActiveStreamView", () => {
     expect(frame).toContain("Thinking");
   });
 
+  it("shows complexity while thinking when present", () => {
+    const stream: ActiveStream = {
+      runId: "r1",
+      content: "",
+      tools: [],
+      isThinking: true,
+      startedAt: Date.now(),
+      complexity: {
+        score: 42,
+        level: "medium",
+        version: "openfang-v1",
+      },
+    };
+    const { lastFrame } = render(<ActiveStreamView stream={stream} />);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("Complexity C42 medium");
+  });
+
   it("renders streaming content as plain text immediately", () => {
     const stream: ActiveStream = {
       runId: "r1",

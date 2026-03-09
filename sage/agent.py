@@ -12,7 +12,8 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, NoReturn, TypeVar, cast, overload
 
-from sage.config import AgentConfig, load_config
+from sage.complexity import score_turn_complexity
+from sage.config import AgentConfig, ComplexityConfig, load_config
 from sage.hooks.base import HookEvent
 from sage.hooks.registry import HookRegistry
 from sage.main_config import load_main_config, resolve_and_apply_env, resolve_main_config_path
@@ -36,7 +37,7 @@ if TYPE_CHECKING:
     from sage.coordination.cancellation import CancellationToken
     from sage.main_config import MainConfig
 from sage.exceptions import MaxTurnsExceeded, PermissionError as SagePermissionError, ToolError
-from sage.models import CompletionResult, Message, ToolCall, Usage
+from sage.models import CompletionResult, ComplexityScore, Message, ToolCall, ToolSchema, Usage
 from sage.providers.litellm_provider import LiteLLMProvider
 from sage.skills.loader import (
     Skill,
@@ -363,6 +364,7 @@ def _construct_agent(
         tool_timeout=agent_config.tool_timeout,
         hook_registry=hook_registry,
         prompt_metadata=agent_config.prompt_metadata,
+        complexity_config=agent_config.complexity,
     )
 
 
@@ -416,6 +418,7 @@ class Agent:
         tool_timeout: float | None = None,
         hook_registry: HookRegistry | None = None,
         prompt_metadata: Any | None = None,
+        complexity_config: ComplexityConfig | None = None,
     ) -> None:
         self.name = name
         self.model = model
@@ -457,6 +460,7 @@ class Agent:
 
         self._session_mgr = SessionManager()
         self._main_config: MainConfig | None = None
+        self._complexity_config = complexity_config or ComplexityConfig()
 
         # Background task manager for async delegations.
         from sage.coordination.background import BackgroundTaskManager
@@ -555,6 +559,19 @@ class Agent:
         return agent
 
     # ── Execution methods ─────────────────────────────────────────────
+
+    def _score_turn_complexity(
+        self,
+        messages: list[Message],
+        tool_schemas: list[ToolSchema] | None,
+    ) -> ComplexityScore | None:
+        if not self._complexity_config.enabled:
+            return None
+        return score_turn_complexity(
+            messages=messages,
+            tool_schemas=tool_schemas,
+            config=self._complexity_config,
+        )
 
     @overload
     async def run(
@@ -789,12 +806,17 @@ class Agent:
         retry_count = 0
 
         while True:
+            initial_complexity = self._score_turn_complexity(
+                working_messages,
+                cast(list[ToolSchema] | None, tool_schemas),
+            )
             pre_data = await self._emit(
                 HookEvent.PRE_LLM_CALL,
                 {
                     "model": working_model,
                     "messages": working_messages,
                     "tool_schemas": tool_schemas,
+                    "complexity": initial_complexity,
                     "turn": turn,
                     "turn_id": self._current_execution_context().current_turn_id,
                     "retry_count": retry_count,
@@ -806,6 +828,10 @@ class Agent:
             effective_tool_schemas = cast(
                 "list[Any] | None",
                 pre_data.get("tool_schemas", tool_schemas),
+            )
+            effective_complexity = self._score_turn_complexity(
+                effective_messages,
+                cast(list[ToolSchema] | None, effective_tool_schemas),
             )
             provider_kwargs: dict[str, Any] = {}
             if effective_model != self.model:
@@ -825,6 +851,7 @@ class Agent:
                         {
                             "model": effective_model,
                             "messages": effective_messages,
+                            "complexity": effective_complexity,
                             "turn": turn,
                             "retry_count": retry_count,
                         },
@@ -842,6 +869,7 @@ class Agent:
                         "result": result,
                         "model": effective_model,
                         "messages": effective_messages,
+                        "complexity": effective_complexity,
                         "turn": turn,
                         "turn_id": self._current_execution_context().current_turn_id,
                         "usage": result.usage,
@@ -924,6 +952,7 @@ class Agent:
                     {
                         "model": effective_model,
                         "messages": effective_messages,
+                        "complexity": effective_complexity,
                         "turn": turn,
                         "retry_count": retry_count,
                         "streaming": True,
@@ -946,6 +975,7 @@ class Agent:
                     "result": assistant_msg,
                     "model": effective_model,
                     "messages": effective_messages,
+                    "complexity": effective_complexity,
                     "turn": turn,
                     "turn_id": self._current_execution_context().current_turn_id,
                     "usage": turn_usage,

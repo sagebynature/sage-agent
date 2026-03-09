@@ -55,6 +55,7 @@ class TestConfigOverrides:
         assert overrides.context is None
         assert overrides.extensions is None
         assert overrides.enabled_mcp_servers is None
+        assert overrides.complexity is None
         assert overrides.memory is None  # new line
 
     def test_model_dump_excludes_none(self) -> None:
@@ -76,6 +77,14 @@ class TestConfigOverrides:
         assert overrides.memory.backend == "sqlite"
         assert overrides.memory.path == "mem.db"
 
+    def test_complexity_field_accepts_complexity_config(self) -> None:
+        overrides = ConfigOverrides(
+            complexity={"enabled": True, "simple_threshold": 120}  # type: ignore[arg-type]
+        )
+        assert overrides.complexity is not None
+        assert overrides.complexity.enabled is True
+        assert overrides.complexity.simple_threshold == 120
+
 
 class TestAgentOverrides:
     def test_inherits_config_overrides(self) -> None:
@@ -87,6 +96,13 @@ class TestAgentOverrides:
         overrides = AgentOverrides(memory={"backend": "sqlite", "path": "mem.db"})  # type: ignore[arg-type]
         assert overrides.memory is not None
         assert overrides.memory.backend == "sqlite"
+
+    def test_complexity_field(self) -> None:
+        overrides = AgentOverrides(
+            complexity={"enabled": True, "complex_threshold": 650}  # type: ignore[arg-type]
+        )
+        assert overrides.complexity is not None
+        assert overrides.complexity.complex_threshold == 650
 
 
 class TestMainConfig:
@@ -156,6 +172,42 @@ class TestMainConfig:
     def test_extra_fields_rejected(self) -> None:
         with pytest.raises(Exception):
             MainConfig(unknown_section="value")  # type: ignore[call-arg]
+
+    def test_top_level_complexity_parsed_from_toml(self, tmp_path: Path) -> None:
+        toml_path = _write_toml(
+            tmp_path / "config.toml",
+            "\n".join(
+                [
+                    "[complexity]",
+                    "enabled = true",
+                    'version = "openfang-v1"',
+                    "simple_threshold = 125",
+                    "complex_threshold = 550",
+                    'code_markers = ["def ", "```"]',
+                    "",
+                    "[complexity.weights]",
+                    "message_chars_divisor = 5",
+                    "tool_count = 30",
+                    "",
+                    "[complexity.features]",
+                    "tool_count = false",
+                    "code_markers = true",
+                ]
+            )
+            + "\n",
+        )
+        cfg = load_main_config(toml_path)
+        assert cfg is not None
+        assert cfg.defaults.complexity is not None
+        assert cfg.defaults.complexity.enabled is True
+        assert cfg.defaults.complexity.version == "openfang-v1"
+        assert cfg.defaults.complexity.simple_threshold == 125
+        assert cfg.defaults.complexity.complex_threshold == 550
+        assert cfg.defaults.complexity.code_markers == ["def ", "```"]
+        assert cfg.defaults.complexity.weights.message_chars_divisor == 5
+        assert cfg.defaults.complexity.weights.tool_count == 30
+        assert cfg.defaults.complexity.features.tool_count is False
+        assert cfg.defaults.complexity.features.code_markers is True
 
 
 # ---------------------------------------------------------------------------
@@ -422,6 +474,40 @@ class TestMergeAgentConfig:
         merged = merge_agent_config(metadata, central, "agent")
         # Frontmatter model_params replaces entirely — no max_tokens carried over
         assert merged["model_params"] == {"temperature": 0.3}
+
+    def test_complexity_uses_top_level_replacement_semantics(self) -> None:
+        central = MainConfig(
+            defaults=ConfigOverrides(
+                complexity={  # type: ignore[arg-type]
+                    "enabled": True,
+                    "simple_threshold": 100,
+                    "complex_threshold": 500,
+                    "weights": {"tool_count": 20},
+                }
+            ),
+            agents={
+                "agent": AgentOverrides(
+                    complexity={  # type: ignore[arg-type]
+                        "enabled": True,
+                        "simple_threshold": 120,
+                        "complex_threshold": 600,
+                    }
+                )
+            },
+        )
+        metadata: dict[str, object] = {
+            "name": "agent",
+            "model": "gpt-4o",
+            "complexity": {
+                "enabled": False,
+                "simple_threshold": 80,
+            },
+        }
+        merged = merge_agent_config(metadata, central, "agent")
+        assert merged["complexity"] == {
+            "enabled": False,
+            "simple_threshold": 80,
+        }
 
     def test_none_agent_name(self) -> None:
         central = MainConfig(
