@@ -1,61 +1,69 @@
 export interface InputKey {
   ctrl?: boolean;
-  meta?: boolean;
   pageUp?: boolean;
   pageDown?: boolean;
   upArrow?: boolean;
   downArrow?: boolean;
+  escape?: boolean;
 }
 
 export const SHORTCUT_LABELS = {
-  clear: "Alt+L",
-  reset: "Alt+N",
-  approvePermission: "Alt+P",
-  saveSession: "Alt+S",
-  toggleVerbosity: "Alt+V",
-  toggleEventPane: "Alt+E",
+  leader: "Ctrl+G",
+  clear: "Ctrl+G, L",
+  reset: "Ctrl+G, N",
+  approvePermission: "Ctrl+G, P",
+  saveSession: "Ctrl+G, S",
+  toggleVerbosity: "Ctrl+G, V",
+  toggleEventPane: "Ctrl+G, E",
   quit: "Ctrl+C",
   newline: "Ctrl+J",
-  previousEvent: "Alt+Up",
-  nextEvent: "Alt+Down",
+  previousEvent: "Ctrl+G, Up",
+  nextEvent: "Ctrl+G, Down",
 } as const;
 
-function isMetaLetter(input: string, key: InputKey, letter: string): boolean {
-  return Boolean(key.meta && input.toLowerCase() === letter);
+export function isLeaderShortcut(input: string, key: InputKey): boolean {
+  return Boolean(key.ctrl && input === "g");
 }
 
-function isCtrlLetter(input: string, key: InputKey, letter: string): boolean {
-  return Boolean(key.ctrl && input === letter);
-}
+export type LeaderAction =
+  | "clear"
+  | "reset"
+  | "approvePermission"
+  | "saveSession"
+  | "toggleVerbosity"
+  | "toggleEventPane"
+  | "previousEvent"
+  | "nextEvent"
+  | "cancel"
+  | null;
 
-export function isClearShortcut(input: string, key: InputKey): boolean {
-  return isMetaLetter(input, key, "l") || isCtrlLetter(input, key, "l");
-}
+export function resolveLeaderAction(input: string, key: InputKey): LeaderAction {
+  if (key.escape || isLeaderShortcut(input, key)) {
+    return "cancel";
+  }
 
-export function isResetShortcut(input: string, key: InputKey): boolean {
-  return isMetaLetter(input, key, "n") || isCtrlLetter(input, key, "n");
-}
+  if (key.upArrow) {
+    return "previousEvent";
+  }
 
-export function isApprovePermissionShortcut(input: string, key: InputKey): boolean {
-  return isMetaLetter(input, key, "p") || isCtrlLetter(input, key, "p");
-}
+  if (key.downArrow) {
+    return "nextEvent";
+  }
 
-export function isSaveShortcut(input: string, key: InputKey): boolean {
-  return isMetaLetter(input, key, "s") || isCtrlLetter(input, key, "s");
-}
-
-export function isToggleVerbosityShortcut(input: string, key: InputKey): boolean {
-  return isMetaLetter(input, key, "v") || isCtrlLetter(input, key, "v");
-}
-
-export function isToggleEventPaneShortcut(input: string, key: InputKey): boolean {
-  return isMetaLetter(input, key, "e") || isCtrlLetter(input, key, "e");
-}
-
-export function isPreviousEventShortcut(key: InputKey): boolean {
-  return Boolean((key.meta && key.upArrow) || (key.ctrl && key.pageUp));
-}
-
-export function isNextEventShortcut(key: InputKey): boolean {
-  return Boolean((key.meta && key.downArrow) || (key.ctrl && key.pageDown));
+  switch (input.toLowerCase()) {
+    case "l":
+      return "clear";
+    case "n":
+      return "reset";
+    case "p":
+      return "approvePermission";
+    case "s":
+      return "saveSession";
+    case "v":
+      return "toggleVerbosity";
+    case "e":
+      return "toggleEventPane";
+    default:
+      return null;
+  }
 }

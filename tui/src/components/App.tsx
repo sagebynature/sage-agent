@@ -20,14 +20,8 @@ import { EventInspector } from "./EventInspector.js";
 import { ActiveTaskDock } from "./ActiveTaskDock.js";
 import {
   SHORTCUT_LABELS,
-  isApprovePermissionShortcut,
-  isClearShortcut,
-  isResetShortcut,
-  isSaveShortcut,
-  isPreviousEventShortcut,
-  isNextEventShortcut,
-  isToggleEventPaneShortcut,
-  isToggleVerbosityShortcut,
+  isLeaderShortcut,
+  resolveLeaderAction,
 } from "../shortcuts.js";
 
 
@@ -121,6 +115,7 @@ function AppShell(): ReactNode {
   const { width: columns, height: rows } = useResizeHandler();
   const [mainAgentName, setMainAgentName] = useState("");
   const [configuredModel, setConfiguredModel] = useState("");
+  const [leaderActive, setLeaderActive] = useState(false);
   const stateRef = useRef<BlockState>(state);
   stateRef.current = state;
   const inputRef = useRef<InputPromptHandle>(null);
@@ -512,6 +507,7 @@ function AppShell(): ReactNode {
   useInput((input, key) => {
     // Cancel / clear input / quit
     if (key.ctrl && input === "c") {
+      setLeaderActive(false);
       if (state.activeStream) {
         void handleCancel();
       } else if (inputRef.current?.hasValue()) {
@@ -524,6 +520,10 @@ function AppShell(): ReactNode {
 
     // Escape: cancel stream or dismiss error
     if (key.escape) {
+      if (leaderActive) {
+        setLeaderActive(false);
+        return;
+      }
       if (state.activeStream) {
         void handleCancel();
       } else if (state.error) {
@@ -532,46 +532,50 @@ function AppShell(): ReactNode {
       return;
     }
 
-    // Prefer Alt+... for app shortcuts because many terminals reserve Ctrl+L/N/P/S/V/E.
-    if (isClearShortcut(input, key)) {
-      void handleCommand("/clear", "");
-      return;
-    }
+    if (leaderActive) {
+      setLeaderActive(false);
 
-    if (isResetShortcut(input, key)) {
-      void handleCommand("/reset", "");
-      return;
-    }
-
-    if (isApprovePermissionShortcut(input, key)) {
-      const pending = stateRef.current.permissions.find((p) => p.status === "pending");
-      if (pending) {
-        void handlePermissionRespond(pending.id, "allow_once");
+      switch (resolveLeaderAction(input, key)) {
+        case "clear":
+          void handleCommand("/clear", "");
+          return;
+        case "reset":
+          void handleCommand("/reset", "");
+          return;
+        case "approvePermission": {
+          const pending = stateRef.current.permissions.find((p) => p.status === "pending");
+          if (pending) {
+            void handlePermissionRespond(pending.id, "allow_once");
+          }
+          return;
+        }
+        case "saveSession":
+          dispatch({ type: "ADD_SYSTEM_BLOCK", content: "Session auto-saved." });
+          return;
+        case "toggleVerbosity":
+          dispatch({ type: "SET_VERBOSITY", verbosity: cycleVerbosity(stateRef.current.ui.verbosity) });
+          return;
+        case "toggleEventPane":
+          dispatch({ type: "TOGGLE_EVENT_PANE" });
+          return;
+        case "previousEvent":
+          dispatch({ type: "SELECT_PREV_EVENT" });
+          return;
+        case "nextEvent":
+          dispatch({ type: "SELECT_NEXT_EVENT" });
+          return;
+        case "cancel":
+        case null:
+          return;
       }
-      return;
     }
 
-    if (isSaveShortcut(input, key)) {
-      dispatch({ type: "ADD_SYSTEM_BLOCK", content: "Session auto-saved." });
-      return;
-    }
-
-    if (isToggleVerbosityShortcut(input, key)) {
-      dispatch({ type: "SET_VERBOSITY", verbosity: cycleVerbosity(stateRef.current.ui.verbosity) });
-      return;
-    }
-
-    if (isToggleEventPaneShortcut(input, key)) {
-      dispatch({ type: "TOGGLE_EVENT_PANE" });
-      return;
-    }
-
-    if (isPreviousEventShortcut(key)) {
-      dispatch({ type: "SELECT_PREV_EVENT" });
-      return;
-    }
-    if (isNextEventShortcut(key)) {
-      dispatch({ type: "SELECT_NEXT_EVENT" });
+    if (isLeaderShortcut(input, key)) {
+      const inputSnapshot = inputRef.current?.getValue() ?? "";
+      setLeaderActive(true);
+      queueMicrotask(() => {
+        inputRef.current?.setValue(inputSnapshot);
+      });
       return;
     }
   });
@@ -622,7 +626,7 @@ function AppShell(): ReactNode {
         ref={inputRef}
         onSubmit={handleSubmit}
         onCommand={handleCommand}
-        isActive={!state.activeStream && connectionStatus === "connected" && pendingPermissions.length === 0}
+        isActive={!leaderActive && !state.activeStream && connectionStatus === "connected" && pendingPermissions.length === 0}
         width={columns}
       />
       <Box marginTop={1}>
@@ -638,6 +642,7 @@ function AppShell(): ReactNode {
           modelName={currentModelName}
           verbosity={state.ui.verbosity}
           showEventPane={state.ui.showEventPane}
+          leaderActive={leaderActive}
           activeRun={state.activeStream ? activeRun : undefined}
           selectedEvent={state.ui.showEventPane ? selectedEvent : null}
         />

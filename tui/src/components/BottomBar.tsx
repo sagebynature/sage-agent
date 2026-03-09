@@ -24,6 +24,7 @@ interface BottomBarProps {
   modelName?: string;
   verbosity: VerbosityMode;
   showEventPane: boolean;
+  leaderActive?: boolean;
   activeRun?: RunSummary;
   selectedEvent?: EventRecord | null;
 }
@@ -73,6 +74,15 @@ function getMode(props: BottomBarProps): AppMode {
 }
 
 function ModeIndicator({ props }: { props: BottomBarProps }): ReactNode {
+  if (props.leaderActive) {
+    return (
+      <Text color="cyan">
+        {"● leader"}
+        <Text dimColor>{" — [v]erbosity [e]vents [l]clear [n]reset [p]approve [s]save [↑/↓] event [esc] cancel"}</Text>
+      </Text>
+    );
+  }
+
   const mode = getMode(props);
 
   switch (mode) {
@@ -107,7 +117,7 @@ function ModeIndicator({ props }: { props: BottomBarProps }): ReactNode {
     case "error":
       return <Text color="red">{"● error — ESC to dismiss"}</Text>;
     case "idle":
-      return <Text dimColor>{`/ commands | ${SHORTCUT_LABELS.toggleVerbosity.toLowerCase()} verbosity | ${SHORTCUT_LABELS.quit.toLowerCase()} quit`}</Text>;
+      return <Text dimColor>{`/ commands | ${SHORTCUT_LABELS.leader.toLowerCase()} shortcuts | ${SHORTCUT_LABELS.quit.toLowerCase()} quit`}</Text>;
     default:
       return null;
   }
@@ -124,6 +134,7 @@ export const BottomBar = memo(function BottomBar(props: BottomBarProps): ReactNo
     modelName,
     verbosity,
     showEventPane,
+    leaderActive,
     activeRun,
     selectedEvent,
   } = props;
@@ -158,7 +169,7 @@ export const BottomBar = memo(function BottomBar(props: BottomBarProps): ReactNo
         <Text color={contextColor(pct)}>{pct}% used</Text>
         <Text dimColor>{" | "}{cost}</Text>
         {activeAgents > 0 && <Text dimColor>{" | "}{activeAgents} active agent{activeAgents > 1 ? "s" : ""}</Text>}
-        <Text dimColor>{" | "}{verbosity}{showEventPane ? "+events" : ""}</Text>
+        <Text dimColor>{" | "}{verbosity}{showEventPane ? "+events" : ""}{leaderActive ? " | leader" : ""}</Text>
         {runLabel && <Text dimColor>{" | run "}{runLabel}</Text>}
         {agentPath && <Text dimColor>{" | "}{agentPath}</Text>}
       </Text>

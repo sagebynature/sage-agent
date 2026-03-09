@@ -123,17 +123,18 @@ Type `/` in the input area to open the command palette. 24 commands available:
 | Key | Description |
 |-----|-------------|
 | `PageUp` / `PageDown` | Scroll inspector |
-| `Alt+↑` / `Alt+↓` | Previous / next event |
+| `Ctrl+G`, then `↑` / `↓` | Previous / next event |
 
-### Session
+### Leader Shortcuts
 
 | Key | Description |
 |-----|-------------|
-| `Alt+N` | New session (reset) |
-| `Alt+L` | Clear conversation |
-| `Alt+S` | Save session feedback |
-| `Alt+V` | Cycle event verbosity |
-| `Alt+E` | Toggle event pane |
+| `Ctrl+G`, then `N` | New session (reset) |
+| `Ctrl+G`, then `L` | Clear conversation |
+| `Ctrl+G`, then `S` | Save session feedback |
+| `Ctrl+G`, then `V` | Cycle event verbosity |
+| `Ctrl+G`, then `E` | Toggle event pane |
+| `Ctrl+G`, then `P` | Approve pending permission |
 
 ### Input
 
@@ -144,12 +145,6 @@ Type `/` in the input area to open the command palette. 24 commands available:
 | `Ctrl+C` | Cancel stream / quit |
 | `Escape` | Cancel stream / dismiss error |
 | `↑` / `↓` | Input history |
-
-### Agent
-
-| Key | Description |
-|-----|-------------|
-| `Alt+P` | Approve pending permission |
 
 ## Input Modes
 

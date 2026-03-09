@@ -1,35 +1,26 @@
 import { describe, expect, it } from "vitest";
 import {
-  isNextEventShortcut,
-  isPreviousEventShortcut,
-  isApprovePermissionShortcut,
-  isClearShortcut,
-  isResetShortcut,
-  isSaveShortcut,
-  isToggleEventPaneShortcut,
-  isToggleVerbosityShortcut,
+  isLeaderShortcut,
+  resolveLeaderAction,
 } from "../shortcuts.js";
 
 describe("shortcut helpers", () => {
-  it("accepts alt-based app shortcuts", () => {
-    expect(isClearShortcut("l", { meta: true })).toBe(true);
-    expect(isResetShortcut("n", { meta: true })).toBe(true);
-    expect(isApprovePermissionShortcut("p", { meta: true })).toBe(true);
-    expect(isSaveShortcut("s", { meta: true })).toBe(true);
-    expect(isToggleVerbosityShortcut("v", { meta: true })).toBe(true);
-    expect(isToggleEventPaneShortcut("e", { meta: true })).toBe(true);
-    expect(isPreviousEventShortcut({ meta: true, upArrow: true })).toBe(true);
-    expect(isNextEventShortcut({ meta: true, downArrow: true })).toBe(true);
+  it("recognizes the ctrl+g leader key", () => {
+    expect(isLeaderShortcut("g", { ctrl: true })).toBe(true);
+    expect(isLeaderShortcut("g", {})).toBe(false);
   });
 
-  it("keeps legacy ctrl-based shortcuts as fallbacks", () => {
-    expect(isClearShortcut("l", { ctrl: true })).toBe(true);
-    expect(isResetShortcut("n", { ctrl: true })).toBe(true);
-    expect(isApprovePermissionShortcut("p", { ctrl: true })).toBe(true);
-    expect(isSaveShortcut("s", { ctrl: true })).toBe(true);
-    expect(isToggleVerbosityShortcut("v", { ctrl: true })).toBe(true);
-    expect(isToggleEventPaneShortcut("e", { ctrl: true })).toBe(true);
-    expect(isPreviousEventShortcut({ ctrl: true, pageUp: true })).toBe(true);
-    expect(isNextEventShortcut({ ctrl: true, pageDown: true })).toBe(true);
+  it("resolves leader actions from the follow-up key", () => {
+    expect(resolveLeaderAction("l", {})).toBe("clear");
+    expect(resolveLeaderAction("n", {})).toBe("reset");
+    expect(resolveLeaderAction("p", {})).toBe("approvePermission");
+    expect(resolveLeaderAction("s", {})).toBe("saveSession");
+    expect(resolveLeaderAction("v", {})).toBe("toggleVerbosity");
+    expect(resolveLeaderAction("e", {})).toBe("toggleEventPane");
+    expect(resolveLeaderAction("", { upArrow: true })).toBe("previousEvent");
+    expect(resolveLeaderAction("", { downArrow: true })).toBe("nextEvent");
+    expect(resolveLeaderAction("", { escape: true })).toBe("cancel");
+    expect(resolveLeaderAction("g", { ctrl: true })).toBe("cancel");
+    expect(resolveLeaderAction("x", {})).toBe(null);
   });
 });

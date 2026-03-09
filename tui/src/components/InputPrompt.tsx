@@ -18,6 +18,8 @@ type InputMode = "normal" | "command";
 export interface InputPromptHandle {
   clear: () => void;
   hasValue: () => boolean;
+  getValue: () => string;
+  setValue: (nextValue: string) => void;
 }
 
 interface InputPromptProps {
@@ -52,6 +54,13 @@ export const InputPrompt = forwardRef(function InputPrompt(
       setMode("normal");
     },
     hasValue: () => value !== "",
+    getValue: () => value,
+    setValue: (nextValue: string) => {
+      setValue(nextValue);
+      if (nextValue.length === 0) {
+        setMode("normal");
+      }
+    },
   }));
 
   const handleSubmit = useCallback(

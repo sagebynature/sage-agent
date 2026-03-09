@@ -91,19 +91,41 @@ describe("App Shell", () => {
     expect(app.lastFrame() ?? "").toContain("second");
   });
 
-  it("supports alt-based app shortcuts for terminal-safe controls", async () => {
+  it("supports ctrl+g leader shortcuts for terminal-safe controls", async () => {
     const app = renderApp(<App />);
 
     expect(app.lastFrame() ?? "").toContain("compact");
-    expect(app.lastFrame() ?? "").not.toContain("normal+events");
+    expect(app.lastFrame() ?? "").not.toContain(" | leader");
 
-    app.stdin.write("\u001bv");
+    app.stdin.write("\u0007");
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(app.lastFrame() ?? "").toContain("normal+events");
+    expect(app.lastFrame() ?? "").toContain(" | leader");
 
-    app.stdin.write("\u001be");
+    app.stdin.write("v");
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(app.lastFrame() ?? "").toContain("normal");
-    expect(app.lastFrame() ?? "").not.toContain("normal+events");
+    expect(app.lastFrame() ?? "").not.toContain("> v");
+
+    app.stdin.write("\u0007");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    app.stdin.write("e");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(app.lastFrame() ?? "").not.toContain("normal+events | leader");
+  });
+
+  it("cancels leader mode on escape without mutating the prompt", async () => {
+    const app = renderApp(<App />);
+
+    app.stdin.write("\u0007");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(app.lastFrame() ?? "").toContain(" | leader");
+
+    app.stdin.write("\u001B");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(app.lastFrame() ?? "").not.toContain(" | leader");
+
+    app.stdin.write("v");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(app.lastFrame() ?? "").toContain("> v");
   });
 });
