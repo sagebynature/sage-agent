@@ -1,5 +1,5 @@
-import { Text } from "ink";
-import { memo, type ReactNode } from "react";
+import { Box, Text, useInput } from "ink";
+import { memo, type ReactNode, useEffect, useMemo, useState } from "react";
 import type { EventRecord } from "../types/events.js";
 import { PaneFrame } from "./PaneFrame.js";
 
@@ -9,43 +9,139 @@ interface EventInspectorProps {
   maxHeight?: number;
 }
 
-function formatObject(value: Record<string, unknown> | undefined, maxLines: number): string {
+type InspectorLine = {
+  text: string;
+  color?: string;
+};
+
+function formatObject(value: Record<string, unknown> | undefined): InspectorLine[] {
   if (!value || Object.keys(value).length === 0) {
-    return "n/a";
+    return [{ text: "payload: n/a", color: "gray" }];
   }
-  const text = JSON.stringify(value, null, 2);
-  const lines = text.split("\n");
-  if (lines.length > maxLines) {
-    return lines.slice(0, maxLines).join("\n") + "\n...";
+
+  return [
+    { text: "payload:", color: "gray" },
+    ...JSON.stringify(value, null, 2).split("\n").map((line) => ({ text: line, color: "gray" })),
+  ];
+}
+
+function clipLine(line: string, width: number): string {
+  if (width <= 0) {
+    return "";
   }
-  return text.length > 600 ? `${text.slice(0, 597)}...` : text;
+  if (line.length <= width) {
+    return line.padEnd(width, " ");
+  }
+  if (width === 1) {
+    return "…";
+  }
+  return `${line.slice(0, width - 1)}…`;
+}
+
+export function buildInspectorLines(event: EventRecord | null): InspectorLine[] {
+  if (!event) {
+    return [{ text: "No event selected", color: "gray" }];
+  }
+
+  const lines: InspectorLine[] = [
+    { text: event.summary },
+    { text: event.eventName, color: "gray" },
+    { text: `run=${event.runId ?? "n/a"}`, color: "gray" },
+    { text: `session=${event.sessionId ?? "n/a"}`, color: "gray" },
+    { text: `agent=${event.agentPath.join(" > ")} turn=${event.turnIndex ?? "n/a"}`, color: "gray" },
+  ];
+
+  if (typeof event.durationMs === "number") {
+    lines.push({ text: `duration=${Math.round(event.durationMs)}ms`, color: "gray" });
+  }
+
+  if (event.error) {
+    lines.push({ text: `${event.error.type}: ${event.error.message}`, color: "red" });
+  }
+
+  lines.push(...formatObject(event.payload));
+  return lines;
+}
+
+export function visibleInspectorLines(lines: InspectorLine[], scrollOffset: number, windowSize: number): InspectorLine[] {
+  if (windowSize <= 0) {
+    return [];
+  }
+
+  const maxOffset = Math.max(0, lines.length - windowSize);
+  const safeOffset = Math.min(Math.max(0, scrollOffset), maxOffset);
+  return lines.slice(safeOffset, safeOffset + windowSize);
+}
+
+export function resolveScrollbarRange(totalLines: number, windowSize: number, scrollOffset: number): {
+  thumbStart: number;
+  thumbSize: number;
+} {
+  if (windowSize <= 0 || totalLines <= windowSize) {
+    return { thumbStart: 0, thumbSize: 0 };
+  }
+
+  const maxOffset = Math.max(1, totalLines - windowSize);
+  const trackSize = windowSize;
+  const thumbSize = Math.max(1, Math.round((windowSize / totalLines) * trackSize));
+  const maxThumbStart = Math.max(0, trackSize - thumbSize);
+  const thumbStart = Math.min(
+    maxThumbStart,
+    Math.round((Math.max(0, scrollOffset) / maxOffset) * maxThumbStart),
+  );
+
+  return { thumbStart, thumbSize };
 }
 
 export const EventInspector = memo(function EventInspector({ event, width, maxHeight }: EventInspectorProps): ReactNode {
-  // Top/bottom border (2) + metadata lines (~5-7) = ~8 rows of chrome;
-  // remaining budget goes to the JSON payload.
-  const payloadMaxLines = maxHeight ? Math.max(2, maxHeight - 8) : 20;
+  const [scrollOffset, setScrollOffset] = useState(0);
+  const inspectorLines = useMemo(() => buildInspectorLines(event), [event]);
+  const bodyHeight = maxHeight ? Math.max(1, maxHeight - 2) : 20;
+  const maxOffset = Math.max(0, inspectorLines.length - bodyHeight);
+  const contentWidth = Math.max(1, width - 6);
+  const visibleLines = useMemo(
+    () => visibleInspectorLines(inspectorLines, scrollOffset, bodyHeight),
+    [bodyHeight, inspectorLines, scrollOffset],
+  );
+  const { thumbStart, thumbSize } = useMemo(
+    () => resolveScrollbarRange(inspectorLines.length, bodyHeight, scrollOffset),
+    [bodyHeight, inspectorLines.length, scrollOffset],
+  );
+
+  useEffect(() => {
+    setScrollOffset(0);
+  }, [event?.id]);
+
+  useEffect(() => {
+    if (scrollOffset > maxOffset) {
+      setScrollOffset(maxOffset);
+    }
+  }, [maxOffset, scrollOffset]);
+
+  useInput((_input, key) => {
+    if (key.pageDown) {
+      setScrollOffset((current) => Math.min(maxOffset, current + Math.max(1, bodyHeight - 1)));
+      return;
+    }
+
+    if (key.pageUp) {
+      setScrollOffset((current) => Math.max(0, current - Math.max(1, bodyHeight - 1)));
+    }
+  });
 
   return (
     <PaneFrame title="Inspector" width={width} height={maxHeight} flexGrow={1}>
-      {!event ? (
-        <Text dimColor>No event selected</Text>
-      ) : (
-        <>
-          <Text>{event.summary}</Text>
-          <Text dimColor>{event.eventName}</Text>
-          <Text dimColor>{`run=${event.runId ?? "n/a"}`}</Text>
-          <Text dimColor>{`session=${event.sessionId ?? "n/a"}`}</Text>
-          <Text dimColor>{`agent=${event.agentPath.join(" > ")} turn=${event.turnIndex ?? "n/a"}`}</Text>
-          {typeof event.durationMs === "number" && (
-            <Text dimColor>{`duration=${Math.round(event.durationMs)}ms`}</Text>
-          )}
-          {event.error && (
-            <Text color="red">{`${event.error.type}: ${event.error.message}`}</Text>
-          )}
-          <Text dimColor>{formatObject(event.payload, payloadMaxLines)}</Text>
-        </>
-      )}
+      {visibleLines.map((line, index) => {
+        const absoluteIndex = index + Math.min(scrollOffset, maxOffset);
+        const isThumb = thumbSize > 0 && absoluteIndex >= thumbStart && absoluteIndex < thumbStart + thumbSize;
+
+        return (
+          <Box key={`${event?.id ?? "empty"}-${absoluteIndex}`}>
+            <Text color={line.color}>{clipLine(line.text, contentWidth)}</Text>
+            <Text dimColor={!isThumb}>{isThumb ? "█" : "│"}</Text>
+          </Box>
+        );
+      })}
     </PaneFrame>
   );
 });

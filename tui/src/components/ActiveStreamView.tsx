@@ -6,7 +6,7 @@ import { formatToolLabel, formatToolResultPreview } from "../utils/tool-format.j
 
 const ELAPSED_INTERVAL_MS = 1000;
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-const SPINNER_INTERVAL_MS = 200;
+const SPINNER_INTERVAL_MS = 100;
 const ACTIVE_STATUS_PALETTE = [
   { color: "#7fe7ff", bold: true },
   { color: "#4dcfff", bold: false },

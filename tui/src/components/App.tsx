@@ -254,6 +254,7 @@ function AppShell(): ReactNode {
               "/permissions — Show permission grants",
               "/verbosity [compact|normal|debug] — Set event verbosity",
               "/events [show|hide|toggle|next|prev|follow] — Event pane controls",
+              "PageUp/PageDown — Scroll Inspector",
               "/filters [category=tool,llm] [status=error] [search=text] — Event filters",
               "/agent — Show active agents",
               "/agents — List all agents",
