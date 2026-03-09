@@ -2,6 +2,60 @@
 
 <!-- version list -->
 
+## v1.8.0-rc.1 (2026-03-09)
+
+### Documentation
+
+- Updated ADR
+  ([`c086979`](https://github.com/sagebynature/sage-agent/commit/c086979b76934c98c91393be46ca39c9c3eaaff1))
+
+### Features
+
+- Add ActiveTaskDock component to App and update ConversationView to remove ActiveStreamView
+  ([`c8e2007`](https://github.com/sagebynature/sage-agent/commit/c8e2007d894f7c020c1775d2e9012cc0f90cb4d1))
+
+- Add event complexity score detection and conditionally render ComplexityPanel in App component
+  ([`31c8b45`](https://github.com/sagebynature/sage-agent/commit/31c8b4508eeeabec2f386b1282c0ffba30c16802))
+
+- Add turn complexity scoring
+  ([`7f43258`](https://github.com/sagebynature/sage-agent/commit/7f432580636a2d207e0ef69099f1bfe25f5354b9))
+
+- Enhance keyboard navigation and input handling in App, EventTimeline, and InputPrompt components
+  ([`f3d46cc`](https://github.com/sagebynature/sage-agent/commit/f3d46cc79f7915d6607bd4acd209cf6d40e7d95a))
+
+- Integrate ComplexityPanel into App component and remove complexity summary from EventInspector
+  ([`031205d`](https://github.com/sagebynature/sage-agent/commit/031205d06de37b3f8acd518a796a712aaffc71c5))
+
+### Refactoring
+
+- ActiveStreamView, ActiveTaskDock, and other components for improved functionality and readability
+  ([`79b2178`](https://github.com/sagebynature/sage-agent/commit/79b217855e18c9e03fd7a13e7545b3ee2fae3747))
+
+- Implement alt-based shortcuts for terminal-safe controls and update README with new key mappings
+  ([`2538821`](https://github.com/sagebynature/sage-agent/commit/253882154f9a68b1141d1d7c602e07a65a6abc9d))
+
+- Increase SPINNER_INTERVAL_MS in ActiveStreamView for smoother animation
+  ([`8280cb5`](https://github.com/sagebynature/sage-agent/commit/8280cb539dc0eeacd0f57d62849d225b782d814a))
+
+- Optimize EventInspector for better performance and add keyboard scrolling functionality
+  ([`41cceec`](https://github.com/sagebynature/sage-agent/commit/41cceecc9f01f83afa62b7cbf393de268b3a423c))
+
+- Remove complexity scoring functionality from EventTimeline component
+  ([`848c38a`](https://github.com/sagebynature/sage-agent/commit/848c38aa1a8390ca3538754c488be5f569ff34b4))
+
+- Rename ThinkingIndicator to ActiveTaskIndicator and update its usage in ActiveStreamView and
+  RunningToolIndicator for improved clarity and functionality
+  ([`53924d4`](https://github.com/sagebynature/sage-agent/commit/53924d419cc3af359562cebdc1231811d6e17059))
+
+- Replace Box components with PaneFrame in EventInspector, ComplexityPanel, and EventTimeline for
+  consistent styling and layout management
+  ([`a1bc01a`](https://github.com/sagebynature/sage-agent/commit/a1bc01a330d4340dea00d927f3887444eacd8d13))
+
+- Update main configuration loading to use new load_resolved_main_config function and improve
+  complexity level type handling
+  ([`e0e6abd`](https://github.com/sagebynature/sage-agent/commit/e0e6abdaf96d5e8c4935ef380854a436f1fa371e))
+
+
 ## v1.7.0 (2026-03-08)
 
 
