@@ -136,6 +136,21 @@ function toNumber(value: unknown): number | undefined {
   return typeof value === "number" ? value : undefined;
 }
 
+function complexityText(payload: Record<string, unknown>): string {
+  const complexity = typeof payload.complexity === "object" && payload.complexity !== null
+    ? payload.complexity as Record<string, unknown>
+    : null;
+  if (!complexity) {
+    return "";
+  }
+  const score = toNumber(complexity.score);
+  const level = typeof complexity.level === "string" ? complexity.level : undefined;
+  if (score === undefined || !level) {
+    return "";
+  }
+  return ` C${score} ${level}`;
+}
+
 function stringFromPayload(payload: Record<string, unknown>, ...keys: string[]): string | undefined {
   for (const key of keys) {
     const value = payload[key];
@@ -158,9 +173,9 @@ export function formatEventSummary(event: EventRecord): string {
     case "on_run_cancelled":
       return `run cancelled`;
     case "pre_llm_call":
-      return `turn ${event.turnIndex ?? payload.turn ?? "?"} started${stringFromPayload(payload, "model") ? ` on ${stringFromPayload(payload, "model")}` : ""}`;
+      return `turn ${event.turnIndex ?? payload.turn ?? "?"} started${stringFromPayload(payload, "model") ? ` on ${stringFromPayload(payload, "model")}` : ""}${complexityText(payload)}`;
     case "post_llm_call":
-      return `turn ${event.turnIndex ?? payload.turn ?? "?"} completed`;
+      return `turn ${event.turnIndex ?? payload.turn ?? "?"} completed${complexityText(payload)}`;
     case "on_llm_retry":
       return `llm retry triggered`;
     case "on_llm_error":

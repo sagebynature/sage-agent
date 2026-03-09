@@ -177,6 +177,16 @@ function ThinkingIndicator({ startedAt }: { startedAt: number }): ReactNode {
   );
 }
 
+function ComplexityBadge({
+  score,
+  level,
+}: {
+  score: number;
+  level: "simple" | "medium" | "complex";
+}): ReactNode {
+  return <Text dimColor>{`Complexity C${score} ${level}`}</Text>;
+}
+
 interface ToolInfo {
   status: string;
   name: string;
@@ -311,7 +321,15 @@ export function ActiveStreamView({ stream }: ActiveStreamViewProps): ReactNode {
       )}
       {stream.isThinking && !hasTools ? (
         <SpinnerProvider colorDepth={colorDepth}>
-          <ThinkingIndicator startedAt={stream.startedAt} />
+          <Box flexDirection="column">
+            <ThinkingIndicator startedAt={stream.startedAt} />
+            {stream.complexity ? (
+              <ComplexityBadge
+                score={stream.complexity.score}
+                level={stream.complexity.level}
+              />
+            ) : null}
+          </Box>
         </SpinnerProvider>
       ) : stream.content.length > 0 ? (
         <StreamContent content={stream.content} />

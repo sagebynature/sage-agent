@@ -151,6 +151,26 @@ export interface UsageUpdatePayload {
   contextUsagePercent: number;
 }
 
+export interface ComplexityPayload {
+  score: number;
+  level: "simple" | "medium" | "complex";
+  version: string;
+  factors?: Array<Record<string, unknown>>;
+  metadata?: Record<string, unknown>;
+}
+
+export interface TurnStartedPayload {
+  turn: number;
+  model: string;
+  complexity?: ComplexityPayload;
+}
+
+export interface TurnCompletedPayload {
+  turn: number;
+  usage: Record<string, unknown>;
+  complexity?: ComplexityPayload;
+}
+
 export interface CompactionStartedPayload {
   reason: string;
   beforeTokens: number;

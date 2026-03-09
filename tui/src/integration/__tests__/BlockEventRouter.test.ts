@@ -122,6 +122,35 @@ describe("BlockEventRouter", () => {
     expect(dispatched.length).toBeGreaterThanOrEqual(0);
   });
 
+  it("projects complexity from canonical pre_llm_call events into active stream state", () => {
+    router.handleNotification(METHODS.EVENT_EMITTED, {
+      eventId: "evt-1",
+      eventName: "pre_llm_call",
+      category: "llm",
+      phase: "start",
+      timestamp: Date.now(),
+      agentName: "agent",
+      agentPath: ["agent"],
+      payload: {
+        complexity: {
+          score: 42,
+          level: "medium",
+          version: "openfang-v1",
+        },
+      },
+    });
+
+    const action = dispatched.find((candidate) => candidate.type === "SET_ACTIVE_COMPLEXITY");
+    expect(action).toBeDefined();
+    if (action?.type === "SET_ACTIVE_COMPLEXITY") {
+      expect(action.complexity).toEqual({
+        score: 42,
+        level: "medium",
+        version: "openfang-v1",
+      });
+    }
+  });
+
   it("de-duplicates legacy events once event/emitted is seen", () => {
     // 1. Send legacy event -> should be processed
     router.handleNotification(METHODS.STREAM_DELTA, { delta: "hello" });

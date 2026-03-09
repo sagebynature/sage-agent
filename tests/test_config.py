@@ -211,6 +211,41 @@ class TestLoadConfig:
         assert config.memory.path == "./data/memory.db"
         assert config.memory.compaction_threshold == 100
 
+    def test_complexity_config(self, tmp_path: Path) -> None:
+        cfg_path = _write_md(
+            tmp_path / "AGENTS.md",
+            {
+                "name": "agent",
+                "model": "gpt-4o",
+                "complexity": {
+                    "enabled": True,
+                    "version": "openfang-v1",
+                    "simple_threshold": 120,
+                    "complex_threshold": 600,
+                    "code_markers": ["def ", "```"],
+                    "weights": {
+                        "message_chars_divisor": 5,
+                        "tool_count": 25,
+                    },
+                    "features": {
+                        "code_markers": True,
+                        "tool_count": False,
+                    },
+                },
+            },
+        )
+        config = load_config(cfg_path)
+        assert config.complexity is not None
+        assert config.complexity.enabled is True
+        assert config.complexity.version == "openfang-v1"
+        assert config.complexity.simple_threshold == 120
+        assert config.complexity.complex_threshold == 600
+        assert config.complexity.code_markers == ["def ", "```"]
+        assert config.complexity.weights.message_chars_divisor == 5
+        assert config.complexity.weights.tool_count == 25
+        assert config.complexity.features.code_markers is True
+        assert config.complexity.features.tool_count is False
+
     def test_description_field_in_file(self, tmp_path: Path) -> None:
         cfg_path = _write_md(
             tmp_path / "AGENTS.md",

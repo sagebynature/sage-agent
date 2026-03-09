@@ -110,21 +110,35 @@ class TestFromHookData:
 
     def test_llm_turn_started(self):
         messages = [{"role": "user"}, {"role": "assistant"}]
-        data = {"turn": 1, "model": "claude-sonnet-4-6", "messages": messages}
+        data = {
+            "turn": 1,
+            "model": "claude-sonnet-4-6",
+            "messages": messages,
+            "complexity": {"score": 42, "level": "medium", "version": "openfang-v1"},
+        }
         e = from_hook_data(LLMTurnStarted, data)
         assert isinstance(e, LLMTurnStarted)
         assert e.turn == 1
         assert e.model == "claude-sonnet-4-6"
         assert e.n_messages == 2
+        assert e.complexity is not None
+        assert e.complexity.score == 42
 
     def test_llm_turn_completed(self):
         usage = Usage(prompt_tokens=10, completion_tokens=5, total_tokens=15)
-        data = {"turn": 0, "usage": usage, "n_tool_calls": 3}
+        data = {
+            "turn": 0,
+            "usage": usage,
+            "n_tool_calls": 3,
+            "complexity": {"score": 18, "level": "simple", "version": "openfang-v1"},
+        }
         e = from_hook_data(LLMTurnCompleted, data)
         assert isinstance(e, LLMTurnCompleted)
         assert e.turn == 0
         assert e.usage is usage
         assert e.n_tool_calls == 3
+        assert e.complexity is not None
+        assert e.complexity.score == 18
 
     def test_delegation_started(self):
         data = {"target": "researcher", "input": "find papers on X"}
@@ -269,6 +283,8 @@ async def test_agent_on_llm_turn_started_fires():
     assert received[0].model == "my-model"
     assert received[0].turn == 0
     assert received[0].n_messages >= 1
+    assert received[0].complexity is not None
+    assert received[0].complexity.version == "openfang-v1"
 
 
 @pytest.mark.asyncio
@@ -287,6 +303,8 @@ async def test_agent_on_llm_turn_completed_fires():
     assert len(received) >= 1
     assert received[0].turn == 0
     assert received[0].n_tool_calls == 0
+    assert received[0].complexity is not None
+    assert received[0].complexity.score >= 0
 
 
 @pytest.mark.asyncio

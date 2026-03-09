@@ -9,6 +9,12 @@ export interface ToolSummary {
   startedAt?: number;
 }
 
+export interface ComplexitySummary {
+  score: number;
+  level: "simple" | "medium" | "complex";
+  version?: string;
+}
+
 export interface OutputBlock {
   id: string;
   type: "user" | "text" | "tool" | "error" | "system";
@@ -23,4 +29,5 @@ export interface ActiveStream {
   tools: ToolSummary[];
   isThinking: boolean;
   startedAt: number;
+  complexity?: ComplexitySummary;
 }

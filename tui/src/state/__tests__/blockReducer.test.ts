@@ -81,6 +81,22 @@ describe("blockReducer", () => {
     expect(state.activeStream!.isThinking).toBe(false);
   });
 
+  it("SET_ACTIVE_COMPLEXITY stores current turn complexity on the active stream", () => {
+    const withStream = blockReducer(INITIAL_BLOCK_STATE, {
+      type: "STREAM_START",
+      runId: "run-1",
+    });
+    const state = blockReducer(withStream, {
+      type: "SET_ACTIVE_COMPLEXITY",
+      complexity: { score: 42, level: "medium", version: "openfang-v1" },
+    });
+    expect(state.activeStream?.complexity).toEqual({
+      score: 42,
+      level: "medium",
+      version: "openfang-v1",
+    });
+  });
+
   it("TOOL_STARTED adds running tool to activeStream", () => {
     const withStream = blockReducer(INITIAL_BLOCK_STATE, {
       type: "STREAM_START",

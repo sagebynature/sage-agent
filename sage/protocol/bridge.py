@@ -147,6 +147,9 @@ class EventBridge:
                     {
                         "turn": event.turn,
                         "model": event.model,
+                        "complexity": event.complexity.model_dump(mode="json")
+                        if event.complexity is not None
+                        else None,
                         "agent_path": event.agent_path or self._get_agent_path(),
                         "runId": event.run_id,
                         "sessionId": event.session_id,
@@ -173,6 +176,9 @@ class EventBridge:
                     {
                         "turn": event.turn,
                         "usage": usage_payload,
+                        "complexity": event.complexity.model_dump(mode="json")
+                        if event.complexity is not None
+                        else None,
                         "agent_path": event.agent_path or self._get_agent_path(),
                         "runId": event.run_id,
                         "sessionId": event.session_id,
