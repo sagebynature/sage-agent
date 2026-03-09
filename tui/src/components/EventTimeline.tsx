@@ -37,6 +37,30 @@ function usageText(event: EventRecord): string {
   return "";
 }
 
+function visibleEventWindow(
+  events: EventRecord[],
+  selectedEventId: string | null,
+  limit: number,
+): EventRecord[] {
+  if (events.length <= limit) {
+    return events;
+  }
+
+  if (!selectedEventId) {
+    return events.slice(-limit);
+  }
+
+  const selectedIndex = events.findIndex((event) => event.id === selectedEventId);
+  if (selectedIndex === -1) {
+    return events.slice(-limit);
+  }
+
+  const maxStart = Math.max(0, events.length - limit);
+  const centeredStart = Math.max(0, selectedIndex - Math.floor(limit / 2));
+  const start = Math.min(centeredStart, maxStart);
+  return events.slice(start, start + limit);
+}
+
 export const EventTimeline = memo(function EventTimeline({
   events,
   selectedEventId,
@@ -45,7 +69,7 @@ export const EventTimeline = memo(function EventTimeline({
 }: EventTimelineProps): ReactNode {
   // Border (2) + header (1) = 3 rows of chrome; remaining rows are for events.
   const effectiveLimit = limit ?? (maxHeight ? Math.max(1, maxHeight - 3) : 18);
-  const displayEvents = events.slice(-effectiveLimit);
+  const displayEvents = visibleEventWindow(events, selectedEventId, effectiveLimit);
 
   return (
     <Box

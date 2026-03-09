@@ -7,6 +7,7 @@ import {
   useImperativeHandle,
   forwardRef,
   type Ref,
+  useRef,
 } from "react";
 import { useInputHistory } from "../hooks/useInputHistory.js";
 import { SlashCommands } from "./SlashCommands.js";
@@ -39,7 +40,10 @@ export const InputPrompt = forwardRef(function InputPrompt(
 ): ReactNode {
   const [value, setValue] = useState("");
   const [mode, setMode] = useState<InputMode>("normal");
+  const [inputInstanceKey, setInputInstanceKey] = useState(0);
   const history = useInputHistory();
+  const ignoredControlInputRef = useRef<string | null>(null);
+  const suppressSubmitRef = useRef(false);
 
   useImperativeHandle(ref, () => ({
     clear: () => {
@@ -51,6 +55,11 @@ export const InputPrompt = forwardRef(function InputPrompt(
 
   const handleSubmit = useCallback(
     (text: string) => {
+      if (suppressSubmitRef.current) {
+        suppressSubmitRef.current = false;
+        return;
+      }
+
       if (!text.trim()) return;
 
       history.addEntry(text);
@@ -87,7 +96,25 @@ export const InputPrompt = forwardRef(function InputPrompt(
     setMode("normal");
   }, []);
 
+  const insertNewline = useCallback(() => {
+    setValue((current) => `${current}\n`);
+    // Remount TextInput so its internal cursor lands at the new end position.
+    setInputInstanceKey((current) => current + 1);
+  }, []);
+
   const handleChange = useCallback((newValue: string) => {
+    const ignoredControlInput = ignoredControlInputRef.current;
+    if (
+      ignoredControlInput
+      && newValue.length === value.length + 1
+      && newValue.endsWith(ignoredControlInput)
+      && newValue.slice(0, -1) === value
+    ) {
+      ignoredControlInputRef.current = null;
+      return;
+    }
+
+    ignoredControlInputRef.current = null;
     setValue(newValue);
 
     if (newValue.length === 1 && newValue === "/") {
@@ -98,12 +125,22 @@ export const InputPrompt = forwardRef(function InputPrompt(
     if (newValue === "") {
       setMode("normal");
     }
-  }, []);
+  }, [value]);
 
-  useInput((_, key) => {
+  const handleInput = useCallback((input: string, key: { [key: string]: boolean }) => {
     if (!isActive) return;
 
-    if (key.upArrow && mode === "normal") {
+    if (key.ctrl && input) {
+      ignoredControlInputRef.current = input;
+      suppressSubmitRef.current = input === "j";
+    }
+
+    if (key.ctrl && input === "j") {
+      insertNewline();
+      return;
+    }
+
+    if (key.pageUp && mode === "normal") {
       const entry = history.navigateUp();
       if (entry !== undefined) {
         setValue(entry);
@@ -111,7 +148,7 @@ export const InputPrompt = forwardRef(function InputPrompt(
       return;
     }
 
-    if (key.downArrow && mode === "normal") {
+    if (key.pageDown && mode === "normal") {
       const entry = history.navigateDown();
       setValue(entry ?? "");
       return;
@@ -123,7 +160,9 @@ export const InputPrompt = forwardRef(function InputPrompt(
       }
       return;
     }
-  });
+  }, [history, insertNewline, isActive, mode]);
+
+  useInput(handleInput);
 
   return (
     <Box flexDirection="column">
@@ -137,10 +176,11 @@ export const InputPrompt = forwardRef(function InputPrompt(
       <Box>
         <Text color="cyan">{"> "}</Text>
         <TextInput
+          key={inputInstanceKey}
           value={value}
           onChange={handleChange}
           onSubmit={handleSubmit}
-          placeholder="Type a message... (/ for commands)"
+          placeholder="Type a message... (/ for commands, Ctrl+J newline)"
           focus={isActive}
         />
       </Box>

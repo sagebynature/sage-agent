@@ -549,23 +549,12 @@ function AppShell(): ReactNode {
       return;
     }
 
-    if (key.ctrl && input === "j") {
-      dispatch({ type: "SELECT_NEXT_EVENT" });
-      return;
-    }
-
-    if (key.ctrl && input === "k") {
+    if (key.ctrl && key.pageUp) {
       dispatch({ type: "SELECT_PREV_EVENT" });
       return;
     }
-
-    // Scroll: Ctrl+Up / Ctrl+Down
-    if (key.ctrl && key.upArrow) {
-      dispatch({ type: "SCROLL_UP" });
-      return;
-    }
-    if (key.ctrl && key.downArrow) {
-      dispatch({ type: "SCROLL_DOWN" });
+    if (key.ctrl && key.pageDown) {
+      dispatch({ type: "SELECT_NEXT_EVENT" });
       return;
     }
   });
