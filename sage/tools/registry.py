@@ -36,6 +36,14 @@ CATEGORY_TOOLS: dict[str, list[str]] = {
     "shell": ["shell"],
     "web": ["web_fetch", "web_search", "http_request"],
     "memory": ["memory_store", "memory_recall"],
+    "process": [
+        "process_start",
+        "process_send",
+        "process_read",
+        "process_wait",
+        "process_kill",
+        "process_list",
+    ],
     "task": [],
     "git": [
         "git_status",
@@ -58,6 +66,7 @@ CATEGORY_ARG_MAP: dict[str, str | None] = {
     "shell": "command",
     "web": "url",
     "memory": None,
+    "process": "command",
     "task": None,
     "git": None,
 }
@@ -313,6 +322,12 @@ class ToolRegistry:
         "file_edit": "sage.tools.file_tools",
         "web_search": "sage.tools.web_tools",
         "web_fetch": "sage.tools.web_tools",
+        "process_start": "sage.tools.process_tools",
+        "process_send": "sage.tools.process_tools",
+        "process_read": "sage.tools.process_tools",
+        "process_wait": "sage.tools.process_tools",
+        "process_kill": "sage.tools.process_tools",
+        "process_list": "sage.tools.process_tools",
     }
 
     def register_from_permissions(

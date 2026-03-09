@@ -180,6 +180,7 @@ class Permission(BaseModel):
     shell: PermissionValue | None = None
     web: PermissionValue | None = None
     memory: PermissionValue | None = None
+    process: PermissionValue | None = None
     task: PermissionValue | None = None
     git: PermissionValue | None = None
 
