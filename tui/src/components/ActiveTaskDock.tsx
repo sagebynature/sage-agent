@@ -15,9 +15,9 @@ export const ActiveTaskDock = memo(function ActiveTaskDock({
   const activeOnlyStreams = streams
     .map((stream) => ({
       ...stream,
-      tools: stream.tools.filter((tool) => tool.status === "running"),
+      tools: [],
     }))
-    .filter((stream) => stream.tools.length > 0 || stream.isThinking || stream.content.length > 0);
+    .filter((stream) => stream.isThinking || stream.content.length > 0);
 
   if (activeOnlyStreams.length === 0) {
     return null;

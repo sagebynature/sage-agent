@@ -64,4 +64,30 @@ describe("App Shell", () => {
     expect(app.lastFrame()).toContain("gpt-4o");
     expect(app.lastFrame()).not.toContain("no model");
   });
+
+  it("cycles prompt history with up/down arrows in the app shell", async () => {
+    const app = renderApp(<App />);
+
+    app.stdin.write("first");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    app.stdin.write("\r");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    app.stdin.write("second");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    app.stdin.write("\r");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    app.stdin.write("\u001B[A");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(app.lastFrame() ?? "").toContain("second");
+
+    app.stdin.write("\u001B[A");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(app.lastFrame() ?? "").toContain("first");
+
+    app.stdin.write("\u001B[B");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(app.lastFrame() ?? "").toContain("second");
+  });
 });

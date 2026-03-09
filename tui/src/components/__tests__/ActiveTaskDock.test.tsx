@@ -30,7 +30,7 @@ describe("ActiveTaskDock", () => {
     expect(frame.indexOf("newer task")).toBeLessThan(frame.indexOf("older task"));
   });
 
-  it("hides completed tool rows and keeps only running tools in the dock", () => {
+  it("does not render tool-only activity in the dock", () => {
     const stream: ActiveStream = {
       runId: "run-1",
       content: "",
@@ -60,11 +60,6 @@ describe("ActiveTaskDock", () => {
     };
 
     const { lastFrame } = render(<ActiveTaskDock streams={[stream]} />);
-    const frame = lastFrame() ?? "";
-
-    expect(frame).toContain("delegate");
-    expect(frame).toContain("web_fetch");
-    expect(frame).not.toContain("web_search");
-    expect(frame).not.toContain("search results");
+    expect(lastFrame()).toBe("");
   });
 });

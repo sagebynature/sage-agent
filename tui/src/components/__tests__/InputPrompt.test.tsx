@@ -1,6 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
-import { render } from "ink-testing-library";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, render } from "ink-testing-library";
+
 import { InputPrompt } from "../InputPrompt.js";
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe("InputPrompt", () => {
   it("does not leak ctrl shortcuts into the text input", () => {
@@ -8,8 +14,8 @@ describe("InputPrompt", () => {
 
     const { stdin, lastFrame } = render(
       <InputPrompt
-        onSubmit={() => { }}
-        onCommand={() => { }}
+        onSubmit={() => {}}
+        onCommand={() => {}}
         isActive
         width={80}
       />,
@@ -29,7 +35,7 @@ describe("InputPrompt", () => {
     const { stdin, lastFrame } = render(
       <InputPrompt
         onSubmit={onSubmit}
-        onCommand={() => { }}
+        onCommand={() => {}}
         isActive
         width={80}
       />,
@@ -40,6 +46,5 @@ describe("InputPrompt", () => {
 
     expect(onSubmit).not.toHaveBeenCalled();
     expect(lastFrame() ?? "").not.toContain("> j");
-    vi.useRealTimers();
   });
 });

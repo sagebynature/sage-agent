@@ -12,25 +12,26 @@ interface InputHistory {
 
 export function useInputHistory(maxEntries = 100): InputHistory {
   const [entries, setEntries] = useState<string[]>([]);
+  const entriesRef = useRef<string[]>([]);
   const indexRef = useRef(-1);
 
   const addEntry = useCallback((text: string) => {
     if (!text.trim()) return;
-    setEntries(prev => {
-      const next = [text, ...prev.filter(e => e !== text)];
-      return next.slice(0, maxEntries);
-    });
+    const nextEntries = [text, ...entriesRef.current.filter((entry) => entry !== text)]
+      .slice(0, maxEntries);
+    entriesRef.current = nextEntries;
+    setEntries(nextEntries);
     indexRef.current = -1;
   }, [maxEntries]);
 
   const navigateUp = useCallback((): string | undefined => {
-    if (entries.length === 0) return undefined;
+    if (entriesRef.current.length === 0) return undefined;
 
-    const nextIndex = Math.min(indexRef.current + 1, entries.length - 1);
+    const nextIndex = Math.min(indexRef.current + 1, entriesRef.current.length - 1);
     indexRef.current = nextIndex;
 
-    return entries[nextIndex];
-  }, [entries]);
+    return entriesRef.current[nextIndex];
+  }, []);
 
   const navigateDown = useCallback((): string | undefined => {
     if (indexRef.current === -1) return undefined;
@@ -42,16 +43,24 @@ export function useInputHistory(maxEntries = 100): InputHistory {
       return undefined;
     }
 
-    return entries[nextIndex];
-  }, [entries]);
+    return entriesRef.current[nextIndex];
+  }, []);
 
   const search = useCallback((query: string): string[] => {
-    return entries.filter(e => e.toLowerCase().includes(query.toLowerCase()));
-  }, [entries]);
+    return entriesRef.current.filter(entry => entry.toLowerCase().includes(query.toLowerCase()));
+  }, []);
 
   const reset = useCallback(() => {
     indexRef.current = -1;
   }, []);
 
-  return { entries, addEntry, navigateUp, navigateDown, search, reset, currentIndex: indexRef.current };
+  return {
+    entries,
+    addEntry,
+    navigateUp,
+    navigateDown,
+    search,
+    reset,
+    currentIndex: indexRef.current,
+  };
 }

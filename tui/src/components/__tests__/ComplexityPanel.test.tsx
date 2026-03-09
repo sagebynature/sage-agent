@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { render } from "ink-testing-library";
-import { ComplexityPanel } from "../ComplexityPanel.js";
+import { ComplexityPanel, eventHasComplexityScore } from "../ComplexityPanel.js";
 import type { EventRecord } from "../../types/events.js";
 
 function makeEvent(payload: Record<string, unknown>): EventRecord {
@@ -18,6 +18,21 @@ function makeEvent(payload: Record<string, unknown>): EventRecord {
 }
 
 describe("ComplexityPanel", () => {
+  it("detects whether an event has a complexity score", () => {
+    expect(eventHasComplexityScore(null)).toBe(false);
+    expect(eventHasComplexityScore(makeEvent({}))).toBe(false);
+    expect(
+      eventHasComplexityScore(
+        makeEvent({ complexity: { level: "complex", version: "openfang-v1" } }),
+      ),
+    ).toBe(false);
+    expect(
+      eventHasComplexityScore(
+        makeEvent({ complexity: { score: 9136, level: "complex", version: "openfang-v1" } }),
+      ),
+    ).toBe(true);
+  });
+
   it("renders empty state when no event is selected", () => {
     const { lastFrame } = render(<ComplexityPanel event={null} />);
     expect(lastFrame() ?? "").toContain("No complexity data");

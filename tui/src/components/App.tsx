@@ -15,7 +15,7 @@ import { BottomBar } from "./BottomBar.js";
 import { PermissionPrompt } from "./PermissionPrompt.js";
 import { useResizeHandler } from "../hooks/useResizeHandler.js";
 import { EventTimeline } from "./EventTimeline.js";
-import { ComplexityPanel } from "./ComplexityPanel.js";
+import { ComplexityPanel, eventHasComplexityScore } from "./ComplexityPanel.js";
 import { EventInspector } from "./EventInspector.js";
 import { ActiveTaskDock } from "./ActiveTaskDock.js";
 
@@ -136,6 +136,7 @@ function AppShell(): ReactNode {
   const activeRun = state.activeStream?.runId
     ? state.runs[state.activeStream.runId]
     : Object.values(state.runs).at(-1);
+  const showComplexityPanel = eventHasComplexityScore(selectedEvent);
   const currentMainAgentName = activeRun?.agentPath[0]
     ?? state.events.at(-1)?.agentPath[0]
     ?? state.session?.agentName
@@ -597,7 +598,9 @@ function AppShell(): ReactNode {
             selectedEventId={selectedEvent?.id ?? null}
             maxHeight={eventPaneHeight}
           />
-          <ComplexityPanel event={selectedEvent} maxHeight={eventPaneHeight} />
+          {showComplexityPanel ? (
+            <ComplexityPanel event={selectedEvent} maxHeight={eventPaneHeight} />
+          ) : null}
           <EventInspector event={selectedEvent} maxHeight={eventPaneHeight} />
         </Box>
       )}

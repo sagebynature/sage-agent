@@ -23,6 +23,11 @@ function complexityRecord(event: EventRecord | null): Record<string, unknown> | 
     : null;
 }
 
+export function eventHasComplexityScore(event: EventRecord | null): boolean {
+  const complexity = complexityRecord(event);
+  return !!complexity && typeof complexity.score === "number";
+}
+
 function toFactorViews(value: unknown): ComplexityFactorView[] {
   if (!Array.isArray(value)) {
     return [];
