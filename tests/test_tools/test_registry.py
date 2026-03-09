@@ -13,7 +13,7 @@ import pytest
 
 from sage.config import Permission
 from sage.exceptions import ToolError
-from sage.models import ToolSchema
+from sage.models import ToolMetadata, ToolResourceRef, ToolResult, ToolSchema
 from sage.tools.base import ToolBase
 from sage.tools.decorator import tool
 from sage.tools.registry import ToolRegistry
@@ -59,6 +59,54 @@ class TestToolRegistry:
         registry.register(async_greet)
         result = await registry.execute("async_greet", {"name": "World"})
         assert result == "Hello, World!"
+
+    async def test_execute_result_wraps_plain_string(self) -> None:
+        registry = ToolRegistry()
+        registry.register(add)
+        result = await registry.execute_result("add", {"a": 2, "b": 3})
+        assert result.text == "5"
+        assert result.data is None
+        assert result.resource is None
+
+    async def test_execute_result_preserves_structured_tool_result(self) -> None:
+        @tool
+        def structured() -> ToolResult:
+            """Return a structured result."""
+            return ToolResult(
+                text="created",
+                data={"ok": True},
+                resource=ToolResourceRef(kind="memory", resource_id="mem-1"),
+            )
+
+        registry = ToolRegistry()
+        registry.register(structured)
+        result = await registry.execute_result("structured", {})
+        assert result.text == "created"
+        assert result.data == {"ok": True}
+        assert result.resource == ToolResourceRef(kind="memory", resource_id="mem-1")
+
+    async def test_execute_renders_text_from_structured_tool_result(self) -> None:
+        @tool
+        def structured() -> ToolResult:
+            """Return a structured result."""
+            return ToolResult(text="hello", data={"ok": True})
+
+        registry = ToolRegistry()
+        registry.register(structured)
+        result = await registry.execute("structured", {})
+        assert result == "hello"
+
+    def test_toolschema_accepts_metadata(self) -> None:
+        schema = ToolSchema(
+            name="process_start",
+            description="Start a process",
+            parameters={},
+            metadata=ToolMetadata(risk_level="medium", stateful=True, resource_kind="process"),
+        )
+        assert schema.metadata is not None
+        assert schema.metadata.risk_level == "medium"
+        assert schema.metadata.stateful is True
+        assert schema.metadata.resource_kind == "process"
 
     async def test_execute_unknown_tool_raises(self) -> None:
         registry = ToolRegistry()

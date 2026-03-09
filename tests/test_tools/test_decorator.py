@@ -32,6 +32,7 @@ class TestToolDecorator:
         assert schema.parameters["properties"]["query"] == {"type": "string"}
         assert schema.parameters["properties"]["max_results"] == {"type": "integer"}
         assert schema.parameters["required"] == ["query", "max_results"]
+        assert schema.metadata is None
 
     def test_optional_parameter_with_default(self) -> None:
         @tool

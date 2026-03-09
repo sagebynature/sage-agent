@@ -10,7 +10,7 @@ from collections.abc import Awaitable
 from typing import TYPE_CHECKING, Any, Callable, Literal
 
 from sage.exceptions import PermissionError as SagePermissionError, ToolError
-from sage.models import ToolSchema
+from sage.models import ToolResult, ToolSchema
 from sage.tools.base import ToolBase
 from sage.tracing import span
 
@@ -155,7 +155,20 @@ class ToolRegistry:
         return schemas
 
     async def execute(self, name: str, arguments: dict[str, Any]) -> str:
-        """Dispatch a tool call by name and return the stringified result.
+        """Dispatch a tool call and return a backward-compatible text result."""
+        result = await self.execute_result(name, arguments)
+        return result.render_text()
+
+    def _normalize_tool_result(self, result: Any) -> ToolResult:
+        """Normalize raw tool output into a structured ToolResult."""
+        if isinstance(result, ToolResult):
+            return result
+        if isinstance(result, str):
+            return ToolResult(text=result)
+        return ToolResult(text=str(result))
+
+    async def execute_result(self, name: str, arguments: dict[str, Any]) -> ToolResult:
+        """Dispatch a tool call by name and return a structured result.
 
         If a permission handler is set, the tool call is checked first.
         Raises ``PermissionError`` if denied, ``ToolError`` if tool not found
@@ -224,7 +237,7 @@ class ToolRegistry:
             tool_span.set_attribute("tool.args", str(list(arguments.keys())))
             try:
                 if mcp_client is not None:
-                    return await mcp_client.call_tool(name, arguments)
+                    return self._normalize_tool_result(await mcp_client.call_tool(name, arguments))
                 assert fn is not None
                 if inspect.iscoroutinefunction(fn):
                     coro = fn(**arguments)
@@ -247,7 +260,7 @@ class ToolRegistry:
             except Exception as exc:
                 raise ToolError(f"Tool {name!r} failed: {exc}") from exc
 
-        return str(result)
+        return self._normalize_tool_result(result)
 
     _BUILTIN_PREFIX = "builtin"
     _BUILTIN_MODULE = "sage.tools.builtins"
