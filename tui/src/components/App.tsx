@@ -15,6 +15,7 @@ import { BottomBar } from "./BottomBar.js";
 import { PermissionPrompt } from "./PermissionPrompt.js";
 import { useResizeHandler } from "../hooks/useResizeHandler.js";
 import { EventTimeline } from "./EventTimeline.js";
+import { ComplexityPanel } from "./ComplexityPanel.js";
 import { EventInspector } from "./EventInspector.js";
 
 
@@ -603,6 +604,7 @@ function AppShell(): ReactNode {
             selectedEventId={selectedEvent?.id ?? null}
             maxHeight={eventPaneHeight}
           />
+          <ComplexityPanel event={selectedEvent} maxHeight={eventPaneHeight} />
           <EventInspector event={selectedEvent} maxHeight={eventPaneHeight} />
         </Box>
       )}
