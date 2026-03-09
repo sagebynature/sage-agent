@@ -17,6 +17,8 @@ const DELEGATE_STATUS_PALETTE = [
   { color: "#ff5fe0", bold: false },
   { color: "#d948ff", bold: false },
 ] as const;
+const ACTIVE_IDLE_COLOR = "#5c6977";
+const DELEGATE_IDLE_COLOR = "#796275";
 const STATIC_ACTIVE_STYLE = { color: "cyan", bold: false } as const;
 const STATIC_DELEGATE_STYLE = { color: "magenta", bold: false } as const;
 
@@ -27,13 +29,13 @@ interface ActiveStreamViewProps {
 // Shared spinner context — single timer drives all spinners to prevent flickering.
 interface ActiveAnimationState {
   spinner: string;
-  phase: number;
+  frame: number;
   colorDepth: TerminalCapabilities["colorDepth"];
 }
 
 const SpinnerContext = createContext<ActiveAnimationState>({
   spinner: SPINNER_FRAMES[0]!,
-  phase: 0,
+  frame: 0,
   colorDepth: 16,
 });
 
@@ -57,7 +59,7 @@ function SpinnerProvider({
     <SpinnerContext
       value={{
         spinner: SPINNER_FRAMES[frame]!,
-        phase: frame % ACTIVE_STATUS_PALETTE.length,
+        frame,
         colorDepth,
       }}
     >
@@ -71,7 +73,6 @@ function useActiveAnimation(): ActiveAnimationState {
 }
 
 export function resolveActiveStatusStyle(
-  phase: number,
   isDelegate: boolean,
   colorDepth: TerminalCapabilities["colorDepth"],
 ): { color: string; bold: boolean } {
@@ -79,8 +80,66 @@ export function resolveActiveStatusStyle(
     return isDelegate ? STATIC_DELEGATE_STYLE : STATIC_ACTIVE_STYLE;
   }
 
+  return isDelegate ? DELEGATE_STATUS_PALETTE[0]! : ACTIVE_STATUS_PALETTE[0]!;
+}
+
+interface ActiveLabelStyle {
+  char: string;
+  color: string;
+  bold: boolean;
+  dimColor: boolean;
+  inverse: boolean;
+}
+
+export function resolveSweepPosition(frame: number, textLength: number): number {
+  if (textLength <= 1) {
+    return 0;
+  }
+
+  const max = textLength - 1;
+  const period = max * 2;
+  const offset = frame % period;
+  return offset <= max ? offset : period - offset;
+}
+
+export function resolveActiveLabelStyles(
+  text: string,
+  frame: number,
+  isDelegate: boolean,
+  colorDepth: TerminalCapabilities["colorDepth"],
+): ActiveLabelStyle[] {
+  const chars = [...text];
+  const staticStyle = isDelegate ? STATIC_DELEGATE_STYLE : STATIC_ACTIVE_STYLE;
+
+  if (colorDepth !== 24) {
+    return chars.map((char) => ({
+      char,
+      color: staticStyle.color,
+      bold: staticStyle.bold,
+      dimColor: false,
+      inverse: false,
+    }));
+  }
+
+  const center = resolveSweepPosition(frame, chars.length);
   const palette = isDelegate ? DELEGATE_STATUS_PALETTE : ACTIVE_STATUS_PALETTE;
-  return palette[phase % palette.length]!;
+  const idleColor = isDelegate ? DELEGATE_IDLE_COLOR : ACTIVE_IDLE_COLOR;
+
+  return chars.map((char, index) => {
+    const distance = Math.abs(index - center);
+
+    if (distance === 0) {
+      return { char, color: palette[0]!.color, bold: true, dimColor: false, inverse: false };
+    }
+    if (distance === 1) {
+      return { char, color: palette[1]!.color, bold: true, dimColor: false, inverse: false };
+    }
+    if (distance === 2) {
+      return { char, color: palette[2]!.color, bold: false, dimColor: false, inverse: false };
+    }
+
+    return { char, color: idleColor, bold: false, dimColor: true, inverse: false };
+  });
 }
 
 function useElapsedTimer(startedAt: number | null): string {
@@ -106,12 +165,13 @@ function useElapsedTimer(startedAt: number | null): string {
 
 function ThinkingIndicator({ startedAt }: { startedAt: number }): ReactNode {
   const elapsed = useElapsedTimer(startedAt);
-  const { spinner, phase, colorDepth } = useActiveAnimation();
-  const style = resolveActiveStatusStyle(phase, false, colorDepth);
+  const { spinner, colorDepth } = useActiveAnimation();
+  const style = resolveActiveStatusStyle(false, colorDepth);
 
   return (
     <Box>
-      <Text color={style.color} bold={style.bold}>{spinner} Thinking...</Text>
+      <Text color={style.color} bold={style.bold}>{spinner} </Text>
+      <AnimatedActiveLabel text="Thinking..." isDelegate={false} />
       <Text dimColor>{" ("}{elapsed}{")"}</Text>
     </Box>
   );
@@ -126,14 +186,42 @@ interface ToolInfo {
 }
 
 function RunningToolIndicator({ tool }: { tool: ToolInfo }): ReactNode {
-  const { spinner, phase, colorDepth } = useActiveAnimation();
+  const { spinner, colorDepth } = useActiveAnimation();
   const label = formatToolLabel(tool.name, tool.arguments);
   const isDelegate = tool.name.startsWith("delegate");
-  const style = resolveActiveStatusStyle(phase, isDelegate, colorDepth);
+  const style = resolveActiveStatusStyle(isDelegate, colorDepth);
 
   return (
     <Text>
-      <Text color={style.color} bold={style.bold}>{spinner} {label}</Text>
+      <Text color={style.color} bold={style.bold}>{spinner} </Text>
+      <AnimatedActiveLabel text={label} isDelegate={isDelegate} />
+    </Text>
+  );
+}
+
+function AnimatedActiveLabel({
+  text,
+  isDelegate,
+}: {
+  text: string;
+  isDelegate: boolean;
+}): ReactNode {
+  const { frame, colorDepth } = useActiveAnimation();
+  const chars = resolveActiveLabelStyles(text, frame, isDelegate, colorDepth);
+
+  return (
+    <Text>
+      {chars.map((charStyle, index) => (
+        <Text
+          key={`${index}_${charStyle.char}`}
+          color={charStyle.color}
+          bold={charStyle.bold}
+          dimColor={charStyle.dimColor}
+          inverse={charStyle.inverse}
+        >
+          {charStyle.char}
+        </Text>
+      ))}
     </Text>
   );
 }

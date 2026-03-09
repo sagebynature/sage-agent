@@ -3,7 +3,9 @@ import { render } from "ink-testing-library";
 
 import {
   ActiveStreamView,
+  resolveActiveLabelStyles,
   resolveActiveStatusStyle,
+  resolveSweepPosition,
   truncateStreamLines,
 } from "../ActiveStreamView.js";
 import type { ActiveStream } from "../../types/blocks.js";
@@ -27,14 +29,36 @@ describe("truncateStreamLines", () => {
 });
 
 describe("ActiveStreamView", () => {
-  it("uses truecolor glow only on 24-bit terminals and static fallback elsewhere", () => {
-    expect(resolveActiveStatusStyle(0, false, 24)).toEqual({ color: "#7fe7ff", bold: true });
-    expect(resolveActiveStatusStyle(1, false, 24)).toEqual({ color: "#4dcfff", bold: false });
-    expect(resolveActiveStatusStyle(2, false, 24)).toEqual({ color: "#2f9bff", bold: false });
-    expect(resolveActiveStatusStyle(0, false, 256)).toEqual({ color: "cyan", bold: false });
-    expect(resolveActiveStatusStyle(1, false, 256)).toEqual({ color: "cyan", bold: false });
-    expect(resolveActiveStatusStyle(0, true, 24)).toEqual({ color: "#ff8cf6", bold: true });
-    expect(resolveActiveStatusStyle(1, true, 16)).toEqual({ color: "magenta", bold: false });
+  it("bounces the sweep position across the label width", () => {
+    expect([0, 1, 2, 3, 4, 5, 6].map((phase) => resolveSweepPosition(phase, 4))).toEqual([
+      0,
+      1,
+      2,
+      3,
+      2,
+      1,
+      0,
+    ]);
+    expect(resolveSweepPosition(10, 1)).toBe(0);
+  });
+
+  it("uses a truecolor sweep on 24-bit terminals and static fallback elsewhere", () => {
+    expect(resolveActiveStatusStyle(false, 24)).toEqual({ color: "#7fe7ff", bold: true });
+    expect(resolveActiveStatusStyle(true, 24)).toEqual({ color: "#ff8cf6", bold: true });
+    expect(resolveActiveStatusStyle(false, 256)).toEqual({ color: "cyan", bold: false });
+    expect(resolveActiveStatusStyle(true, 16)).toEqual({ color: "magenta", bold: false });
+
+    expect(resolveActiveLabelStyles("Read", 1, false, 24)).toEqual([
+      { char: "R", color: "#4dcfff", bold: true, dimColor: false, inverse: false },
+      { char: "e", color: "#7fe7ff", bold: true, dimColor: false, inverse: true },
+      { char: "a", color: "#4dcfff", bold: true, dimColor: false, inverse: false },
+      { char: "d", color: "#2f9bff", bold: false, dimColor: false, inverse: false },
+    ]);
+
+    expect(resolveActiveLabelStyles("Go", 0, true, 256)).toEqual([
+      { char: "G", color: "magenta", bold: false, dimColor: false, inverse: false },
+      { char: "o", color: "magenta", bold: false, dimColor: false, inverse: false },
+    ]);
   });
 
   it("shows thinking indicator when isThinking", () => {
