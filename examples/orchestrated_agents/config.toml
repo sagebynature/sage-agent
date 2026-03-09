@@ -2,12 +2,12 @@
 AZURE_AI_API_KEY = "${AZURE_AI_API_KEY}"
 AZURE_AI_API_BASE = "${AZURE_AI_API_BASE}"
 
-[defaults.mcp_servers.context7]
+[mcp_servers.context7]
 transport = "stdio"
 command = "npx"
 args = ["-y", "@upstash/context7-mcp@latest"]
 
-[defaults.mcp_servers.sequentialthinking]
+[mcp_servers.sequentialthinking]
 transport = "stdio"
 command = "npx"
 args = ["-y", "@modelcontextprotocol/server-sequential-thinking@latest"]

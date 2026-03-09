@@ -229,29 +229,28 @@ class TestLoadMainConfig:
     def test_none_returns_none(self) -> None:
         assert load_main_config(None) is None
 
-    def test_loads_minimal_toml(self, tmp_path: Path) -> None:
+    def test_loads_minimal_top_level_defaults_toml(self, tmp_path: Path) -> None:
         toml_path = _write_toml(
             tmp_path / "config.toml",
-            '[defaults]\nmodel = "azure_ai/gpt-4o"\nmax_turns = 20\n',
+            'model = "azure_ai/gpt-4o"\nmax_turns = 20\n',
         )
         cfg = load_main_config(toml_path)
         assert cfg is not None
         assert cfg.defaults.model == "azure_ai/gpt-4o"
         assert cfg.defaults.max_turns == 20
 
-    def test_loads_full_toml(self, tmp_path: Path) -> None:
+    def test_loads_full_top_level_defaults_toml(self, tmp_path: Path) -> None:
         toml_path = _write_toml(
             tmp_path / "config.toml",
             """\
-[defaults]
 model = "azure_ai/gpt-4o"
 max_turns = 20
 extensions = ["sage.tools.builtins"]
 
-[defaults.model_params]
+[model_params]
 temperature = 0.7
 
-[defaults.permission]
+[permission]
 shell = "allow"
 
 [agents.research-assistant]
@@ -279,23 +278,53 @@ max_turns = 5
         assert cfg.agents["research-assistant"].model_params.temperature == 0.3
         assert cfg.agents["summarizer"].model == "azure_ai/gpt-4o-mini"
 
+    def test_loads_top_level_nested_default_sections(self, tmp_path: Path) -> None:
+        toml_path = _write_toml(
+            tmp_path / "config.toml",
+            """\
+model = "azure_ai/gpt-4o"
+
+[memory]
+embedding = "ollama/nomic-embed-text"
+
+[planning.analysis]
+enabled = true
+""",
+        )
+        cfg = load_main_config(toml_path)
+        assert cfg is not None
+        assert cfg.defaults.model == "azure_ai/gpt-4o"
+        assert cfg.defaults.memory is not None
+        assert cfg.defaults.memory.embedding == "ollama/nomic-embed-text"
+        assert cfg.defaults.planning is not None
+        assert cfg.defaults.planning.analysis is not None
+        assert cfg.defaults.planning.analysis.enabled is True
+
     def test_invalid_toml_raises(self, tmp_path: Path) -> None:
         toml_path = _write_toml(tmp_path / "bad.toml", "not valid toml [[[")
         with pytest.raises(ConfigError, match="Failed to parse"):
             load_main_config(toml_path)
 
+    def test_legacy_defaults_section_raises(self, tmp_path: Path) -> None:
+        toml_path = _write_toml(
+            tmp_path / "config.toml",
+            '[defaults]\nmodel = "gpt-4o"\n',
+        )
+        with pytest.raises(ConfigError, match="defaults\\. prefix was removed"):
+            load_main_config(toml_path)
+
     def test_unknown_keys_rejected(self, tmp_path: Path) -> None:
         toml_path = _write_toml(
             tmp_path / "config.toml",
-            '[defaults]\nmodel = "gpt-4o"\nunknown_key = "bad"\n',
+            'model = "gpt-4o"\nunknown_key = "bad"\n',
         )
         with pytest.raises(ConfigError, match="Invalid main config"):
             load_main_config(toml_path)
 
-    def test_defaults_memory_parsed_from_toml(self, tmp_path: Path) -> None:
+    def test_top_level_memory_parsed_from_toml(self, tmp_path: Path) -> None:
         toml_path = _write_toml(
             tmp_path / "config.toml",
-            '[defaults.memory]\nembedding = "ollama/nomic-embed-text"\n',
+            '[memory]\nembedding = "ollama/nomic-embed-text"\n',
         )
         cfg = load_main_config(toml_path)
         assert cfg is not None

@@ -2,7 +2,7 @@
 #
 # This file defines global defaults and per-agent overrides for Sage.
 # Override priority (lowest → highest):
-#   1. [defaults]            — global defaults
+#   1. Top-level keys        — global defaults
 #   2. [agents.<name>]       — per-agent overrides
 #   3. Agent .md frontmatter — highest priority
 #
@@ -31,8 +31,6 @@ agents_dir = "agents/"
 OPENROUTER_API_KEY = "${OPENROUTER_API_KEY}"
 
 # ─── Global Defaults ──────────────────────────────────────────────────────────
-[defaults]
-
 # LLM model identifier (provider/model format)
 model = "openrouter/openrouter/free"
 
@@ -47,7 +45,7 @@ max_depth = 3
 
 # ── Model Parameters ──────────────────────────────────────────────────────────
 # Only set fields are forwarded to the provider; omitted fields use provider defaults.
-[defaults.model_params]
+[model_params]
 temperature = 0.0
 max_tokens = 4096
 # top_p = 1.0
@@ -61,13 +59,13 @@ max_tokens = 4096
 
 # ── Permission ────────────────────────────────────────────────────────────────
 # Controls what actions agents can take without asking.
-[defaults.permission]
+[permission]
 shell = "ask"
 memory_store = "allow"
 
 # ── Context Management ────────────────────────────────────────────────────────
 # Token-aware context window management.
-[defaults.context]
+[context]
 compaction_threshold = 0.75   # fraction of context window that triggers compaction
 reserve_tokens = 4096         # tokens reserved for model output
 prune_tool_outputs = true     # truncate large tool outputs
@@ -76,8 +74,8 @@ tool_output_max_chars = 5000  # max chars per tool output before truncation
 # ── Memory ────────────────────────────────────────────────────────────────────
 # Default persistent memory backend. Per-agent [agents.<name>.memory] sections
 # deep-merge on top — only fields you explicitly set in the agent section override
-# the values below. Omit [defaults.memory] entirely to keep memory opt-in per agent.
-[defaults.memory]
+# the values below. Omit [memory] entirely to keep memory opt-in per agent.
+[memory]
 backend = "sqlite"
 path = "memory.db"
 embedding = "ollama/nomic-embed-text"
@@ -96,11 +94,11 @@ embedding = "ollama/nomic-embed-text"
 # Both sub-sections are opt-in. Omit or set enabled = false to disable.
 
 # Uncomment to enable planning globally (all agents):
-[defaults.planning.analysis]
+[planning.analysis]
 enabled = true
 # prompt = "Analyze this plan for completeness and feasibility."
 
-[defaults.planning.review]
+[planning.review]
 enabled = true
 max_iterations = 3      # Maximum review-revise cycles (default: 3)
 # prompt = "Review this plan. Flag gaps, contradictions, or missing steps."
@@ -109,19 +107,19 @@ max_iterations = 3      # Maximum review-revise cycles (default: 3)
 # Model Context Protocol server connections.
 # Each server uses either stdio (command) or sse (url) transport.
 
-[defaults.mcp_servers.context7]
+[mcp_servers.context7]
 transport = "stdio"
 command = "npx"
 args = ["-y", "@upstash/context7-mcp@latest"]
 
-[defaults.mcp_servers.sequentialthinking]
+[mcp_servers.sequentialthinking]
 transport = "stdio"
 command = "npx"
 args = ["-y", "@modelcontextprotocol/server-sequential-thinking@latest"]
 
 
 # ─── Per-Agent Overrides ──────────────────────────────────────────────────────
-# Each [agents.<name>] section overrides [defaults] for a specific agent.
+# Each [agents.<name>] section overrides the top-level defaults for a specific agent.
 # The <name> must match the agent's "name" field in its .md frontmatter.
 
 # [agents.researcher]
@@ -133,7 +131,7 @@ args = ["-y", "@modelcontextprotocol/server-sequential-thinking@latest"]
 # max_tokens = 8192
 
 # ── Memory (per-agent) ───────────────────────────────────────────────────────
-# Only fields set here override [defaults.memory]; the rest are inherited.
+# Only fields set here override [memory]; the rest are inherited.
 # skills: optional list of skill names to load for this agent (allowlist)
 
 # [agents.researcher.memory]

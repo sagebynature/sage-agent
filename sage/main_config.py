@@ -4,7 +4,7 @@ Provides a TOML-based main config with a three-tier override system::
 
     agent .md frontmatter     (highest priority)
     [agents.<name>] in TOML   (agent-specific overrides)
-    [defaults] in TOML         (global defaults)
+    top-level keys in TOML    (global defaults)
 
 Environment variables are resolved from the ``[env]`` section using
 ``${VAR}`` syntax, with values sourced from ``os.environ`` (populated
@@ -59,6 +59,9 @@ class AgentOverrides(ConfigOverrides):
     """Per-agent overrides — adds skills allowlist."""
 
     skills: list[str] | None = None
+
+
+_DEFAULT_OVERRIDE_KEYS = frozenset(ConfigOverrides.model_fields)
 
 
 class MainConfig(BaseModel):
@@ -132,8 +135,23 @@ def load_main_config(path: Path | None) -> MainConfig | None:
     except Exception as exc:
         raise ConfigError(f"Failed to parse main config {path}: {exc}") from exc
 
+    if "defaults" in data:
+        raise ConfigError(
+            "Invalid main config: the defaults. prefix was removed; "
+            "move default settings to top-level keys like 'model', "
+            "'[model_params]', '[memory]', and '[mcp_servers.<name>]'."
+        )
+
+    normalized = dict(data)
+    defaults: dict[str, Any] = {}
+    for key in _DEFAULT_OVERRIDE_KEYS:
+        if key in normalized:
+            defaults[key] = normalized.pop(key)
+    if defaults:
+        normalized["defaults"] = defaults
+
     try:
-        config = MainConfig(**data)
+        config = MainConfig(**normalized)
     except Exception as exc:
         raise ConfigError(f"Invalid main config: {exc}") from exc
 

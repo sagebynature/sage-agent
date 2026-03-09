@@ -2,7 +2,6 @@
 AZURE_AI_API_KEY = "${AZURE_AI_API_KEY}"
 AZURE_AI_API_BASE = "${AZURE_AI_API_BASE}"
 
-[defaults]
 model = "azure_ai/kimi-k2.5"
 
 [categories.quick]

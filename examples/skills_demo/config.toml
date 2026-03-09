@@ -7,6 +7,5 @@ skills_dir = "skills"
 AZURE_AI_API_KEY = "${ANTHROPIC_FOUNDRY_API_KEY}"
 AZURE_AI_API_BASE = "https://${ANTHROPIC_FOUNDRY_RESOURCE}.services.ai.azure.com"
 
-[defaults]
 model = "azure_ai/kimi-k2.5"
 max_turns = 10
