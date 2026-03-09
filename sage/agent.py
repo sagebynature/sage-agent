@@ -77,6 +77,7 @@ def _build_mcp_clients(config: "AgentConfig", agent_config: "AgentConfig") -> li
             mcp_cfg = agent_config._mcp_server_catalog[server_name]
             mcp_clients.append(
                 MCPClient(
+                    server_name=server_name,
                     transport=mcp_cfg.transport,
                     command=mcp_cfg.command,
                     url=mcp_cfg.url,
@@ -1993,26 +1994,30 @@ class Agent:
         async def _initialize_client(client):
             """Initialize a single MCP client and register its tools."""
             timeout = max(float(getattr(client, "initialize_timeout", 10.0)), 0.1)
+            server_name = getattr(client, "server_name", "default")
             try:
                 await asyncio.wait_for(client.connect(), timeout=timeout)
                 schemas = await asyncio.wait_for(client.discover_tools(), timeout=timeout)
                 logger.info(
-                    "Discovered %d MCP tool(s): %s",
+                    "Discovered %d MCP tool(s) from %s: %s",
                     len(schemas),
+                    server_name,
                     [s.name for s in schemas],
                 )
                 for schema in schemas:
-                    self.tool_registry.register_mcp_tool(schema, client)
+                    self.tool_registry.register_mcp_tool(server_name, schema, client)
                 return None  # Success
             except asyncio.TimeoutError as exc:
-                logger.error("Timed out initializing MCP server %s after %.1fs", client, timeout)
+                logger.error(
+                    "Timed out initializing MCP server %s after %.1fs", server_name, timeout
+                )
                 try:
                     await asyncio.wait_for(client.disconnect(), timeout=1.0)
                 except Exception:
                     pass
                 return exc
             except Exception as exc:
-                logger.error("Failed to initialize MCP server %s: %s", client, exc)
+                logger.error("Failed to initialize MCP server %s: %s", server_name, exc)
                 try:
                     await asyncio.wait_for(client.disconnect(), timeout=1.0)
                 except Exception:

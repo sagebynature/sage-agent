@@ -6,11 +6,12 @@ import asyncio
 import importlib
 import inspect
 import logging
+from dataclasses import dataclass
 from collections.abc import Awaitable
 from typing import TYPE_CHECKING, Any, Callable, Literal
 
 from sage.exceptions import PermissionError as SagePermissionError, ToolError
-from sage.models import ToolResult, ToolSchema
+from sage.models import ToolMetadata, ToolResult, ToolSchema
 from sage.tools.base import ToolBase
 from sage.tracing import span
 
@@ -19,6 +20,15 @@ if TYPE_CHECKING:
     from sage.mcp.client import MCPClient
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class _MCPToolBinding:
+    """Registry entry for a namespaced MCP tool."""
+
+    client: MCPClient
+    upstream_name: str
+    server_name: str
 
 CATEGORY_TOOLS: dict[str, list[str]] = {
     "read": ["file_read"],
@@ -70,7 +80,7 @@ class ToolRegistry:
         self._tools: dict[str, Callable[..., Any]] = {}
         self._schemas: dict[str, ToolSchema] = {}
         self._instances: list[ToolBase] = []
-        self._mcp_tools: dict[str, MCPClient] = {}
+        self._mcp_tools: dict[str, _MCPToolBinding] = {}
         self._permission_handler: Any | None = None
         self._default_timeout: float | None = default_timeout
         self._ask_policy: Literal["allow", "deny", "error"] = "error"
@@ -100,15 +110,32 @@ class ToolRegistry:
         self._schemas[schema.name] = schema
         logger.debug("Registered tool: %s", schema.name)
 
-    def register_mcp_tool(self, schema: ToolSchema, client: MCPClient) -> None:
+    def register_mcp_tool(self, server_name: str, schema: ToolSchema, client: MCPClient) -> None:
         """Register an MCP-backed tool from a discovered schema.
 
         The schema is stored for advertisement to the LLM.  Calls to
         :meth:`execute` for this tool name will be routed through *client*.
         """
-        self._schemas[schema.name] = schema
-        self._mcp_tools[schema.name] = client
-        logger.debug("Registered MCP tool: %s", schema.name)
+        runtime_name = f"mcp_{server_name}_{schema.name}"
+        metadata = schema.metadata or ToolMetadata()
+        runtime_schema = schema.model_copy(
+            update={
+                "name": runtime_name,
+                "metadata": metadata.model_copy(
+                    update={
+                        "resource_kind": "mcp",
+                        "visible_name": schema.name,
+                    }
+                ),
+            }
+        )
+        self._schemas[runtime_name] = runtime_schema
+        self._mcp_tools[runtime_name] = _MCPToolBinding(
+            client=client,
+            upstream_name=schema.name,
+            server_name=server_name,
+        )
+        logger.debug("Registered MCP tool: %s -> %s", runtime_name, schema.name)
 
     def set_permission_handler(self, handler: Any) -> None:
         """Set a permission handler for pre-dispatch checks."""
@@ -175,8 +202,8 @@ class ToolRegistry:
         or execution fails.
         """
         fn = self._tools.get(name)
-        mcp_client = self._mcp_tools.get(name)
-        if fn is None and mcp_client is None:
+        mcp_binding = self._mcp_tools.get(name)
+        if fn is None and mcp_binding is None:
             raise ToolError(f"Unknown tool: {name!r}")
 
         # Tool restriction check (allowlist/blocklist).
@@ -236,8 +263,10 @@ class ToolRegistry:
         async with span("tool.execute", {"tool.name": name}) as tool_span:
             tool_span.set_attribute("tool.args", str(list(arguments.keys())))
             try:
-                if mcp_client is not None:
-                    return self._normalize_tool_result(await mcp_client.call_tool(name, arguments))
+                if mcp_binding is not None:
+                    return self._normalize_tool_result(
+                        await mcp_binding.client.call_tool(mcp_binding.upstream_name, arguments)
+                    )
                 assert fn is not None
                 if inspect.iscoroutinefunction(fn):
                     coro = fn(**arguments)

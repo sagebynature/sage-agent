@@ -278,18 +278,18 @@ class TestMCPToolRegistration:
 
         registry = ToolRegistry()
         schema = ToolSchema(
-            name="mcp_read",
+            name="read",
             description="Read a file via MCP",
             parameters={"type": "object", "properties": {"path": {"type": "string"}}},
         )
         client = AsyncMock()
-        registry.register_mcp_tool(schema, client)
+        registry.register_mcp_tool("context7", schema, client)
 
         schemas = registry.get_schemas()
-        assert any(s.name == "mcp_read" for s in schemas)
+        assert any(s.name == "mcp_context7_read" for s in schemas)
 
     async def test_execute_routes_to_mcp_client(self) -> None:
-        """execute() for an MCP tool calls client.call_tool with name and args."""
+        """execute() for an MCP tool calls client.call_tool with upstream name and args."""
         from unittest.mock import AsyncMock
 
         registry = ToolRegistry()
@@ -300,12 +300,30 @@ class TestMCPToolRegistration:
         )
         client = AsyncMock()
         client.call_tool = AsyncMock(return_value="file1.txt\nfile2.txt")
-        registry.register_mcp_tool(schema, client)
+        registry.register_mcp_tool("filesystem", schema, client)
 
-        result = await registry.execute("list_files", {"path": "/tmp"})
+        result = await registry.execute("mcp_filesystem_list_files", {"path": "/tmp"})
 
         client.call_tool.assert_awaited_once_with("list_files", {"path": "/tmp"})
         assert result == "file1.txt\nfile2.txt"
+
+    async def test_register_mcp_tools_namespace_prevents_collisions(self) -> None:
+        """Two servers can expose the same upstream tool name without collisions."""
+        from unittest.mock import AsyncMock
+
+        registry = ToolRegistry()
+        schema = ToolSchema(
+            name="search",
+            description="Search documents",
+            parameters={"type": "object"},
+        )
+
+        registry.register_mcp_tool("context7", schema, AsyncMock())
+        registry.register_mcp_tool("seqthink", schema, AsyncMock())
+
+        names = {tool_schema.name for tool_schema in registry.get_schemas()}
+        assert "mcp_context7_search" in names
+        assert "mcp_seqthink_search" in names
 
     async def test_local_tool_not_overshadowed_by_mcp(self) -> None:
         """A local @tool is still callable when MCP tools are also registered."""
@@ -317,14 +335,14 @@ class TestMCPToolRegistration:
         mcp_schema = ToolSchema(name="other_tool", description="MCP tool", parameters={})
         client = AsyncMock()
         client.call_tool = AsyncMock(return_value="mcp_result")
-        registry.register_mcp_tool(mcp_schema, client)
+        registry.register_mcp_tool("context7", mcp_schema, client)
 
         # Local tool still dispatches normally.
         local_result = await registry.execute("add", {"a": 10, "b": 5})
         assert local_result == "15"
 
         # MCP tool dispatches through client.
-        mcp_result = await registry.execute("other_tool", {})
+        mcp_result = await registry.execute("mcp_context7_other_tool", {})
         assert mcp_result == "mcp_result"
 
 

@@ -1299,11 +1299,12 @@ class TestAgentMCPWiring:
         from sage.models import ToolSchema
 
         mcp_schema = ToolSchema(
-            name="mcp_hello",
+            name="hello",
             description="Say hello via MCP",
             parameters={},
         )
         mock_client = AsyncMock()
+        mock_client.server_name = "greetings"
         mock_client.connect = AsyncMock()
         mock_client.discover_tools = AsyncMock(return_value=[mcp_schema])
         mock_client.call_tool = AsyncMock(return_value="hello from MCP")
@@ -1322,7 +1323,7 @@ class TestAgentMCPWiring:
         mock_client.discover_tools.assert_awaited_once()
         # Schema should now be visible in the registry.
         names = {s.name for s in agent.tool_registry.get_schemas()}
-        assert "mcp_hello" in names
+        assert "mcp_greetings_hello" in names
 
     @pytest.mark.asyncio
     async def test_mcp_tools_only_connected_once(self) -> None:
@@ -1332,6 +1333,7 @@ class TestAgentMCPWiring:
         from sage.models import ToolSchema
 
         mock_client = AsyncMock()
+        mock_client.server_name = "default"
         mock_client.connect = AsyncMock()
         mock_client.discover_tools = AsyncMock(
             return_value=[
@@ -1366,11 +1368,16 @@ class TestAgentMCPWiring:
             parameters={},
         )
         mock_client = AsyncMock()
+        mock_client.server_name = "filesystem"
         mock_client.connect = AsyncMock()
         mock_client.discover_tools = AsyncMock(return_value=[mcp_schema])
         mock_client.call_tool = AsyncMock(return_value="a.txt\nb.txt")
 
-        tool_call = ToolCall(id="tc_mcp", name="list_files", arguments={"path": "/"})
+        tool_call = ToolCall(
+            id="tc_mcp",
+            name="mcp_filesystem_list_files",
+            arguments={"path": "/"},
+        )
         provider = MockProvider(
             [
                 _tool_call_result([tool_call]),
@@ -1397,6 +1404,7 @@ class TestAgentMCPWiring:
         from sage.exceptions import SageError
 
         mock_client = AsyncMock()
+        mock_client.server_name = "default"
         mock_client.connect = AsyncMock(side_effect=SageError("server not found"))
 
         provider = MockProvider([_text_result("ok")])
