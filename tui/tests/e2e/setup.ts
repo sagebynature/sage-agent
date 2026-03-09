@@ -63,6 +63,7 @@ interface ServeCommand {
 }
 
 const here = fileURLToPath(new URL(".", import.meta.url));
+const workspaceRoot = resolve(here, "..", "..", "..");
 const defaultAgentPath = resolve(here, "test-agent.md");
 const activeClients = new Set<SageTestClient>();
 let cleanupHooksInstalled = false;
@@ -87,6 +88,7 @@ export class SageTestClient {
       serveCommand.command,
       [...serveCommand.prefixArgs, "serve", "--agent-config", agentConfigPath],
       {
+        cwd: workspaceRoot,
         stdio: ["pipe", "pipe", "pipe"],
       },
     );

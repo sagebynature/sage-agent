@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from sage.config import ComplexityConfig
-from sage.models import ComplexityFactor, ComplexityScore, Message, ToolSchema
+from sage.models import ComplexityFactor, ComplexityLevel, ComplexityScore, Message, ToolSchema
 
 
 def _message_text(messages: list[Message]) -> str:
@@ -14,7 +14,7 @@ def _system_text(messages: list[Message]) -> str:
     return "".join(msg.content or "" for msg in messages if msg.role == "system" and msg.content)
 
 
-def _derive_level(score: int, config: ComplexityConfig) -> str:
+def _derive_level(score: int, config: ComplexityConfig) -> ComplexityLevel:
     if score < config.simple_threshold:
         return "simple"
     if score < config.complex_threshold:

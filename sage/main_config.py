@@ -81,6 +81,10 @@ class MainConfig(BaseModel):
     categories: dict[str, CategoryConfig] = Field(default_factory=dict)
 
 
+def _default_main_config_path() -> Path:
+    return Path.home() / ".config" / "sage" / "config.toml"
+
+
 def resolve_main_config_path(cli_path: str | None = None) -> Path | None:
     """Resolve the main config file path using waterfall lookup.
 
@@ -114,7 +118,7 @@ def resolve_main_config_path(cli_path: str | None = None) -> Path | None:
         return cwd_config
 
     # 4. User home default
-    default = Path.home() / ".config" / "sage" / "config.toml"
+    default = _default_main_config_path()
     return default if default.exists() else None
 
 
@@ -160,6 +164,26 @@ def load_main_config(path: Path | None) -> MainConfig | None:
 
     logger.info("Loaded main config from %s", path.resolve())
     return config
+
+
+def load_resolved_main_config(cli_path: str | None = None) -> tuple[MainConfig | None, Path | None]:
+    """Load the resolved config, tolerating only an invalid implicit home fallback."""
+    resolved = resolve_main_config_path(cli_path)
+
+    try:
+        return load_main_config(resolved), resolved
+    except ConfigError:
+        using_implicit_home_fallback = (
+            cli_path is None
+            and os.environ.get("SAGE_CONFIG_PATH") is None
+            and not (Path.cwd() / "config.toml").exists()
+            and resolved == _default_main_config_path()
+        )
+        if not using_implicit_home_fallback:
+            raise
+
+        logger.warning("Ignoring invalid default home config at %s", resolved)
+        return None, None
 
 
 _ENV_VAR_RE = re.compile(r"\$\{([^}]+)\}")

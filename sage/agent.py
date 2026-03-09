@@ -16,7 +16,7 @@ from sage.complexity import score_turn_complexity
 from sage.config import AgentConfig, ComplexityConfig, load_config
 from sage.hooks.base import HookEvent
 from sage.hooks.registry import HookRegistry
-from sage.main_config import load_main_config, resolve_and_apply_env, resolve_main_config_path
+from sage.main_config import load_resolved_main_config, resolve_and_apply_env
 from sage.telemetry import (
     DefaultTelemetryRecorder,
     EventEnvelope,
@@ -513,7 +513,7 @@ class Agent:
         if resolved.is_dir():
             resolved = resolved / "AGENTS.md"
         if central is None:
-            central = load_main_config(resolve_main_config_path())
+            central, _ = load_resolved_main_config()
         resolve_and_apply_env(central)
         config = load_config(str(resolved), central=central)
         resolved_dir = resolve_skills_dir(

@@ -159,10 +159,10 @@ def cli(
     _setup_logging(log_config_path, verbose)
     ctx.ensure_object(dict)
     ctx.obj["yolo"] = yolo
-    from sage.main_config import resolve_main_config_path, load_main_config, resolve_and_apply_env
+    from sage.main_config import load_resolved_main_config, resolve_and_apply_env
 
-    resolved = resolve_main_config_path(main_config_path)
-    ctx.obj["main_config"] = load_main_config(resolved)
+    main_config, resolved = load_resolved_main_config(main_config_path)
+    ctx.obj["main_config"] = main_config
     ctx.obj["main_config_path"] = resolved
     resolve_and_apply_env(ctx.obj["main_config"])
 
