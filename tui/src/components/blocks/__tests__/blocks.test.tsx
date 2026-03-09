@@ -17,7 +17,7 @@ describe("StaticBlock", () => {
     expect(lastFrame()).toContain("hello world");
   });
 
-  it("renders text block with bullet and markdown", () => {
+  it("renders text block without a bullet prefix and preserves markdown text", () => {
     const block: OutputBlock = {
       id: "t1",
       type: "text",
@@ -25,7 +25,9 @@ describe("StaticBlock", () => {
       timestamp: 1000,
     };
     const { lastFrame } = render(<StaticBlock block={block} />);
-    expect(lastFrame()).toContain("●");
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("some");
+    expect(frame).not.toContain("● some");
   });
 
   it("renders tool block with summary", () => {

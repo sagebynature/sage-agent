@@ -177,15 +177,15 @@ function ThinkingIndicator({ startedAt }: { startedAt: number }): ReactNode {
   );
 }
 
-function ComplexityBadge({
-  score,
-  level,
-}: {
-  score: number;
-  level: "simple" | "medium" | "complex";
-}): ReactNode {
-  return <Text dimColor>{`Complexity C${score} ${level}`}</Text>;
-}
+// function ComplexityBadge({
+//   score,
+//   level,
+// }: {
+//   score: number;
+//   level: "simple" | "medium" | "complex";
+// }): ReactNode {
+//   return <Text dimColor>{`Complexity C${score} ${level}`}</Text>;
+// }
 
 interface ToolInfo {
   status: string;
@@ -293,7 +293,8 @@ function StreamContent({ content }: { content: string }): ReactNode {
         <Text dimColor>{"  ... ("}{truncatedCount + lines.length}{" lines, showing last "}{lines.length}{")"}</Text>
       )}
       {lines.map((line, i) => (
-        <Text key={i}>{i === 0 && truncatedCount === 0 ? `● ${line}` : `  ${line}`}</Text>
+        <Text key={i}>{line}</Text>
+        // <Text key={i}>{i === 0 && truncatedCount === 0 ? `● ${line}` : `  ${line}`}</Text>
       ))}
     </Box>
   );
@@ -323,12 +324,12 @@ export function ActiveStreamView({ stream }: ActiveStreamViewProps): ReactNode {
         <SpinnerProvider colorDepth={colorDepth}>
           <Box flexDirection="column">
             <ThinkingIndicator startedAt={stream.startedAt} />
-            {stream.complexity ? (
+            {/* {stream.complexity ? (
               <ComplexityBadge
                 score={stream.complexity.score}
                 level={stream.complexity.level}
               />
-            ) : null}
+            ) : null} */}
           </Box>
         </SpinnerProvider>
       ) : stream.content.length > 0 ? (

@@ -189,12 +189,9 @@ describe("blockReducer", () => {
     });
 
     expect(state.activeStream).toBeNull();
-    expect(state.completedBlocks).toHaveLength(2);
-    expect(state.completedBlocks[0]!.type).toBe("tool");
-    expect(state.completedBlocks[0]!.content).toBe("read_file");
-    expect(state.completedBlocks[0]!.tools).toHaveLength(1);
-    expect(state.completedBlocks[1]!.type).toBe("text");
-    expect(state.completedBlocks[1]!.content).toBe("Here is the file.");
+    expect(state.completedBlocks).toHaveLength(1);
+    expect(state.completedBlocks[0]!.type).toBe("text");
+    expect(state.completedBlocks[0]!.content).toBe("Here is the file.");
   });
 
   it("STREAM_END with error appends error block", () => {
@@ -322,9 +319,7 @@ describe("blockReducer", () => {
     });
 
     expect(state.activeStream).toBeNull();
-    const toolBlock = state.completedBlocks.find((b) => b.type === "tool");
-    expect(toolBlock).toBeDefined();
-    expect(toolBlock!.tools![0]!.status).toBe("completed");
+    expect(state.completedBlocks).toEqual([]);
   });
 
   it("STREAM_END with cancelled status marks running tools as cancelled", () => {
@@ -343,9 +338,7 @@ describe("blockReducer", () => {
       status: "cancelled",
     });
 
-    const toolBlock = state.completedBlocks.find((b) => b.type === "tool");
-    expect(toolBlock!.tools![0]!.status).toBe("failed");
-    expect(toolBlock!.tools![0]!.error).toBe("cancelled");
+    expect(state.completedBlocks).toEqual([]);
   });
 
   it("ADD_SYSTEM_BLOCK appends system block", () => {

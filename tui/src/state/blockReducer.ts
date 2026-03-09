@@ -143,28 +143,10 @@ function resolvePermissionStatus(
 
 function flattenStream(
   stream: ActiveStream,
-  endStatus: "success" | "error" | "cancelled",
+  _endStatus: "success" | "error" | "cancelled",
 ): OutputBlock[] {
   const blocks: OutputBlock[] = [];
   const now = Date.now();
-  for (const tool of stream.tools) {
-    const resolvedTool: ToolSummary =
-      tool.status === "running"
-        ? {
-            ...tool,
-            status: endStatus === "cancelled" ? "failed" : "completed",
-            error: endStatus === "cancelled" ? "cancelled" : tool.error,
-            durationMs: now - (tool.startedAt ?? stream.startedAt),
-          }
-        : tool;
-    blocks.push({
-      id: makeId("tool"),
-      type: "tool",
-      content: resolvedTool.name,
-      tools: [resolvedTool],
-      timestamp: now,
-    });
-  }
   const text = stream.content.trim();
   if (text.length > 0) {
     blocks.push({

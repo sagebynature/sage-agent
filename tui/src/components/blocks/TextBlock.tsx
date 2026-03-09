@@ -10,7 +10,7 @@ export function TextBlock({ content }: TextBlockProps): ReactNode {
   const rendered = renderMarkdown(content, false);
   return (
     <Box flexDirection="column">
-      <Text>{"● "}{rendered}</Text>
+      <Text>{rendered}</Text>
     </Box>
   );
 }

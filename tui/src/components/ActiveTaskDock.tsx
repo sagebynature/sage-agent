@@ -1,4 +1,4 @@
-import { Box, Text } from "ink";
+import { Box } from "ink";
 import { memo, type ReactNode } from "react";
 import type { ActiveStream } from "../types/blocks.js";
 import { ActiveStreamView } from "./ActiveStreamView.js";
@@ -15,9 +15,11 @@ export const ActiveTaskDock = memo(function ActiveTaskDock({
   const activeOnlyStreams = streams
     .map((stream) => ({
       ...stream,
-      tools: [],
+      tools: stream.tools.filter((tool) => tool.status === "running"),
     }))
-    .filter((stream) => stream.isThinking || stream.content.length > 0);
+    .filter(
+      (stream) => stream.isThinking || stream.content.length > 0 || stream.tools.length > 0,
+    );
 
   if (activeOnlyStreams.length === 0) {
     return null;
@@ -27,7 +29,6 @@ export const ActiveTaskDock = memo(function ActiveTaskDock({
 
   return (
     <Box flexDirection="column" width={width} paddingX={1}>
-      <Text dimColor>{"Active Tasks"}</Text>
       {orderedStreams.map((stream) => (
         <Box key={stream.runId} flexDirection="column" marginTop={1}>
           <ActiveStreamView stream={stream} />

@@ -140,7 +140,7 @@ export const InputPrompt = forwardRef(function InputPrompt(
       return;
     }
 
-    if (key.pageUp && mode === "normal") {
+    if (key.upArrow && mode === "normal") {
       const entry = history.navigateUp();
       if (entry !== undefined) {
         setValue(entry);
@@ -148,7 +148,7 @@ export const InputPrompt = forwardRef(function InputPrompt(
       return;
     }
 
-    if (key.pageDown && mode === "normal") {
+    if (key.downArrow && mode === "normal") {
       const entry = history.navigateDown();
       setValue(entry ?? "");
       return;

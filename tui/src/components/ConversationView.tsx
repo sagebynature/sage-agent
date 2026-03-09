@@ -15,11 +15,7 @@ export const ConversationView = memo(function ConversationView({
   return (
     <Box flexDirection="column" width={width} paddingX={1}>
       <Static items={completedBlocks}>
-        {(block) => (
-          <Box key={block.id} flexDirection="column">
-            <StaticBlock block={block} />
-          </Box>
-        )}
+        {(block) => <StaticBlock key={block.id} block={block} />}
       </Static>
     </Box>
   );

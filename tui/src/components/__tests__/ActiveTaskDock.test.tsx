@@ -26,11 +26,11 @@ describe("ActiveTaskDock", () => {
     const { lastFrame } = render(<ActiveTaskDock streams={[first, second]} />);
     const frame = lastFrame() ?? "";
 
-    expect(frame).toContain("Active Tasks");
+    // expect(frame).toContain("Active Tasks");
     expect(frame.indexOf("newer task")).toBeLessThan(frame.indexOf("older task"));
   });
 
-  it("does not render tool-only activity in the dock", () => {
+  it("renders only running tool activity in the dock", () => {
     const stream: ActiveStream = {
       runId: "run-1",
       content: "",
@@ -60,6 +60,9 @@ describe("ActiveTaskDock", () => {
     };
 
     const { lastFrame } = render(<ActiveTaskDock streams={[stream]} />);
-    expect(lastFrame()).toBe("");
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("delegate");
+    expect(frame).toContain("web_fetch");
+    expect(frame).not.toContain("web_search");
   });
 });
