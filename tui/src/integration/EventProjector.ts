@@ -1,6 +1,6 @@
 import type { BlockAction } from "../state/blockReducer.js";
 import type { EventRecord } from "../types/events.js";
-import type { PermissionState } from "../types/state.js";
+import type { PermissionRiskLevel, PermissionState } from "../types/state.js";
 import { makeId } from "../state/blockReducer.js";
 import type { ComplexitySummary } from "../types/blocks.js";
 
@@ -35,6 +35,12 @@ function agentParentName(agentPath: string[]): string | undefined {
   return agentPath.length > 1 ? agentPath[agentPath.length - 2] : undefined;
 }
 
+function asPermissionRiskLevel(value: unknown): PermissionRiskLevel {
+  return value === "low" || value === "medium" || value === "high" || value === "critical"
+    ? value
+    : "medium";
+}
+
 export class EventProjector {
   private readonly pendingCalls = new Map<string, string[]>();
 
@@ -59,9 +65,10 @@ export class EventProjector {
         const explicitCallId = asString(payload.tool_call_id) ?? asString(payload.toolCallId) ?? asString(payload.callId);
         const callId = explicitCallId ?? makeId("toolcall");
         if (!explicitCallId) {
-          const pending = this.pendingCalls.get(toolName) ?? [];
+          const pendingKey = this.pendingToolKey(event, toolName);
+          const pending = this.pendingCalls.get(pendingKey) ?? [];
           pending.push(callId);
-          this.pendingCalls.set(toolName, pending);
+          this.pendingCalls.set(pendingKey, pending);
         }
         return [{
           type: "TOOL_STARTED",
@@ -78,11 +85,18 @@ export class EventProjector {
         const explicitCallId = asString(payload.tool_call_id) ?? asString(payload.toolCallId) ?? asString(payload.callId);
         let callId = explicitCallId;
         if (!callId) {
-          const pending = this.pendingCalls.get(toolName);
+          const pendingKey = this.pendingToolKey(event, toolName);
+          const pending = this.pendingCalls.get(pendingKey);
           if (pending && pending.length > 0) {
             callId = pending.shift()!;
+            if (pending.length === 0) {
+              this.pendingCalls.delete(pendingKey);
+            }
           } else {
-            callId = `call_0_${toolName}`;
+            return [{
+              type: "ADD_SYSTEM_BLOCK",
+              content: `Tool ${toolName} completed without matching start`,
+            }];
           }
         }
         if (!callId) {
@@ -116,10 +130,7 @@ export class EventProjector {
           tool: asString(payload.tool) ?? "tool",
           arguments: asRecord(payload.arguments),
           command: asString(payload.command),
-          riskLevel:
-            payload.riskLevel === "low" || payload.riskLevel === "medium" || payload.riskLevel === "high"
-              ? payload.riskLevel
-              : "medium",
+          riskLevel: asPermissionRiskLevel(payload.riskLevel),
           status: "pending",
         };
         return [{ type: "PERMISSION_REQUEST", permission }];
@@ -199,5 +210,11 @@ export class EventProjector {
       default:
         return [];
     }
+  }
+
+  private pendingToolKey(event: EventRecord, toolName: string): string {
+    const runId = event.runId ?? "no-run";
+    const agentPath = event.agentPath.join("/") || event.agentName;
+    return `${runId}::${agentPath}::${toolName}`;
   }
 }

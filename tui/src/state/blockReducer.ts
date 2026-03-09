@@ -532,7 +532,6 @@ export function blockReducer(
       const nextUi = {
         ...state.ui,
         verbosity: action.verbosity,
-        showEventPane: action.verbosity !== "compact",
       };
       return {
         ...state,

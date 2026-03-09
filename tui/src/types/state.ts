@@ -5,6 +5,8 @@ export type PermissionDecision =
   | "deny"
   | "edit";
 
+export type PermissionRiskLevel = "low" | "medium" | "high" | "critical";
+
 export type PermissionStatus = "pending" | "approved" | "denied";
 
 export type AgentStatus = "idle" | "active" | "completed" | "failed";
@@ -14,7 +16,7 @@ export interface PermissionState {
   tool: string;
   arguments: Record<string, unknown>;
   command?: string;
-  riskLevel: "low" | "medium" | "high";
+  riskLevel: PermissionRiskLevel;
   status: PermissionStatus;
 }
 

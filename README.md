@@ -533,7 +533,7 @@ sage/
 tui/                # TypeScript terminal UI (Ink v6 + React 19)
   src/
     components/     # ConversationView, ActiveStreamView, EventTimeline, EventInspector, …
-    integration/    # EventNormalizer, EventProjector, BlockEventRouter, LifecycleManager
+    integration/    # EventNormalizer, EventProjector, BlockEventRouter
     state/          # BlockContext + blockReducer (block-based state management)
     ipc/            # SageClient (JSON-RPC over stdio)
     renderer/       # Markdown + syntax-highlighted code blocks

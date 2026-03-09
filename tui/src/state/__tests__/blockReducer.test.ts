@@ -549,4 +549,18 @@ describe("blockReducer", () => {
     });
     expect(state.ui.selectedEventId).toBe("llm-1");
   });
+
+  it("SET_VERBOSITY does not implicitly toggle the event pane", () => {
+    let state = blockReducer(INITIAL_BLOCK_STATE, { type: "SET_VERBOSITY", verbosity: "debug" });
+    expect(state.ui.showEventPane).toBe(false);
+
+    state = blockReducer(state, { type: "TOGGLE_EVENT_PANE" });
+    expect(state.ui.showEventPane).toBe(true);
+
+    state = blockReducer(state, { type: "SET_VERBOSITY", verbosity: "normal" });
+    expect(state.ui.showEventPane).toBe(true);
+
+    state = blockReducer(state, { type: "SET_VERBOSITY", verbosity: "compact" });
+    expect(state.ui.showEventPane).toBe(true);
+  });
 });

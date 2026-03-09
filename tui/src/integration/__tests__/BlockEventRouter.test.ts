@@ -171,4 +171,19 @@ describe("BlockEventRouter", () => {
     router.handleNotification(METHODS.STREAM_DELTA, { delta: "ignored" });
     expect(dispatched.some((a) => a.type === "STREAM_DELTA")).toBe(false);
   });
+
+  it("preserves critical permission risk levels from backend notifications", () => {
+    router.handleNotification(METHODS.PERMISSION_REQUEST, {
+      request_id: "perm-1",
+      tool: "shell",
+      arguments: { command: "rm -rf /tmp/demo" },
+      riskLevel: "critical",
+    });
+
+    const action = dispatched.find((candidate) => candidate.type === "PERMISSION_REQUEST");
+    expect(action).toBeDefined();
+    if (action?.type === "PERMISSION_REQUEST") {
+      expect(action.permission.riskLevel).toBe("critical");
+    }
+  });
 });

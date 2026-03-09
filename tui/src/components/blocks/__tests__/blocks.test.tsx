@@ -27,7 +27,7 @@ describe("StaticBlock", () => {
     const { lastFrame } = render(<StaticBlock block={block} />);
     const frame = lastFrame() ?? "";
     expect(frame).toContain("some");
-    expect(frame).not.toContain("● some");
+    expect(frame).not.toContain("• some");
   });
 
   it("renders tool block with summary", () => {
@@ -47,7 +47,7 @@ describe("StaticBlock", () => {
       timestamp: 1000,
     };
     const { lastFrame } = render(<StaticBlock block={block} />);
-    expect(lastFrame()).toContain("●");
+    expect(lastFrame()).toContain("•");
     expect(lastFrame()).toContain("Read");
   });
 

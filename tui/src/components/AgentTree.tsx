@@ -15,7 +15,7 @@ function nodeKey(node: AgentNodeType): string {
 
 const StatusIndicator = ({ status }: { status: AgentNodeType['status'] }) => {
   if (status === 'active') {
-    return <Text color="yellow">●</Text>;
+    return <Text color="yellow">•</Text>;
   }
   if (status === 'completed') {
     return <Text color="green">✓</Text>;

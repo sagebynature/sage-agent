@@ -295,7 +295,7 @@ function StreamContent({ content }: { content: string }): ReactNode {
       )}
       {lines.map((line, i) => (
         <Text key={i}>{line}</Text>
-        // <Text key={i}>{i === 0 && truncatedCount === 0 ? `● ${line}` : `  ${line}`}</Text>
+        // <Text key={i}>{i === 0 && truncatedCount === 0 ? `• ${line}` : `  ${line}`}</Text>
       ))}
     </Box>
   );

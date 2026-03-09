@@ -20,13 +20,13 @@ export function StaticBlock({ block }: StaticBlockProps): ReactNode {
     case "error":
       return (
         <Box>
-          <Text color="red">{"● "}{block.content}</Text>
+          <Text color="red">{"• "}{block.content}</Text>
         </Box>
       );
     case "system":
       return (
         <Box>
-          <Text dimColor italic>{"● "}{block.content}</Text>
+          <Text dimColor italic>{"• "}{block.content}</Text>
         </Box>
       );
     default:

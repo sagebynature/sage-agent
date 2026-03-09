@@ -2,7 +2,6 @@ import { render } from 'ink-testing-library';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PermissionPrompt } from '../PermissionPrompt.js';
 import { PermissionState } from '../../types/state.js';
-import { permissionStore } from '../../state/permissions.js';
 
 describe('PermissionPrompt', () => {
   const mockRequest: PermissionState = {
@@ -17,7 +16,6 @@ describe('PermissionPrompt', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    permissionStore.clear();
   });
 
   it('renders tool name and arguments', () => {
@@ -42,14 +40,6 @@ describe('PermissionPrompt', () => {
     const { stdin } = render(<PermissionPrompt request={mockRequest} onRespond={onRespond} />);
     stdin.write('a');
     expect(onRespond).toHaveBeenCalledWith('req-123', 'allow_session');
-    expect(permissionStore.isAutoApproved('file_read', {})).toBe(true);
-  });
-
-  it('handles "s" input for allow_similar', () => {
-    const { stdin } = render(<PermissionPrompt request={mockRequest} onRespond={onRespond} />);
-    stdin.write('s');
-    expect(onRespond).toHaveBeenCalledWith('req-123', 'allow_session');
-    expect(permissionStore.isAutoApproved('file_read', { path: 'test.txt' })).toBe(true);
   });
 
 
@@ -83,20 +73,6 @@ describe('PermissionPrompt', () => {
     stdin.write('\r'); // Enter
     await delay(50);
     expect(lastFrame()).toContain('Invalid JSON');
-  });
-
-
-  it('auto-approves if store has session grant', () => {
-    permissionStore.addSessionGrant('file_read');
-    render(<PermissionPrompt request={mockRequest} onRespond={onRespond} />);
-    // useEffect runs after render, but in testing library it might be sync or require wait
-    // We expect onRespond to be called immediately
-    expect(onRespond).toHaveBeenCalledWith('req-123', 'allow_session');
-  });
-
-  it('does not auto-approve if store has no grant', () => {
-    render(<PermissionPrompt request={mockRequest} onRespond={onRespond} />);
-    expect(onRespond).not.toHaveBeenCalled();
   });
 
   it('renders red border for high risk', () => {

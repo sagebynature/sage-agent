@@ -20,7 +20,7 @@ describe('ToolDisplay', () => {
   it('renders single completed tool with name', () => {
     const { lastFrame } = render(<ToolDisplay tools={[mockTool({ name: 'shell' })]} />);
     const frame = lastFrame() ?? '';
-    expect(frame).toContain('●');
+    expect(frame).toContain('•');
     expect(frame).toContain('shell');
   });
 

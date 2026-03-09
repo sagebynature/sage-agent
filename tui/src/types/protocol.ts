@@ -1,3 +1,5 @@
+import type { PermissionDecision, PermissionRiskLevel } from "./state.js";
+
 // JSON-RPC 2.0 base types
 export interface JsonRpcRequest {
   jsonrpc: "2.0";
@@ -60,9 +62,9 @@ export interface ConfigSetParams {
 export interface ToolsListParams {}
 
 export interface PermissionRespondParams {
-  requestId: string;
-  decision: "allow_once" | "allow_always" | "allow_session" | "deny" | "edit";
-  editedCommand?: string;
+  request_id: string;
+  decision: PermissionDecision;
+  arguments?: Record<string, unknown>;
 }
 
 // Response types
@@ -136,11 +138,13 @@ export interface BackgroundCompletedPayload {
 }
 
 export interface PermissionRequestPayload {
+  id: string;
   requestId: string;
+  request_id: string;
   tool: string;
   arguments: Record<string, unknown>;
   command?: string;
-  riskLevel: "low" | "medium" | "high";
+  riskLevel: PermissionRiskLevel;
 }
 
 export interface UsageUpdatePayload {

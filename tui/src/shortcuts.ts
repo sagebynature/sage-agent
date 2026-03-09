@@ -8,21 +8,21 @@ export interface InputKey {
 }
 
 export const SHORTCUT_LABELS = {
-  leader: "Ctrl+G",
-  clear: "Ctrl+G, L",
-  reset: "Ctrl+G, N",
-  approvePermission: "Ctrl+G, P",
-  saveSession: "Ctrl+G, S",
-  toggleVerbosity: "Ctrl+G, V",
-  toggleEventPane: "Ctrl+G, E",
+  leader: "Ctrl+Space",
+  clear: "Ctrl+Space, L",
+  reset: "Ctrl+Space, N",
+  approvePermission: "Ctrl+Space, P",
+  saveSession: "Ctrl+Space, S",
+  toggleVerbosity: "Ctrl+Space, V",
+  toggleEventPane: "Ctrl+Space, E",
   quit: "Ctrl+C",
   newline: "Ctrl+J",
-  previousEvent: "Ctrl+G, Up",
-  nextEvent: "Ctrl+G, Down",
+  previousEvent: "Ctrl+Space, Up",
+  nextEvent: "Ctrl+Space, Down",
 } as const;
 
 export function isLeaderShortcut(input: string, key: InputKey): boolean {
-  return Boolean(key.ctrl && input === "g");
+  return input === "\0" || Boolean(key.ctrl && (input === " " || input === "`"));
 }
 
 export type LeaderAction =

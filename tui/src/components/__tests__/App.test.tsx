@@ -1,6 +1,7 @@
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import { App } from "../App.js";
 import { renderApp, waitForText } from "../../test-utils.js";
+import { METHODS } from "../../types/protocol.js";
 
 vi.mock("../../hooks/useResizeHandler.js", () => ({
   useResizeHandler: () => ({ width: 160, height: 40 }),
@@ -17,6 +18,9 @@ const mockRequest = vi.hoisted(() =>
     return {};
   }),
 );
+const notificationHandlers = vi.hoisted(
+  () => new Map<string, Set<(params: Record<string, unknown>) => void>>(),
+);
 
 vi.mock("../../ipc/client.js", async () => {
   const { EventEmitter } = await import("node:events");
@@ -30,8 +34,18 @@ vi.mock("../../ipc/client.js", async () => {
       return mockRequest(method, params) as Promise<T>;
     }
 
-    onNotification(): () => void {
-      return () => {};
+    onNotification(method: string, callback: (params: Record<string, unknown>) => void): () => void {
+      const handlers = notificationHandlers.get(method) ?? new Set();
+      handlers.add(callback);
+      notificationHandlers.set(method, handlers);
+
+      return () => {
+        const current = notificationHandlers.get(method);
+        current?.delete(callback);
+        if (current && current.size === 0) {
+          notificationHandlers.delete(method);
+        }
+      };
     }
 
     dispose(): void {}
@@ -40,7 +54,23 @@ vi.mock("../../ipc/client.js", async () => {
   return { SageClient: MockSageClient };
 });
 
+function emitNotification(method: string, params: Record<string, unknown>): void {
+  const handlers = notificationHandlers.get(method);
+  if (!handlers) {
+    return;
+  }
+
+  for (const handler of handlers) {
+    handler(params);
+  }
+}
+
 describe("App Shell", () => {
+  beforeEach(() => {
+    mockRequest.mockClear();
+    notificationHandlers.clear();
+  });
+
   it("renders main layout with input prompt and bottom bar", () => {
     const { lastFrame } = renderApp(<App />);
     const frame = lastFrame();
@@ -91,13 +121,13 @@ describe("App Shell", () => {
     expect(app.lastFrame() ?? "").toContain("second");
   });
 
-  it("supports ctrl+g leader shortcuts for terminal-safe controls", async () => {
+  it("supports ctrl+space leader shortcuts for terminal-safe controls", async () => {
     const app = renderApp(<App />);
 
     expect(app.lastFrame() ?? "").toContain("compact");
     expect(app.lastFrame() ?? "").not.toContain(" | leader");
 
-    app.stdin.write("\u0007");
+    app.stdin.write("\u0000");
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(app.lastFrame() ?? "").toContain(" | leader");
 
@@ -106,7 +136,7 @@ describe("App Shell", () => {
     expect(app.lastFrame() ?? "").toContain("normal");
     expect(app.lastFrame() ?? "").not.toContain("> v");
 
-    app.stdin.write("\u0007");
+    app.stdin.write("\u0000");
     await new Promise((resolve) => setTimeout(resolve, 20));
     app.stdin.write("e");
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -116,7 +146,7 @@ describe("App Shell", () => {
   it("cancels leader mode on escape without mutating the prompt", async () => {
     const app = renderApp(<App />);
 
-    app.stdin.write("\u0007");
+    app.stdin.write("\u0000");
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(app.lastFrame() ?? "").toContain(" | leader");
 
@@ -127,5 +157,29 @@ describe("App Shell", () => {
     app.stdin.write("v");
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(app.lastFrame() ?? "").toContain("> v");
+  });
+
+  it("renders only the first pending permission prompt and queues the rest", async () => {
+    const app = renderApp(<App />);
+
+    emitNotification(METHODS.PERMISSION_REQUEST, {
+      request_id: "perm-1",
+      tool: "file_read",
+      arguments: { path: "one.txt" },
+      riskLevel: "low",
+    });
+    emitNotification(METHODS.PERMISSION_REQUEST, {
+      request_id: "perm-2",
+      tool: "file_write",
+      arguments: { path: "two.txt" },
+      riskLevel: "high",
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const frame = app.lastFrame() ?? "";
+    expect(frame).toContain("file_read");
+    expect(frame).not.toContain("file_write");
+    expect(frame).toContain("1 more permission request queued");
   });
 });

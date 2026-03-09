@@ -6,7 +6,8 @@ describe("MarkdownRenderer", () => {
   it("renders headings", () => {
     const { lastFrame } = renderApp(<MarkdownRenderer content="# Title" />);
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("# Title");
+    expect(frame).toContain("Title");
+    expect(frame).toContain("═");
   });
 
   it("renders bold and italic text", () => {
@@ -33,13 +34,34 @@ describe("MarkdownRenderer", () => {
   it("renders unordered lists", () => {
     const { lastFrame } = renderApp(<MarkdownRenderer content="- one\n- two" />);
     const frame = lastFrame() ?? "";
+    expect(frame).toContain("•");
     expect(frame).toContain("one");
     expect(frame).toContain("two");
+  });
+
+  it("renders ordered and nested lists with clearer markers", () => {
+    const { lastFrame } = renderApp(<MarkdownRenderer content={"1. first\n2. second\n   - nested"} />);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("1.");
+    expect(frame).toContain("2.");
+    expect(frame).toContain("◦");
+    expect(frame).toContain("nested");
+  });
+
+  it("renders task lists with checkbox glyphs", () => {
+    const { lastFrame } = renderApp(<MarkdownRenderer content={"- [x] done\n- [ ] todo"} />);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("☑");
+    expect(frame).toContain("☐");
+    expect(frame).toContain("done");
+    expect(frame).toContain("todo");
   });
 
   it("renders blockquotes", () => {
     const { lastFrame } = renderApp(<MarkdownRenderer content="> quoted" />);
     const frame = lastFrame() ?? "";
+    expect(frame).toContain("quote");
+    expect(frame).toContain("│");
     expect(frame).toContain("quoted");
   });
 
@@ -67,7 +89,7 @@ describe("MarkdownRenderer", () => {
     );
     const frame = lastFrame() ?? "";
     expect(frame).toContain("Sage");
-    expect(frame).toContain("example.com/docs");
+    expect(frame).toContain("<https://example.com/docs>");
   });
 
   it("strips HTML from input", () => {

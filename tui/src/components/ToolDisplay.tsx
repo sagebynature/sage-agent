@@ -56,7 +56,7 @@ function ToolDisplayComponent({ tools }: ToolDisplayProps): ReactNode {
         ? `${primary.name} (${tools.length} calls)`
         : `${tools.length} tool calls`;
 
-  const icon = isFailed ? "✗" : "●";
+  const icon = isFailed ? "✗" : "•";
   const iconColor = isFailed ? "red" : undefined;
 
   return (

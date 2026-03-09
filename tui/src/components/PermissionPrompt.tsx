@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import { highlight } from 'cli-highlight';
 import type { PermissionState, PermissionDecision } from '../types/state.js';
-import { permissionStore } from '../state/permissions.js';
 
 interface PermissionPromptProps {
   request: PermissionState;
@@ -20,6 +19,7 @@ const getRiskColor = (tool: string, reportedLevel: string): string => {
   if (LOW_RISK_TOOLS.includes(tool)) return 'green';
 
   switch (reportedLevel) {
+    case 'critical': return 'red';
     case 'high': return 'red';
     case 'low': return 'green';
     default: return 'yellow';
@@ -32,12 +32,6 @@ export const PermissionPrompt: React.FC<PermissionPromptProps> = ({ request, onR
   const [error, setError] = useState<string | null>(null);
 
   const { tool, arguments: args, riskLevel, id } = request;
-
-  useEffect(() => {
-    if (!isEditing && permissionStore.isAutoApproved(tool, args)) {
-      onRespond(id, 'allow_session');
-    }
-  }, [id, tool, args, isEditing, onRespond]);
 
   const riskColor = useMemo(() => getRiskColor(tool, riskLevel), [tool, riskLevel]);
 
@@ -53,10 +47,6 @@ export const PermissionPrompt: React.FC<PermissionPromptProps> = ({ request, onR
     if (input === 'y') {
       onRespond(id, 'allow_once');
     } else if (input === 'a') {
-      permissionStore.addSessionGrant(tool);
-      onRespond(id, 'allow_session');
-    } else if (input === 's') {
-      permissionStore.addSimilarGrant(tool, args);
       onRespond(id, 'allow_session');
     } else if (input === 'n') {
       onRespond(id, 'deny');
@@ -110,7 +100,7 @@ export const PermissionPrompt: React.FC<PermissionPromptProps> = ({ request, onR
 
       <Box>
         <Text color="gray">
-          [y] Allow Once  [a] Allow Session  [s] Allow Similar  [n] Deny  [e] Edit
+          [y] Allow Once  [a] Allow Session  [n] Deny  [e] Edit
         </Text>
       </Box>
     </Box>

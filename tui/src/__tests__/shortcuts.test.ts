@@ -5,9 +5,11 @@ import {
 } from "../shortcuts.js";
 
 describe("shortcut helpers", () => {
-  it("recognizes the ctrl+g leader key", () => {
-    expect(isLeaderShortcut("g", { ctrl: true })).toBe(true);
-    expect(isLeaderShortcut("g", {})).toBe(false);
+  it("recognizes the ctrl+space leader key", () => {
+    expect(isLeaderShortcut("\0", {})).toBe(true);
+    expect(isLeaderShortcut(" ", { ctrl: true })).toBe(true);
+    expect(isLeaderShortcut("`", { ctrl: true })).toBe(true);
+    expect(isLeaderShortcut("g", { ctrl: true })).toBe(false);
   });
 
   it("resolves leader actions from the follow-up key", () => {
@@ -20,7 +22,8 @@ describe("shortcut helpers", () => {
     expect(resolveLeaderAction("", { upArrow: true })).toBe("previousEvent");
     expect(resolveLeaderAction("", { downArrow: true })).toBe("nextEvent");
     expect(resolveLeaderAction("", { escape: true })).toBe("cancel");
-    expect(resolveLeaderAction("g", { ctrl: true })).toBe("cancel");
+    expect(resolveLeaderAction("`", { ctrl: true })).toBe("cancel");
+    expect(resolveLeaderAction("\0", {})).toBe("cancel");
     expect(resolveLeaderAction("x", {})).toBe(null);
   });
 });

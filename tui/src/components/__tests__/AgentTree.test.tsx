@@ -43,7 +43,7 @@ describe('AgentTree', () => {
     const { lastFrame } = render(<AgentTree />);
     expect(lastFrame()).toContain('root-agent');
     expect(lastFrame()).toContain('Root Task');
-    expect(lastFrame()).toContain('●');
+    expect(lastFrame()).toContain('•');
   });
 
   it('renders a nested agent hierarchy', () => {
@@ -85,8 +85,8 @@ describe('AgentTree', () => {
     const { lastFrame } = render(<AgentTree />);
     const frame = lastFrame();
     expect(frame).toContain('root');
-    expect(frame).toContain('└── ● level1');
-    expect(frame).toContain('└── ● level2');
+    expect(frame).toContain('└── • level1');
+    expect(frame).toContain('└── • level2');
   });
 
   it('displays correct status indicators', () => {
@@ -101,7 +101,7 @@ describe('AgentTree', () => {
     };
     const { lastFrame } = render(<AgentTree />);
     const frame = lastFrame() || '';
-    expect(frame).toContain('●');
+    expect(frame).toContain('•');
     expect(frame).toContain('✓');
     expect(frame).toContain('✗');
     expect(frame).toContain('◌');

@@ -77,7 +77,7 @@ function ModeIndicator({ props }: { props: BottomBarProps }): ReactNode {
   if (props.leaderActive) {
     return (
       <Text color="cyan">
-        {"● leader"}
+        {"• leader"}
         <Text dimColor>{" — [v]erbosity [e]vents [l]clear [n]reset [p]approve [s]save [↑/↓] event [esc] cancel"}</Text>
       </Text>
     );
@@ -87,11 +87,11 @@ function ModeIndicator({ props }: { props: BottomBarProps }): ReactNode {
 
   switch (mode) {
     case "connecting":
-      return <Text color="yellow">{"● connecting..."}</Text>;
+      return <Text color="yellow">{"• connecting..."}</Text>;
     case "streaming":
       return (
         <Text>
-          <Text color="yellow">{"● streaming"}</Text>
+          <Text color="yellow">{"• streaming"}</Text>
           <Text dimColor>{" — ESC to cancel"}</Text>
         </Text>
       );
@@ -99,7 +99,7 @@ function ModeIndicator({ props }: { props: BottomBarProps }): ReactNode {
       const running = props.activeStream?.tools.find((t) => t.status === "running");
       return (
         <Text>
-          <Text color="blue">{"● "}{running?.name ?? "tool"}</Text>
+          <Text color="blue">{"• "}{running?.name ?? "tool"}</Text>
           <Text dimColor>{" — ESC to cancel"}</Text>
         </Text>
       );
@@ -109,13 +109,12 @@ function ModeIndicator({ props }: { props: BottomBarProps }): ReactNode {
         <Text>
           <Text color="green">[y]</Text>{" Once "}
           <Text color="green">[a]</Text>{" Session "}
-          <Text color="green">[s]</Text>{" Similar "}
           <Text color="red">[n]</Text>{" Deny "}
           <Text color="yellow">[e]</Text>{" Edit"}
         </Text>
       );
     case "error":
-      return <Text color="red">{"● error — ESC to dismiss"}</Text>;
+      return <Text color="red">{"• error — ESC to dismiss"}</Text>;
     case "idle":
       return <Text dimColor>{`/ commands | ${SHORTCUT_LABELS.leader.toLowerCase()} shortcuts | ${SHORTCUT_LABELS.quit.toLowerCase()} quit`}</Text>;
     default:

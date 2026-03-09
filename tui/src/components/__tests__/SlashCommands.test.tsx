@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { render } from 'ink-testing-library';
 import { SlashCommands } from '../SlashCommands.js';
 
@@ -9,6 +9,10 @@ describe('SlashCommands', () => {
     onSelect: vi.fn(),
     onDismiss: vi.fn(),
   };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
   it('renders nothing when not active', () => {
     const { lastFrame } = render(<SlashCommands {...defaultProps} isActive={false} />);
@@ -61,7 +65,7 @@ describe('SlashCommands', () => {
     await new Promise(resolve => setTimeout(resolve, 10));
     stdin.write('\r');
 
-    expect(defaultProps.onSelect).toHaveBeenCalledWith('compact', '');
+    expect(defaultProps.onSelect).toHaveBeenCalledWith('models', '');
   });
 
   it('selects command with Tab', () => {

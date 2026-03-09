@@ -123,18 +123,18 @@ Type `/` in the input area to open the command palette. 24 commands available:
 | Key | Description |
 |-----|-------------|
 | `PageUp` / `PageDown` | Scroll inspector |
-| `Ctrl+G`, then `↑` / `↓` | Previous / next event |
+| `Ctrl+Space`, then `↑` / `↓` | Previous / next event |
 
 ### Leader Shortcuts
 
 | Key | Description |
 |-----|-------------|
-| `Ctrl+G`, then `N` | New session (reset) |
-| `Ctrl+G`, then `L` | Clear conversation |
-| `Ctrl+G`, then `S` | Save session feedback |
-| `Ctrl+G`, then `V` | Cycle event verbosity |
-| `Ctrl+G`, then `E` | Toggle event pane |
-| `Ctrl+G`, then `P` | Approve pending permission |
+| `Ctrl+Space`, then `N` | New session (reset) |
+| `Ctrl+Space`, then `L` | Clear conversation |
+| `Ctrl+Space`, then `S` | Save session feedback |
+| `Ctrl+Space`, then `V` | Cycle event verbosity |
+| `Ctrl+Space`, then `E` | Toggle event pane |
+| `Ctrl+Space`, then `P` | Approve pending permission |
 
 ### Input
 
@@ -178,8 +178,7 @@ tui/src/
 ├── integration/           # Event processing pipeline
 │   ├── EventNormalizer.ts # Normalize raw RPC events to canonical EventRecord
 │   ├── EventProjector.ts  # Project EventRecords to block state mutations
-│   ├── BlockEventRouter.ts # Route events to block components
-│   └── LifecycleManager.ts # Component lifecycle coordination
+│   └── BlockEventRouter.ts # Route events to block components
 ├── renderer/              # Markdown + syntax-highlighted code blocks
 ├── hooks/                 # useInputHistory, useResizeHandler, useMessageQueue
 ├── commands/              # Slash command registry (24 commands)
