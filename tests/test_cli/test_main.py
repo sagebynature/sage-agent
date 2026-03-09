@@ -11,6 +11,7 @@ from click.testing import CliRunner
 from sage.cli.main import _resolve_primary_agent, cli
 from sage.exceptions import ConfigError
 from sage.main_config import MainConfig
+from sage.permissions.allow_all import AllowAllPermissionHandler
 
 
 def _write_valid_config(tmp_path: Path) -> Path:
@@ -240,6 +241,9 @@ class TestAgentRun:
         mock_agent = MagicMock()
         mock_agent.run = AsyncMock(return_value="Hello from the agent!")
         mock_agent.close = AsyncMock()
+        mock_agent.tool_registry = MagicMock()
+        mock_agent.tool_registry.set_permission_handler = MagicMock()
+        mock_agent.subagents = {}
 
         mock_cls = MagicMock()
         mock_cls.from_config.return_value = mock_agent
@@ -260,6 +264,9 @@ class TestAgentRun:
         config_path = _write_valid_config(tmp_path)
         mock_agent = MagicMock()
         mock_agent.close = AsyncMock()
+        mock_agent.tool_registry = MagicMock()
+        mock_agent.tool_registry.set_permission_handler = MagicMock()
+        mock_agent.subagents = {}
 
         async def mock_stream(input: str):  # noqa: A002
             for chunk in ["Hello", " from", " stream!"]:
@@ -308,6 +315,9 @@ class TestAgentRun:
         mock_agent = MagicMock()
         mock_agent.run = AsyncMock(return_value="Hello from dir!")
         mock_agent.close = AsyncMock()
+        mock_agent.tool_registry = MagicMock()
+        mock_agent.tool_registry.set_permission_handler = MagicMock()
+        mock_agent.subagents = {}
 
         mock_cls = MagicMock()
         mock_cls.from_config.return_value = mock_agent
@@ -339,6 +349,9 @@ class TestAgentRun:
         mock_agent = MagicMock()
         mock_agent.run = AsyncMock(return_value="Inferred!")
         mock_agent.close = AsyncMock()
+        mock_agent.tool_registry = MagicMock()
+        mock_agent.tool_registry.set_permission_handler = MagicMock()
+        mock_agent.subagents = {}
 
         mock_cls = MagicMock()
         mock_cls.from_config.return_value = mock_agent
@@ -354,3 +367,30 @@ class TestAgentRun:
             )
             assert result.exit_code == 0
             assert "Inferred!" in result.output
+
+    def test_run_with_yolo_installs_allow_all_permission_handler(self, tmp_path: Path) -> None:
+        config_path = _write_valid_config(tmp_path)
+        mock_agent = MagicMock()
+        mock_agent.run = AsyncMock(return_value="Hello from the agent!")
+        mock_agent.close = AsyncMock()
+        mock_agent.tool_registry = MagicMock()
+        mock_agent.tool_registry.set_permission_handler = MagicMock()
+        mock_agent.subagents = {}
+
+        mock_cls = MagicMock()
+        mock_cls.from_config.return_value = mock_agent
+
+        with patch.dict(
+            "sys.modules",
+            {"sage.agent": MagicMock(Agent=mock_cls)},
+        ):
+            runner = CliRunner()
+            result = runner.invoke(
+                cli,
+                ["--yolo", "agent", "run", str(config_path), "-i", "Hello"],
+            )
+
+        assert result.exit_code == 0, result.output
+        mock_agent.tool_registry.set_permission_handler.assert_called_once()
+        handler = mock_agent.tool_registry.set_permission_handler.call_args.args[0]
+        assert isinstance(handler, AllowAllPermissionHandler)

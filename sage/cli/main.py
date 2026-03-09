@@ -60,6 +60,13 @@ def _get_main_config(ctx: click.Context) -> MainConfig | None:
     return obj.get("main_config")
 
 
+def _yolo_enabled(ctx: click.Context, local_yolo: bool = False) -> bool:
+    """Return whether YOLO permission bypass is enabled for this command."""
+    root = ctx.find_root()
+    root_obj = root.ensure_object(dict)
+    return local_yolo or bool(root_obj.get("yolo"))
+
+
 def _resolve_primary_agent(
     main_config: MainConfig | None,
     config_file_path: Path | None = None,
@@ -132,14 +139,26 @@ def _resolve_primary_agent(
     default=False,
     help="Enable debug logging for sage internals",
 )
+@click.option(
+    "--yolo",
+    "-y",
+    is_flag=True,
+    default=False,
+    help="Bypass all tool permission checks",
+)
 @click.pass_context
 def cli(
-    ctx: click.Context, main_config_path: str | None, log_config_path: str | None, verbose: bool
+    ctx: click.Context,
+    main_config_path: str | None,
+    log_config_path: str | None,
+    verbose: bool,
+    yolo: bool,
 ) -> None:
     """Sage - AI agent definition and deployment."""
     load_dotenv()
     _setup_logging(log_config_path, verbose)
     ctx.ensure_object(dict)
+    ctx.obj["yolo"] = yolo
     from sage.main_config import resolve_main_config_path, load_main_config, resolve_and_apply_env
 
     resolved = resolve_main_config_path(main_config_path)
@@ -158,6 +177,7 @@ def agent() -> None:
 @click.option("--input", "-i", "user_input", required=True, help="Input to send to the agent")
 @click.option("--stream", "use_stream", is_flag=True, help="Stream the response")
 @click.option("--verbose", "show_activity", is_flag=True, help="Show live agent activity.")
+@click.option("--yolo", "-y", "local_yolo", is_flag=True, help="Bypass all tool permission checks")
 @click.pass_context
 def agent_run(
     ctx: click.Context,
@@ -165,6 +185,7 @@ def agent_run(
     user_input: str,
     use_stream: bool,
     show_activity: bool,
+    local_yolo: bool,
 ) -> None:
     """Run an agent from a config file.
 
@@ -174,7 +195,16 @@ def agent_run(
         main_config = _get_main_config(ctx)
         if config_path is None:
             config_path = _resolve_primary_agent(main_config, ctx.obj.get("main_config_path"))
-        asyncio.run(_agent_run(config_path, user_input, use_stream, main_config, show_activity))
+        asyncio.run(
+            _agent_run(
+                config_path,
+                user_input,
+                use_stream,
+                main_config,
+                show_activity,
+                _yolo_enabled(ctx, local_yolo),
+            )
+        )
     except ConfigError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
@@ -189,10 +219,14 @@ async def _agent_run(
     use_stream: bool,
     main_config: MainConfig | None = None,
     show_activity: bool = True,
+    yolo: bool = False,
 ) -> None:
     from sage.agent import Agent
+    from sage.permissions import enable_permission_bypass
 
     agent = Agent.from_config(config_path, central=main_config)
+    if yolo:
+        enable_permission_bypass(agent)
     if show_activity:
         from sage.cli.output import VerboseWriter
 
@@ -212,24 +246,35 @@ async def _agent_run(
 @agent.command("orchestrate")
 @click.argument("config_path", type=click.Path(exists=True))
 @click.option("--input", "-i", "user_input", required=True, help="Input to send to all subagents")
+@click.option("--yolo", "-y", "local_yolo", is_flag=True, help="Bypass all tool permission checks")
 @click.pass_context
-def agent_orchestrate(ctx: click.Context, config_path: str, user_input: str) -> None:
+def agent_orchestrate(
+    ctx: click.Context, config_path: str, user_input: str, local_yolo: bool
+) -> None:
     """Run all subagents of an orchestrator config in parallel."""
     try:
         main_config = _get_main_config(ctx)
-        asyncio.run(_agent_orchestrate(config_path, user_input, main_config))
+        asyncio.run(
+            _agent_orchestrate(config_path, user_input, main_config, _yolo_enabled(ctx, local_yolo))
+        )
     except SageError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
 
 async def _agent_orchestrate(
-    config_path: str, user_input: str, main_config: MainConfig | None = None
+    config_path: str,
+    user_input: str,
+    main_config: MainConfig | None = None,
+    yolo: bool = False,
 ) -> None:
     from sage.agent import Agent
     from sage.orchestrator.parallel import Orchestrator
+    from sage.permissions import enable_permission_bypass
 
     parent = Agent.from_config(config_path, central=main_config)
+    if yolo:
+        enable_permission_bypass(parent)
     if not parent.subagents:
         click.echo("No subagents defined in config.", err=True)
         sys.exit(1)
@@ -398,6 +443,7 @@ except ImportError:  # pragma: no cover
 )
 @click.option("--stdin", "use_stdin", is_flag=True, help="Read user input from stdin")
 @click.option("--yes", "ask_yes", is_flag=True, help="Auto-approve all ASK-gated tool calls")
+@click.option("--yolo", "-y", "local_yolo", is_flag=True, help="Bypass all tool permission checks")
 @click.option(
     "--deny-all",
     "deny_all",
@@ -414,6 +460,7 @@ def exec_cmd(
     timeout: float | None,
     use_stdin: bool,
     ask_yes: bool,
+    local_yolo: bool,
     deny_all: bool,
 ) -> None:
     """Run an agent in CI/headless mode with structured exit codes.
@@ -449,9 +496,10 @@ def exec_cmd(
 
     writer = make_writer(output_mode)
     main_config = _get_main_config(ctx)
+    yolo = _yolo_enabled(ctx, local_yolo)
 
     try:
-        coro = _exec_run(config_path, user_input, ask_policy, writer, main_config)
+        coro = _exec_run(config_path, user_input, ask_policy, writer, main_config, yolo)
         if timeout is not None and timeout > 0:
 
             async def _with_timeout() -> None:
@@ -491,14 +539,22 @@ async def _exec_run(
     ask_policy: str,
     writer: object,
     main_config: MainConfig | None = None,
+    yolo: bool = False,
 ) -> None:
     """Inner async coroutine for ``sage exec``."""
     from sage.agent import Agent
     from sage.cli.output import OutputWriter
+    from sage.permissions import enable_permission_bypass
 
     agent = Agent.from_config(config_path, central=main_config)
+    if yolo:
+        enable_permission_bypass(agent)
     # Wire the ask policy into the tool registry.
-    if hasattr(agent, "tool_registry") and hasattr(agent.tool_registry, "set_ask_policy"):
+    if (
+        not yolo
+        and hasattr(agent, "tool_registry")
+        and hasattr(agent.tool_registry, "set_ask_policy")
+    ):
         agent.tool_registry.set_ask_policy(ask_policy)  # type: ignore[arg-type]
     try:
         result = await agent.run(user_input)

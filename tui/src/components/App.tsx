@@ -2,6 +2,7 @@ import { Box, Text, useInput } from "ink";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SageClient } from "../ipc/client.js";
 import { SageClientContext, useSageClient, useClientStatus } from "../ipc/hooks.js";
+import type { SageClientOptions } from "../ipc/types.js";
 import { METHODS } from "../types/protocol.js";
 import { BlockProvider, useBlocks } from "../state/BlockContext.js";
 import { BlockEventRouter } from "../integration/BlockEventRouter.js";
@@ -645,8 +646,12 @@ function AppShell(): ReactNode {
   );
 }
 
-export function App(): ReactNode {
-  const clientRef = useRef(new SageClient());
+interface AppProps {
+  clientOptions?: SageClientOptions;
+}
+
+export function App(props: AppProps = {}): ReactNode {
+  const clientRef = useRef(new SageClient(props.clientOptions));
 
   return (
     <SageClientContext value={clientRef.current}>

@@ -96,6 +96,8 @@ SQLite-backed with litellm embeddings. Zero-config persistent recall across sess
 
 Control what tools can do via a single `permission:` block in YAML frontmatter. Each permission category (`read`, `edit`, `shell`, `web`, `memory`) maps to a set of built-in tools. Set a category to `allow`, `deny`, or `ask`, or use pattern matching for fine-grained shell control. When set to `deny`, tools are invisible to the LLM. Interactive prompts in the TUI when policy is `ask`.
 
+For trusted local runs, the CLI also supports `--yolo` / `-y` to bypass all permission checks entirely. This overrides both `ask` and explicit `deny` decisions for the current process, including `sage exec`, `sage agent run`, `sage agent orchestrate`, `sage serve`, and `sage-tui`.
+
 ### Hook System
 
 A lifecycle event bus for intercepting and extending agent behavior without modifying core code. Register async handlers against named `HookEvent` values — 31 events across seven categories: run lifecycle (`ON_RUN_STARTED`, `ON_RUN_COMPLETED`, `ON_RUN_FAILED`, `ON_RUN_CANCELLED`), LLM calls (`PRE_LLM_CALL`, `POST_LLM_CALL`, `ON_LLM_STREAM_DELTA`, `ON_LLM_ERROR`, `ON_LLM_RETRY`), tools (`PRE_TOOL_EXECUTE`, `POST_TOOL_EXECUTE`, `ON_TOOL_FAILED`), delegation (`ON_DELEGATION`, `ON_DELEGATION_COMPLETE`, `ON_DELEGATION_FAILED`), memory, compaction, permissions, sessions, coordination, and planning. Built-in hooks cover credential scrubbing, query-based model routing, bail-out retry (follow-through), automatic memory injection, notepad injection, and plan analysis. Hooks that raise never crash the agent — errors are logged and swallowed.
@@ -308,13 +310,22 @@ sage agent list [directory]                            # List agent configs
 sage agent orchestrate AGENTS.md --input "text"        # Run subagents in parallel
 sage tool list AGENTS.md                               # List available tools
 sage init [--name my-agent] [--model gpt-4o]           # Scaffold a new project
-sage tui --agent-config AGENTS.md                      # Launch interactive TUI
-sage exec AGENTS.md -i "Hello" [-o text|jsonl|quiet] [--timeout N] [--yes]    # Run headless (CI/scripting)
+sage serve [--agent-config AGENTS.md]                  # Start JSON-RPC backend for the TUI
+sage exec AGENTS.md -i "Hello" [-o text|jsonl|quiet] [--timeout N] [--yes|--yolo]  # Run headless
 sage eval run suite.yaml [--min-pass-rate 0.9] [--runs N]                      # Run evaluation suite
 sage eval validate suite.yaml                                                   # Validate suite file
 sage eval history [--suite NAME] [--last N]                                     # Show run history
 sage eval compare <run-id-1> <run-id-2>                                         # Compare two runs
 sage eval list [directory]                                                       # Find suite files
+```
+
+YOLO mode examples:
+
+```bash
+sage --yolo agent run AGENTS.md -i "Refactor this project"
+sage exec AGENTS.md -i "Run the migration" -y
+sage serve --agent-config AGENTS.md --yolo
+sage-tui --yolo
 ```
 
 ## Configuration Reference

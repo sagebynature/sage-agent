@@ -51,10 +51,22 @@ pnpm --filter tui dev
 sage-tui
 ```
 
+YOLO mode forwards `--yolo` / `-y` to the spawned `sage serve` process, bypassing all backend permission checks:
+
+```bash
+# Development
+pnpm --filter tui dev -- --yolo
+
+# Production
+sage-tui --yolo
+sage-tui -y
+```
+
 With a specific agent config:
 
 ```bash
 sage serve --agent-config AGENTS.md
+sage serve --agent-config AGENTS.md --yolo
 ```
 
 ## Test

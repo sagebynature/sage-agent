@@ -12,12 +12,18 @@ const mockRequest = vi.hoisted(() =>
     return {};
   }),
 );
+const mockClientOptions = vi.hoisted(() => vi.fn());
 
 vi.mock("./ipc/client.js", async () => {
   const { EventEmitter } = await import("node:events");
 
   class MockSageClient extends EventEmitter {
     status = "connected" as const;
+
+    constructor(options?: unknown) {
+      super();
+      mockClientOptions(options);
+    }
 
     async spawn(): Promise<void> {}
 
@@ -38,6 +44,11 @@ vi.mock("./ipc/client.js", async () => {
 import { App } from "./App.js";
 
 describe("App", () => {
+  it("constructs SageClient with default options", () => {
+    renderApp(<App />);
+    expect(mockClientOptions).toHaveBeenCalledWith(undefined);
+  });
+
   it("renders without crashing", () => {
     const { lastFrame } = renderApp(<App />);
     expect(lastFrame()).toBeTruthy();
@@ -54,5 +65,11 @@ describe("App", () => {
     expect(app.lastFrame()).toContain("test-agent");
     expect(app.lastFrame()).toContain("gpt-4o");
     expect(app.lastFrame()).not.toContain("no model");
+  });
+
+  it("passes client options through to the SageClient", () => {
+    const { lastFrame } = renderApp(<App clientOptions={{ args: ["serve", "--yolo"] }} />);
+    expect(mockClientOptions).toHaveBeenCalledWith({ args: ["serve", "--yolo"] });
+    expect(lastFrame()).toBeTruthy();
   });
 });

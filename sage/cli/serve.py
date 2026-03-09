@@ -18,7 +18,9 @@ from sage.protocol.server import JsonRpcServer
 logger = logging.getLogger(__name__)
 
 
-async def _serve(agent_config: str | None = None, verbose: bool = False) -> None:
+async def _serve(
+    agent_config: str | None = None, verbose: bool = False, yolo: bool = False
+) -> None:
     server = JsonRpcServer(agent_config=agent_config, verbose=verbose)
 
     agent = Agent.from_config(agent_config) if agent_config is not None else None
@@ -30,9 +32,16 @@ async def _serve(agent_config: str | None = None, verbose: bool = False) -> None
         bridge = EventBridge(server=server, agent=agent)
         bridge.setup()
 
-        from sage.protocol.permissions import JsonRpcPermissionHandler
+        if yolo:
+            from sage.permissions import AllowAllPermissionHandler, enable_permission_bypass
 
-        permission_handler = JsonRpcPermissionHandler(server=server, dispatcher=dispatcher)
+            permission_handler = AllowAllPermissionHandler()
+            for subagent in getattr(agent, "subagents", {}).values():
+                enable_permission_bypass(subagent)
+        else:
+            from sage.protocol.permissions import JsonRpcPermissionHandler
+
+            permission_handler = JsonRpcPermissionHandler(server=server, dispatcher=dispatcher)
         if hasattr(agent, "tool_registry") and agent.tool_registry is not None:
             agent.tool_registry.set_permission_handler(permission_handler)
 
@@ -52,8 +61,9 @@ async def _serve(agent_config: str | None = None, verbose: bool = False) -> None
     default=False,
     help="Enable verbose logging",
 )
+@click.option("--yolo", "-y", is_flag=True, default=False, help="Bypass all tool permission checks")
 @click.pass_context
-def serve(ctx: click.Context, agent_config: str | None, verbose: bool) -> None:
+def serve(ctx: click.Context, agent_config: str | None, verbose: bool, yolo: bool) -> None:
     """Start JSON-RPC server for TUI communication.
 
     Reads newline-delimited JSON-RPC 2.0 requests from stdin.
@@ -85,4 +95,5 @@ def serve(ctx: click.Context, agent_config: str | None, verbose: bool) -> None:
             click.echo(f"Error: {e}", err=True)
             sys.exit(1)
 
-    asyncio.run(_serve(agent_config, verbose))
+    effective_yolo = yolo or bool(ctx.ensure_object(dict).get("yolo"))
+    asyncio.run(_serve(agent_config, verbose, effective_yolo))

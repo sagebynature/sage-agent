@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from click.testing import CliRunner
 
 from sage.cli.main import cli
+from sage.permissions.allow_all import AllowAllPermissionHandler
 
 
 # ---------------------------------------------------------------------------
@@ -29,6 +30,8 @@ def _make_mock_agent(return_value: str = "Agent result") -> tuple[MagicMock, Mag
     mock_agent.close = AsyncMock()
     mock_agent.tool_registry = MagicMock()
     mock_agent.tool_registry.set_ask_policy = MagicMock()
+    mock_agent.tool_registry.set_permission_handler = MagicMock()
+    mock_agent.subagents = {}
 
     mock_cls = MagicMock()
     mock_cls.from_config.return_value = mock_agent
@@ -221,3 +224,29 @@ class TestExecAskPolicy:
             runner.invoke(cli, ["exec", str(config_path), "-i", "Hi", "--yes"])
 
         mock_agent.tool_registry.set_ask_policy.assert_called_once_with("allow")
+
+    def test_yolo_flag_installs_allow_all_permission_handler(self, tmp_path: Path) -> None:
+        config_path = _write_valid_config(tmp_path)
+        mock_agent, mock_cls = _make_mock_agent()
+
+        with patch.dict("sys.modules", {"sage.agent": MagicMock(Agent=mock_cls)}):
+            runner = CliRunner()
+            result = runner.invoke(cli, ["--yolo", "exec", str(config_path), "-i", "Hi"])
+
+        assert result.exit_code == 0, result.output
+        mock_agent.tool_registry.set_permission_handler.assert_called_once()
+        handler = mock_agent.tool_registry.set_permission_handler.call_args.args[0]
+        assert isinstance(handler, AllowAllPermissionHandler)
+
+    def test_short_yolo_flag_installs_allow_all_permission_handler(self, tmp_path: Path) -> None:
+        config_path = _write_valid_config(tmp_path)
+        mock_agent, mock_cls = _make_mock_agent()
+
+        with patch.dict("sys.modules", {"sage.agent": MagicMock(Agent=mock_cls)}):
+            runner = CliRunner()
+            result = runner.invoke(cli, ["exec", str(config_path), "-i", "Hi", "-y"])
+
+        assert result.exit_code == 0, result.output
+        mock_agent.tool_registry.set_permission_handler.assert_called_once()
+        handler = mock_agent.tool_registry.set_permission_handler.call_args.args[0]
+        assert isinstance(handler, AllowAllPermissionHandler)
