@@ -10,6 +10,7 @@ import httpx
 from markdownify import markdownify as md
 
 from sage.exceptions import ToolError
+from sage.models import ToolMetadata
 from sage.tools._security import validate_and_resolve_url
 from sage.tools.decorator import tool
 
@@ -52,6 +53,15 @@ async def web_fetch(url: str) -> str:
         text = text[:_MAX_CONTENT_LENGTH] + "\n\n[Content truncated]"
 
     return text
+
+
+web_fetch.__tool_schema__.metadata = ToolMetadata(  # type: ignore[attr-defined]
+    risk_level="medium",
+    stateful=False,
+    resource_kind="none",
+    approval_hint="Fetches a public web page over HTTP.",
+    idempotent=True,
+)
 
 
 @tool
@@ -101,3 +111,12 @@ async def web_search(query: str, max_results: int = 5) -> str:
         return f"No results found for: {query}"
 
     return "\n\n".join(results)
+
+
+web_search.__tool_schema__.metadata = ToolMetadata(  # type: ignore[attr-defined]
+    risk_level="medium",
+    stateful=False,
+    resource_kind="none",
+    approval_hint="Searches the public web.",
+    idempotent=True,
+)

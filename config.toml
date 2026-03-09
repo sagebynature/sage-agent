@@ -42,6 +42,9 @@ max_turns = 10
 # Maximum delegation depth (prevents infinite recursion)
 max_depth = 3
 
+# Enable selected MCP servers by name from the global catalog below.
+enabled_mcp_servers = ["context7", "sequentialthinking"]
+
 # Custom tool extensions (list of Python module paths)
 # extensions = ["myapp.tools"]
 
@@ -63,7 +66,7 @@ max_tokens = 4096
 # Controls what actions agents can take without asking.
 [defaults.permission]
 shell = "ask"
-memory_store = "allow"
+memory = "allow"
 
 # ── Context Management ────────────────────────────────────────────────────────
 # Token-aware context window management.
@@ -109,12 +112,12 @@ max_iterations = 3      # Maximum review-revise cycles (default: 3)
 # Model Context Protocol server connections.
 # Each server uses either stdio (command) or sse (url) transport.
 
-[defaults.mcp_servers.context7]
+[mcp_servers.context7]
 transport = "stdio"
 command = "npx"
 args = ["-y", "@upstash/context7-mcp@latest"]
 
-[defaults.mcp_servers.sequentialthinking]
+[mcp_servers.sequentialthinking]
 transport = "stdio"
 command = "npx"
 args = ["-y", "@modelcontextprotocol/server-sequential-thinking@latest"]

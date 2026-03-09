@@ -34,3 +34,20 @@ def test_register_planning_tools_registers_all_six_with_review_enabled() -> None
             "notepad_read",
         }
     )
+
+
+def test_planning_tools_expose_low_risk_metadata() -> None:
+    agent = _AgentStub()
+    config = SimpleNamespace(
+        planning=SimpleNamespace(
+            review=SimpleNamespace(enabled=True, prompt=None, max_iterations=3)
+        )
+    )
+
+    register_planning_tools(agent, config)
+
+    schemas = {schema.name: schema for schema in agent.tool_registry.get_schemas()}
+    assert schemas["plan_create"].metadata is not None
+    assert schemas["plan_create"].metadata.risk_level == "low"
+    assert schemas["notepad_write"].metadata is not None
+    assert schemas["notepad_write"].metadata.stateful is True

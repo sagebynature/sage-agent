@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 from sage.exceptions import ToolError
+from sage.models import ToolMetadata
 from sage.tools._security import ResolvedURL, validate_and_resolve_url
 from sage.tools.decorator import tool
 
@@ -18,6 +19,22 @@ if TYPE_CHECKING:
     from sage.tools._sandbox import SandboxExecutor
 
 logger = logging.getLogger(__name__)
+
+
+def _tool_metadata(
+    *,
+    risk_level: str,
+    stateful: bool = False,
+    approval_hint: str,
+    idempotent: bool = True,
+) -> ToolMetadata:
+    return ToolMetadata(
+        risk_level=risk_level,
+        stateful=stateful,
+        resource_kind="none",
+        approval_hint=approval_hint,
+        idempotent=idempotent,
+    )
 
 
 def _validate_path(path: str, allowed_dir: Path | None = None) -> Path:
@@ -147,6 +164,13 @@ async def shell(command: str) -> str:
     return output.strip()
 
 
+shell.__tool_schema__.metadata = _tool_metadata(  # type: ignore[attr-defined]
+    risk_level="high",
+    approval_hint="Executes a local shell command.",
+    idempotent=False,
+)
+
+
 def make_shell(
     allowed_commands: frozenset[str] | None = None,
     dangerous_patterns: list[str] | None = None,
@@ -189,6 +213,11 @@ def make_shell(
                 output += f"\n[stderr]\n{err_text}"
         return output.strip()
 
+    shell.__tool_schema__.metadata = _tool_metadata(  # type: ignore[attr-defined]
+        risk_level="high",
+        approval_hint="Executes a local shell command.",
+        idempotent=False,
+    )
     return shell
 
 
@@ -224,6 +253,11 @@ def make_sandboxed_shell(
             output += f"\n[stderr]\n{stderr}"
         return output.strip()
 
+    shell.__tool_schema__.metadata = _tool_metadata(  # type: ignore[attr-defined]
+        risk_level="high",
+        approval_hint="Executes a local shell command inside the configured sandbox.",
+        idempotent=False,
+    )
     return shell
 
 
@@ -245,6 +279,12 @@ async def file_read(path: str) -> str:
     return await asyncio.to_thread(file_path.read_text, encoding="utf-8")
 
 
+file_read.__tool_schema__.metadata = _tool_metadata(  # type: ignore[attr-defined]
+    risk_level="low",
+    approval_hint="Reads a local file from the workspace.",
+)
+
+
 @tool
 async def file_write(path: str, content: str) -> str:
     """Write content to a file, creating parent directories as needed.
@@ -256,6 +296,13 @@ async def file_write(path: str, content: str) -> str:
     file_path.parent.mkdir(parents=True, exist_ok=True)
     await asyncio.to_thread(file_path.write_text, content, encoding="utf-8")
     return f"Wrote {len(content)} bytes to {path}"
+
+
+file_write.__tool_schema__.metadata = _tool_metadata(  # type: ignore[attr-defined]
+    risk_level="medium",
+    approval_hint="Writes or overwrites a local file in the workspace.",
+    idempotent=False,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -337,3 +384,9 @@ async def http_request(
         return f"HTTP Error {exc.response.status_code}: {exc.response.text[:1000]}"
     except Exception as exc:
         raise ToolError(f"http_request failed: {exc}") from exc
+
+
+http_request.__tool_schema__.metadata = _tool_metadata(  # type: ignore[attr-defined]
+    risk_level="medium",
+    approval_hint="Makes an outbound HTTP request to a validated public URL.",
+)
