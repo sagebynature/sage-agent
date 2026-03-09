@@ -18,6 +18,17 @@ import { EventTimeline } from "./EventTimeline.js";
 import { ComplexityPanel, eventHasComplexityScore } from "./ComplexityPanel.js";
 import { EventInspector } from "./EventInspector.js";
 import { ActiveTaskDock } from "./ActiveTaskDock.js";
+import {
+  SHORTCUT_LABELS,
+  isApprovePermissionShortcut,
+  isClearShortcut,
+  isResetShortcut,
+  isSaveShortcut,
+  isPreviousEventShortcut,
+  isNextEventShortcut,
+  isToggleEventPaneShortcut,
+  isToggleVerbosityShortcut,
+} from "../shortcuts.js";
 
 
 const NOTIFICATION_METHODS = [
@@ -254,7 +265,14 @@ function AppShell(): ReactNode {
               "/permissions — Show permission grants",
               "/verbosity [compact|normal|debug] — Set event verbosity",
               "/events [show|hide|toggle|next|prev|follow] — Event pane controls",
-              "PageUp/PageDown — Scroll Inspector",
+              `${SHORTCUT_LABELS.toggleVerbosity} — Cycle event verbosity`,
+              `${SHORTCUT_LABELS.toggleEventPane} — Toggle event pane`,
+              `${SHORTCUT_LABELS.clear} — Clear conversation`,
+              `${SHORTCUT_LABELS.reset} — Reset session and state`,
+              `${SHORTCUT_LABELS.approvePermission} — Approve first pending permission`,
+              `${SHORTCUT_LABELS.saveSession} — Save session feedback`,
+              "PageUp/PageDown — Scroll inspector",
+              `${SHORTCUT_LABELS.previousEvent}/${SHORTCUT_LABELS.nextEvent} — Previous/next selected event`,
               "/filters [category=tool,llm] [status=error] [search=text] — Event filters",
               "/agent — Show active agents",
               "/agents — List all agents",
@@ -514,20 +532,18 @@ function AppShell(): ReactNode {
       return;
     }
 
-    // Ctrl+L: clear
-    if (key.ctrl && input === "l") {
+    // Prefer Alt+... for app shortcuts because many terminals reserve Ctrl+L/N/P/S/V/E.
+    if (isClearShortcut(input, key)) {
       void handleCommand("/clear", "");
       return;
     }
 
-    // Ctrl+N: new session (reset)
-    if (key.ctrl && input === "n") {
+    if (isResetShortcut(input, key)) {
       void handleCommand("/reset", "");
       return;
     }
 
-    // Ctrl+P: approve first pending permission
-    if (key.ctrl && input === "p") {
+    if (isApprovePermissionShortcut(input, key)) {
       const pending = stateRef.current.permissions.find((p) => p.status === "pending");
       if (pending) {
         void handlePermissionRespond(pending.id, "allow_once");
@@ -535,27 +551,26 @@ function AppShell(): ReactNode {
       return;
     }
 
-    // Ctrl+S: save feedback
-    if (key.ctrl && input === "s") {
+    if (isSaveShortcut(input, key)) {
       dispatch({ type: "ADD_SYSTEM_BLOCK", content: "Session auto-saved." });
       return;
     }
 
-    if (key.ctrl && input === "v") {
+    if (isToggleVerbosityShortcut(input, key)) {
       dispatch({ type: "SET_VERBOSITY", verbosity: cycleVerbosity(stateRef.current.ui.verbosity) });
       return;
     }
 
-    if (key.ctrl && input === "e") {
+    if (isToggleEventPaneShortcut(input, key)) {
       dispatch({ type: "TOGGLE_EVENT_PANE" });
       return;
     }
 
-    if (key.ctrl && key.pageUp) {
+    if (isPreviousEventShortcut(key)) {
       dispatch({ type: "SELECT_PREV_EVENT" });
       return;
     }
-    if (key.ctrl && key.pageDown) {
+    if (isNextEventShortcut(key)) {
       dispatch({ type: "SELECT_NEXT_EVENT" });
       return;
     }

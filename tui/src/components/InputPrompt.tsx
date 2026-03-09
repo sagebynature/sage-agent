@@ -11,6 +11,7 @@ import {
 } from "react";
 import { useInputHistory } from "../hooks/useInputHistory.js";
 import { SlashCommands } from "./SlashCommands.js";
+import { SHORTCUT_LABELS } from "../shortcuts.js";
 
 type InputMode = "normal" | "command";
 
@@ -180,7 +181,7 @@ export const InputPrompt = forwardRef(function InputPrompt(
           value={value}
           onChange={handleChange}
           onSubmit={handleSubmit}
-          placeholder="Type a message... (/ for commands, Ctrl+J newline)"
+          placeholder={`Type a message... (/ for commands, ${SHORTCUT_LABELS.newline} newline)`}
           focus={isActive}
         />
       </Box>

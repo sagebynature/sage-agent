@@ -6,6 +6,7 @@ import { memo, type ReactNode } from "react";
 import type { UsageState, PermissionState, AgentNode } from "../types/state.js";
 import type { ActiveStream } from "../types/blocks.js";
 import type { RunSummary, VerbosityMode, EventRecord } from "../types/events.js";
+import { SHORTCUT_LABELS } from "../shortcuts.js";
 
 type AppMode = "idle" | "connecting" | "streaming" | "tool" | "permission" | "error";
 
@@ -106,7 +107,7 @@ function ModeIndicator({ props }: { props: BottomBarProps }): ReactNode {
     case "error":
       return <Text color="red">{"● error — ESC to dismiss"}</Text>;
     case "idle":
-      return <Text dimColor>{"/ commands | ctrl+c quit"}</Text>;
+      return <Text dimColor>{`/ commands | ${SHORTCUT_LABELS.toggleVerbosity.toLowerCase()} verbosity | ${SHORTCUT_LABELS.quit.toLowerCase()} quit`}</Text>;
     default:
       return null;
   }

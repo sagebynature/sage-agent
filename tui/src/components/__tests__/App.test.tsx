@@ -90,4 +90,20 @@ describe("App Shell", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(app.lastFrame() ?? "").toContain("second");
   });
+
+  it("supports alt-based app shortcuts for terminal-safe controls", async () => {
+    const app = renderApp(<App />);
+
+    expect(app.lastFrame() ?? "").toContain("compact");
+    expect(app.lastFrame() ?? "").not.toContain("normal+events");
+
+    app.stdin.write("\u001bv");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(app.lastFrame() ?? "").toContain("normal+events");
+
+    app.stdin.write("\u001be");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(app.lastFrame() ?? "").toContain("normal");
+    expect(app.lastFrame() ?? "").not.toContain("normal+events");
+  });
 });

@@ -122,22 +122,25 @@ Type `/` in the input area to open the command palette. 24 commands available:
 
 | Key | Description |
 |-----|-------------|
-| `Ctrl+↑` | Scroll up |
-| `Ctrl+↓` | Scroll down |
+| `PageUp` / `PageDown` | Scroll inspector |
+| `Alt+↑` / `Alt+↓` | Previous / next event |
 
 ### Session
 
 | Key | Description |
 |-----|-------------|
-| `Ctrl+N` | New session (reset) |
-| `Ctrl+L` | Clear conversation |
-| `Ctrl+S` | Save session feedback |
+| `Alt+N` | New session (reset) |
+| `Alt+L` | Clear conversation |
+| `Alt+S` | Save session feedback |
+| `Alt+V` | Cycle event verbosity |
+| `Alt+E` | Toggle event pane |
 
 ### Input
 
 | Key | Description |
 |-----|-------------|
 | `Enter` | Send message |
+| `Ctrl+J` | Insert newline |
 | `Ctrl+C` | Cancel stream / quit |
 | `Escape` | Cancel stream / dismiss error |
 | `↑` / `↓` | Input history |
@@ -146,7 +149,7 @@ Type `/` in the input area to open the command palette. 24 commands available:
 
 | Key | Description |
 |-----|-------------|
-| `Ctrl+P` | Approve pending permission |
+| `Alt+P` | Approve pending permission |
 
 ## Input Modes
 
