@@ -584,26 +584,6 @@ function AppShell(): ReactNode {
         streams={state.activeStream ? [state.activeStream] : []}
         width={columns}
       />
-      {/* Event pane: compact horizontal strip in the dynamic area.
-          Timeline and inspector sit side-by-side to save vertical space. */}
-      {state.ui.showEventPane && (
-        <Box
-          flexDirection="row"
-          width={columns}
-          height={eventPaneHeight}
-          overflowY="hidden"
-        >
-          <EventTimeline
-            events={visibleEvents}
-            selectedEventId={selectedEvent?.id ?? null}
-            maxHeight={eventPaneHeight}
-          />
-          {showComplexityPanel ? (
-            <ComplexityPanel event={selectedEvent} maxHeight={eventPaneHeight} />
-          ) : null}
-          <EventInspector event={selectedEvent} maxHeight={eventPaneHeight} />
-        </Box>
-      )}
       {state.error && (
         <Box>
           <Text color="red">{"● Error: "}{state.error}</Text>
@@ -640,6 +620,26 @@ function AppShell(): ReactNode {
           selectedEvent={state.ui.showEventPane ? selectedEvent : null}
         />
       </Box>
+      {/* Event pane: compact horizontal strip in the dynamic area.
+          Timeline and inspector sit side-by-side to save vertical space. */}
+      {state.ui.showEventPane && (
+        <Box
+          flexDirection="row"
+          width={columns}
+          height={eventPaneHeight}
+          overflowY="hidden"
+        >
+          <EventTimeline
+            events={visibleEvents}
+            selectedEventId={selectedEvent?.id ?? null}
+            maxHeight={eventPaneHeight}
+          />
+          {showComplexityPanel ? (
+            <ComplexityPanel event={selectedEvent} maxHeight={eventPaneHeight} />
+          ) : null}
+          <EventInspector event={selectedEvent} maxHeight={eventPaneHeight} />
+        </Box>
+      )}
     </Box>
   );
 }

@@ -163,15 +163,23 @@ function useElapsedTimer(startedAt: number | null): string {
   return `${min}m ${sec}s`;
 }
 
-function ThinkingIndicator({ startedAt }: { startedAt: number }): ReactNode {
+function ActiveTaskIndicator({
+  label,
+  startedAt,
+  isDelegate,
+}: {
+  label: string;
+  startedAt: number | null;
+  isDelegate: boolean;
+}): ReactNode {
   const elapsed = useElapsedTimer(startedAt);
   const { spinner, colorDepth } = useActiveAnimation();
-  const style = resolveActiveStatusStyle(false, colorDepth);
+  const style = resolveActiveStatusStyle(isDelegate, colorDepth);
 
   return (
     <Box>
       <Text color={style.color} bold={style.bold}>{spinner} </Text>
-      <AnimatedActiveLabel text="Thinking..." isDelegate={false} />
+      <AnimatedActiveLabel text={label} isDelegate={isDelegate} />
       <Text dimColor>{" ("}{elapsed}{")"}</Text>
     </Box>
   );
@@ -193,20 +201,13 @@ interface ToolInfo {
   arguments: Record<string, unknown>;
   durationMs?: number;
   error?: string;
+  startedAt?: number;
 }
 
 function RunningToolIndicator({ tool }: { tool: ToolInfo }): ReactNode {
-  const { spinner, colorDepth } = useActiveAnimation();
   const label = formatToolLabel(tool.name, tool.arguments);
   const isDelegate = tool.name.startsWith("delegate");
-  const style = resolveActiveStatusStyle(isDelegate, colorDepth);
-
-  return (
-    <Text>
-      <Text color={style.color} bold={style.bold}>{spinner} </Text>
-      <AnimatedActiveLabel text={label} isDelegate={isDelegate} />
-    </Text>
-  );
+  return <ActiveTaskIndicator label={label} startedAt={tool.startedAt ?? null} isDelegate={isDelegate} />;
 }
 
 function AnimatedActiveLabel({
@@ -309,30 +310,24 @@ export function ActiveStreamView({ stream }: ActiveStreamViewProps): ReactNode {
 
   return (
     <Box flexDirection="column">
+      {stream.isThinking ? (
+        <SpinnerProvider colorDepth={colorDepth}>
+          <ActiveTaskIndicator label="llm" startedAt={stream.startedAt} isDelegate={false} />
+        </SpinnerProvider>
+      ) : null}
       {hasRunningTools ? (
         <SpinnerProvider colorDepth={colorDepth}>
           {stream.tools.map((tool, idx) => (
             <ToolStatusIndicator key={`${idx}_${tool.callId}`} tool={tool} />
           ))}
         </SpinnerProvider>
-      ) : (
+      ) : hasTools ? (
         stream.tools.map((tool, idx) => (
           <ToolStatusIndicator key={`${idx}_${tool.callId}`} tool={tool} />
         ))
-      )}
-      {stream.isThinking && !hasTools ? (
-        <SpinnerProvider colorDepth={colorDepth}>
-          <Box flexDirection="column">
-            <ThinkingIndicator startedAt={stream.startedAt} />
-            {/* {stream.complexity ? (
-              <ComplexityBadge
-                score={stream.complexity.score}
-                level={stream.complexity.level}
-              />
-            ) : null} */}
-          </Box>
-        </SpinnerProvider>
-      ) : stream.content.length > 0 ? (
+      )
+        : null}
+      {stream.content.length > 0 ? (
         <StreamContent content={stream.content} />
       ) : null}
     </Box>

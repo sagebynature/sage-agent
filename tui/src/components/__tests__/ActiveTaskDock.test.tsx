@@ -34,7 +34,7 @@ describe("ActiveTaskDock", () => {
     const stream: ActiveStream = {
       runId: "run-1",
       content: "",
-      isThinking: false,
+      isThinking: true,
       startedAt: Date.now(),
       tools: [
         {
@@ -42,6 +42,7 @@ describe("ActiveTaskDock", () => {
           callId: "call-1",
           arguments: { agent_name: "researcher", task: "Research day trading strategies" },
           status: "running",
+          startedAt: Date.now(),
         },
         {
           name: "web_search",
@@ -61,8 +62,10 @@ describe("ActiveTaskDock", () => {
 
     const { lastFrame } = render(<ActiveTaskDock streams={[stream]} />);
     const frame = lastFrame() ?? "";
+    expect(frame).toContain("llm");
     expect(frame).toContain("delegate");
     expect(frame).toContain("web_fetch");
     expect(frame).not.toContain("web_search");
+    expect(frame).toContain("(0s)");
   });
 });

@@ -61,7 +61,7 @@ describe("ActiveStreamView", () => {
     ]);
   });
 
-  it("shows thinking indicator when isThinking", () => {
+  it("shows llm activity when isThinking", () => {
     const stream: ActiveStream = {
       runId: "r1",
       content: "",
@@ -71,7 +71,8 @@ describe("ActiveStreamView", () => {
     };
     const { lastFrame } = render(<ActiveStreamView stream={stream} />);
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("Thinking");
+    expect(frame).toContain("llm");
+    expect(frame).toContain("(0s)");
   });
 
   // it("shows complexity while thinking when present", () => {
