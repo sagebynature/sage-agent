@@ -48,9 +48,7 @@ class TestProcessTools:
 
     @pytest.mark.asyncio
     async def test_process_kill_terminates_running_process(self) -> None:
-        started = await process_start(
-            [sys.executable, "-c", "import time; time.sleep(30)"]
-        )
+        started = await process_start([sys.executable, "-c", "import time; time.sleep(30)"])
         process_id = started.resource.resource_id
 
         killed = await process_kill(process_id)

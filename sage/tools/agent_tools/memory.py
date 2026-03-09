@@ -124,7 +124,7 @@ def register_memory_tools(agent: "Agent") -> None:
         )
 
     for fn in (memory_add, memory_search, memory_get, memory_list, memory_delete, memory_stats):
-        fn.__tool_schema__.metadata = ToolMetadata(  # type: ignore[attr-defined]
+        fn.__tool_schema__.metadata = ToolMetadata(
             risk_level="low",
             stateful=True,
             resource_kind="memory",

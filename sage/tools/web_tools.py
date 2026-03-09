@@ -55,7 +55,7 @@ async def web_fetch(url: str) -> str:
     return text
 
 
-web_fetch.__tool_schema__.metadata = ToolMetadata(  # type: ignore[attr-defined]
+web_fetch.__tool_schema__.metadata = ToolMetadata(
     risk_level="medium",
     stateful=False,
     resource_kind="none",
@@ -113,7 +113,7 @@ async def web_search(query: str, max_results: int = 5) -> str:
     return "\n\n".join(results)
 
 
-web_search.__tool_schema__.metadata = ToolMetadata(  # type: ignore[attr-defined]
+web_search.__tool_schema__.metadata = ToolMetadata(
     risk_level="medium",
     stateful=False,
     resource_kind="none",

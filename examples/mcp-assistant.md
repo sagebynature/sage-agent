@@ -5,11 +5,7 @@ model_params:
   temperature: 0.0
   max_tokens: 4096
   timeout: 45.0
-mcp_servers:
-  filesystem:
-    transport: stdio
-    command: npx
-    args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+enabled_mcp_servers: [filesystem]
 max_turns: 10
 permission:
   read: allow

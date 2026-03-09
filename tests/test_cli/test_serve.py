@@ -23,11 +23,13 @@ async def test_serve_yolo_installs_allow_all_permission_handler() -> None:
     mock_agent.tool_registry = MagicMock()
     mock_agent.subagents = {}
 
-    with patch("sage.cli.serve.JsonRpcServer", return_value=server), patch(
-        "sage.cli.serve.Agent.from_config", return_value=mock_agent
-    ), patch("sage.cli.serve.PersistentSessionManager", return_value=session_manager), patch(
-        "sage.cli.serve.MethodDispatcher", return_value=dispatcher
-    ), patch("sage.cli.serve.EventBridge", return_value=bridge):
+    with (
+        patch("sage.cli.serve.JsonRpcServer", return_value=server),
+        patch("sage.cli.serve.Agent.from_config", return_value=mock_agent),
+        patch("sage.cli.serve.PersistentSessionManager", return_value=session_manager),
+        patch("sage.cli.serve.MethodDispatcher", return_value=dispatcher),
+        patch("sage.cli.serve.EventBridge", return_value=bridge),
+    ):
         await _serve("AGENTS.md", verbose=False, yolo=True)
 
     mock_agent.tool_registry.set_permission_handler.assert_called_once()

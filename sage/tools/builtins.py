@@ -6,7 +6,7 @@ import asyncio
 import logging
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import httpx
 
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 def _tool_metadata(
     *,
-    risk_level: str,
+    risk_level: Literal["low", "medium", "high"],
     stateful: bool = False,
     approval_hint: str,
     idempotent: bool = True,
@@ -164,7 +164,7 @@ async def shell(command: str) -> str:
     return output.strip()
 
 
-shell.__tool_schema__.metadata = _tool_metadata(  # type: ignore[attr-defined]
+shell.__tool_schema__.metadata = _tool_metadata(
     risk_level="high",
     approval_hint="Executes a local shell command.",
     idempotent=False,
@@ -213,7 +213,7 @@ def make_shell(
                 output += f"\n[stderr]\n{err_text}"
         return output.strip()
 
-    shell.__tool_schema__.metadata = _tool_metadata(  # type: ignore[attr-defined]
+    shell.__tool_schema__.metadata = _tool_metadata(
         risk_level="high",
         approval_hint="Executes a local shell command.",
         idempotent=False,
@@ -253,7 +253,7 @@ def make_sandboxed_shell(
             output += f"\n[stderr]\n{stderr}"
         return output.strip()
 
-    shell.__tool_schema__.metadata = _tool_metadata(  # type: ignore[attr-defined]
+    shell.__tool_schema__.metadata = _tool_metadata(
         risk_level="high",
         approval_hint="Executes a local shell command inside the configured sandbox.",
         idempotent=False,
@@ -279,7 +279,7 @@ async def file_read(path: str) -> str:
     return await asyncio.to_thread(file_path.read_text, encoding="utf-8")
 
 
-file_read.__tool_schema__.metadata = _tool_metadata(  # type: ignore[attr-defined]
+file_read.__tool_schema__.metadata = _tool_metadata(
     risk_level="low",
     approval_hint="Reads a local file from the workspace.",
 )
@@ -298,7 +298,7 @@ async def file_write(path: str, content: str) -> str:
     return f"Wrote {len(content)} bytes to {path}"
 
 
-file_write.__tool_schema__.metadata = _tool_metadata(  # type: ignore[attr-defined]
+file_write.__tool_schema__.metadata = _tool_metadata(
     risk_level="medium",
     approval_hint="Writes or overwrites a local file in the workspace.",
     idempotent=False,
@@ -386,7 +386,7 @@ async def http_request(
         raise ToolError(f"http_request failed: {exc}") from exc
 
 
-http_request.__tool_schema__.metadata = _tool_metadata(  # type: ignore[attr-defined]
+http_request.__tool_schema__.metadata = _tool_metadata(
     risk_level="medium",
     approval_hint="Makes an outbound HTTP request to a validated public URL.",
 )

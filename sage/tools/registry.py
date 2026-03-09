@@ -30,6 +30,7 @@ class _MCPToolBinding:
     upstream_name: str
     server_name: str
 
+
 CATEGORY_TOOLS: dict[str, list[str]] = {
     "read": ["file_read"],
     "edit": ["file_write", "file_edit"],

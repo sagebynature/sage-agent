@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
 
 from sage.models import ToolMetadata, ToolResourceRef, ToolResult
 from sage.tools.decorator import tool
@@ -89,7 +88,7 @@ async def process_kill(process_id: str) -> ToolResult:
 @tool
 async def process_list() -> ToolResult:
     """List managed processes."""
-    processes = await _MANAGER.list()
+    processes = await _MANAGER.list_processes()
     return ToolResult(
         text=f"{len(processes)} managed processes",
         data={"count": len(processes), "processes": processes},
@@ -97,7 +96,7 @@ async def process_list() -> ToolResult:
 
 
 for fn in (process_start, process_send, process_read, process_wait, process_kill, process_list):
-    fn.__tool_schema__.metadata = ToolMetadata(  # type: ignore[attr-defined]
+    fn.__tool_schema__.metadata = ToolMetadata(
         risk_level="medium",
         stateful=True,
         resource_kind="process",

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import shlex
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
@@ -29,7 +30,7 @@ class ProcessManager:
 
     async def start(
         self,
-        command: list[str] | str,
+        command: Sequence[str] | str,
         *,
         cwd: str | None = None,
         env: dict[str, str] | None = None,
@@ -50,7 +51,7 @@ class ProcessManager:
                 stderr=asyncio.subprocess.PIPE,
             )
         else:
-            argv = command if isinstance(command, list) else [command]
+            argv = list(command) if not isinstance(command, str) else [command]
             process = await asyncio.create_subprocess_exec(
                 *argv,
                 cwd=cwd,
@@ -155,7 +156,7 @@ class ProcessManager:
             "returncode": managed.process.returncode,
         }
 
-    async def list(self) -> list[dict[str, Any]]:
+    async def list_processes(self) -> list[dict[str, Any]]:
         return [
             {
                 "process_id": process_id,

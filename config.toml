@@ -21,15 +21,6 @@ agents_dir = "agents/"
 # Agents in agents_dir are auto-discovered as subagents of the primary.
 # primary = "assistant"
 
-# ─── Environment Variables ──────────────────────────────────────────────────
-# Resolved at startup. Values can reference env vars with ${VAR} syntax.
-# Resolution order: config.toml [env] > .env file > os.environ
-# Unresolved ${VAR} references cause a startup error.
-[env]
-# AZURE_AI_API_KEY = "${AZURE_AI_API_KEY}"
-# AZURE_AI_API_BASE = "${AZURE_AI_API_BASE}"
-OPENROUTER_API_KEY = "${OPENROUTER_API_KEY}"
-
 # ─── Global Defaults ──────────────────────────────────────────────────────────
 # LLM model identifier (provider/model format)
 model = "openrouter/openrouter/free"
@@ -45,6 +36,15 @@ enabled_mcp_servers = ["context7", "sequentialthinking"]
 
 # Custom tool extensions (list of Python module paths)
 # extensions = ["myapp.tools"]
+
+# ─── Environment Variables ──────────────────────────────────────────────────
+# Resolved at startup. Values can reference env vars with ${VAR} syntax.
+# Resolution order: config.toml [env] > .env file > os.environ
+# Unresolved ${VAR} references cause a startup error.
+[env]
+# AZURE_AI_API_KEY = "${AZURE_AI_API_KEY}"
+# AZURE_AI_API_BASE = "${AZURE_AI_API_BASE}"
+OPENROUTER_API_KEY = "${OPENROUTER_API_KEY}"
 
 # ── Model Parameters ──────────────────────────────────────────────────────────
 # Only set fields are forwarded to the provider; omitted fields use provider defaults.
